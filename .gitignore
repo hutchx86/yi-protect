@@ -95,3 +95,7 @@ archive/cameras.json
 # Editor swap files
 *.swp
 *.swo
+*.key
+*.pem
+*.crt
+.env
