@@ -68,6 +68,13 @@ type Config struct {
 	// HasPTZ gates the "ptz" featureFlags key -> real hardware capability.
 	// Default false; set via -ptz.
 	HasPTZ bool
+
+	// IsMediad gates the advanced picture-control path: when true AND the
+	// sister project's custom rmm replacement (mediad) is detected installed
+	// and running, Protect's picture settings are forwarded to mediad's control
+	// socket instead of being acknowledged and ignored. Set via unifi.cfg's
+	// IS_MEDIAD=yes or -mediad; see mediad_ctl.go.
+	IsMediad bool
 }
 
 // cfg.MAC/cfg.IP are last-resort fallbacks, used only when
@@ -733,6 +740,19 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	case "ubnt_avclient_timeSync":
 		return c.handleTimeSync(m)
 	case "ResetIspSettings":
+		// With mediad, restore the vendor defaults on its control socket too;
+		// the response is the static schema either way. Off the read loop so a
+		// slow socket can't delay the ack.
+		go func() {
+			if !mediadEnabled() {
+				return
+			}
+			if r, err := mediadCommand("reset"); err != nil {
+				log.Printf("mediad ctl: reset: %v", err)
+			} else {
+				log.Printf("mediad ctl: reset %s", r)
+			}
+		}()
 		return false, c.send(c.genResponse("ResetIspSettings", m.MessageID, ispSettingsDefaults()))
 	case "ChangeIspSettings":
 		return false, c.handleIspSettings(m)
@@ -840,9 +860,21 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 			return false, c.send(c.genResponse(fn, m.MessageID, resp))
 		}
 		return false, nil
+	case "ChangeBrightnessSettings":
+		// Legacy separate brightness message. Schema not captured; log the raw
+		// payload and run it through the same picture-control mapping so it
+		// reaches mediad when the advanced path is enabled.
+		if raw, err := json.Marshal(m.Payload); err == nil {
+			log.Printf("ChangeBrightnessSettings raw payload: %s", raw)
+		}
+		go mediadApplyIspSettings(m.Payload)
+		if m.ResponseExpected {
+			return false, c.send(c.genResponse(fn, m.MessageID, nil))
+		}
+		return false, nil
 	case "ChangeSmartDetectSettings", "ChangeSmartMotionSettings", "ChangeClarityZones",
 		"ChangeAudioEventsSettings", "ChangeInterfaceSettings",
-		"AudioAgentChangeTuning", "ChangeBrightnessSettings", "SmartMotionTest",
+		"AudioAgentChangeTuning", "SmartMotionTest",
 		"SendWeatherUpdate", "DisableLogging", "StartService":
 		if m.ResponseExpected {
 			return false, c.send(c.genResponse(fn, m.MessageID, nil))
@@ -1002,6 +1034,11 @@ func (c *Client) handleIspSettings(m Envelope) error {
 		}
 	}
 
+	// Forward the picture-control subset to mediad when the advanced path is
+	// live. Off the read loop: the dial is local, but a stalled mediad must
+	// never delay the controller's ack. See mediad_ctl.go for the mapping.
+	go mediadApplyIspSettings(m.Payload)
+
 	// Echo the controller's real values back, layered under
 	// ispSettingsDefaults() so uncovered fields get a sane fallback.
 	resp := ispSettingsDefaults()
@@ -1099,6 +1136,24 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			v, ok := video[key].(map[string]interface{})
 			if !ok {
 				continue
+			}
+			// Protect's bitrate -> mediad's HIGH encoder channel (capped at
+			// 3 Mbps). Only video1 (HIGH) is bitrate-controlled; the LOW
+			// encoder is deliberately locked at its fixed rate. No-op unless
+			// the mediad advanced path is live.
+			if key == "video1" {
+				if bps := videoStreamBitrate(v); bps > 0 {
+					go func(b int) {
+						if !mediadEnabled() {
+							return
+						}
+						if err := mediadSet("bitrate", clampBitrate(b)); err != nil {
+							log.Printf("mediad ctl: bitrate=%d: %v", b, err)
+						} else {
+							log.Printf("mediad ctl: bitrate=%d ok", b)
+						}
+					}(bps)
+				}
 			}
 			ser, ok := v["avSerializer"].(map[string]interface{})
 			if !ok {
@@ -1947,6 +2002,17 @@ func readUnifiCfg(path string) map[string]string {
 	return vals
 }
 
+// isTruthy parses a human-edited config boolean. Accepts the yes/no form used
+// by the shell scripts (and this file's own PTZ key) plus the usual
+// true/false/1/0/on/off aliases; anything else is false.
+func isTruthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "yes", "true", "1", "on":
+		return true
+	}
+	return false
+}
+
 // loadCameraConfigFile reads path (if present) and applies any recognized
 // KEY=value lines onto cfg, logging every field it changes.
 func loadCameraConfigFile(path string) {
@@ -2083,6 +2149,10 @@ func main() {
 		log.Printf("unifi.cfg: fwversion %q -> %q", cfg.FWVersion, v)
 		cfg.FWVersion = v
 	}
+	if v := unifiCfg["IS_MEDIAD"]; v != "" {
+		cfg.IsMediad = isTruthy(v)
+		log.Printf("unifi.cfg: is_mediad %q -> %v", v, cfg.IsMediad)
+	}
 	if v := unifiCfg["CONTROLLER"]; v != "" {
 		if h, p, err := net.SplitHostPort(v); err == nil {
 			cfg.Host = h
@@ -2116,6 +2186,7 @@ func main() {
 	keyFile := flag.String("key", cfg.KeyFile, "client key path (PEM)")
 	noDiscovery := flag.Bool("no-discovery", false, "disable the UDP 10001 discovery responder")
 	ptz := flag.Bool("ptz", cfg.HasPTZ, "declare PTZ (pan/tilt/zoom) hardware capability -- only for units with a real motorized pan/tilt base")
+	mediad := flag.Bool("mediad", cfg.IsMediad, "enable advanced picture controls via the custom mediad rmm replacement (requires unifi.cfg IS_MEDIAD=yes and a running mediad)")
 	guid := flag.String("guid", "ffffffff-ffff-ffff-ffff-ffffffffffff", "device GUID advertised in discovery (default matches an unset/unadopted board.guid)")
 	deviceIDFile := flag.String("device-id-file", unifiPrefix+"/etc/unifi_client_go.device-id", "path to persist the stable per-device adoption UUID (device-id header / discovery 0x26 TLV)")
 	manageAwaitFile := flag.String("manage-await-file", manageAwaitFilePath, "path used to persist 'awaiting controller adopt push' state across a ResetToDefaults reboot (see manage.go)")
@@ -2130,6 +2201,11 @@ func main() {
 	cfg.CertFile = *certFile
 	cfg.KeyFile = *keyFile
 	cfg.HasPTZ = *ptz
+	cfg.IsMediad = *mediad
+
+	// One-shot visibility of the mediad state when IS_MEDIAD is set; the
+	// per-message gate (mediadEnabled) is what actually decides.
+	logMediadStatus()
 
 	// Mint a fresh mTLS cert/key now if missing (first boot after a factory
 	// reset, or a first-ever install). Must run before run() loads them.
