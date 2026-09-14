@@ -1,0 +1,3 @@
+[submodule "repos/yi-hack-Allwinner-v2"]
+	path = repos/yi-hack-Allwinner-v2
+	url = https://github.com/roleoroleo/yi-hack-Allwinner-v2.git

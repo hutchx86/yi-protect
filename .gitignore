@@ -1,0 +1,97 @@
+devices.md
+fw-download/
+fw_extract/
+fw_disassembly/
+fw-download/
+*.bin
+*.img
+*.key
+
+# Built Go binaries — source lives in *.go
+work/goclient/avclient_local
+work/goclient/unifi-avclient
+work/goclient/unifi_avclient_*
+archive/goclient_binaries_2026-09-11/
+
+# Downloaded material (toolchains, caches, upstream archives, controller dumps) — never in git
+file_downloads/
+
+# Archived backups (tarballs)
+archive/yicam_yihack_pre_cleanup_2026-09-05/
+
+# SD-card build output (assembled by work/build_sd.sh)
+work/build/
+work/sd_root/unifi/bin/
+work/sd_root/unifi/lib/
+work/sd_root/unifi/script/lower_half/
+work/unifi-uvc-emu-*.tar.gz
+work/yi-protect-*.tar.gz
+work/SHA256SUMS
+
+# Compiled build artifacts
+*.o
+*.d
+*.a
+*.so
+__pycache__/
+work/flv_bridge/unifi_flv_bridge
+work/talkback/rx/talkback_rx_opus_v1
+work/cpld_ctl/cpld_ctl
+archive/flvpush_pre_persistent_clock_2026-09-07/unifi_flv_bridge_last_known_good
+
+# local agent settings (may contain pasted credentials)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# ---------------------------------------------------------------------------
+# Public-repo hygiene (2026-09-14)
+# ---------------------------------------------------------------------------
+
+# Vendor/extracted assets: third-party copyrighted material. Kept locally for
+# reference only, never committed/published.
+fw_picked/
+
+# Console/controller dumps and captures (vendor ds.json, pcaps, trace logs).
+# Kept on disk only.
+/work/unifi/
+
+# Local-only third-party reference clones (not submodules).
+repos/allwinner-isp6xx/
+repos/lindenis-v833-softwinner/
+repos/tinalinux-package/
+# Vendored cross-toolchain (not tracked; clone manually for builds).
+repos/lindenis-v536-prebuilt/
+# Vendor Allwinner SDK (only used by the retired rmm_replacement prototype).
+repos/lindenis-v536-softwinner/
+# Research-only reference clones, no longer submodules.
+repos/onvif_simple_server/
+repos/unifi-guides/
+repos/finch/
+repos/pyunifiwire/
+repos/unifi-cam-proxy/
+
+# Local certs/keys: never publish (private keys, runtime-generated identities).
+*.pem
+work/goclient/*.key
+
+# Secret-bearing controller dumps (must never be committed).
+archive/cameras.json
+
+# Local working docs — kept on disk, never published.
+/CLAUDE.md
+/commands.md
+/implementation.md
+/llm_decisions.md
+/other.md
+/status.md
+/todo.md
+
+# Local archive of older notes/code — kept on disk, never published.
+/archive/
+
+# Internal binary/kernel reverse-engineering notes.
+/disassembly.md
+
+# Editor swap files
+*.swp
+*.swo

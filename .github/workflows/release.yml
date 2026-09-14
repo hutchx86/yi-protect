@@ -1,0 +1,61 @@
+name: release
+
+# Builds the SD-card package from source and attaches it to a GitHub release.
+#
+# Manual only — pushing a tag does NOT start a build. Run it from the Actions
+# tab, or:
+#   gh workflow run release.yml -f tag=v0.1.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/update (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-sd:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake wget patch build-essential
+
+      - name: Clone cross-toolchain
+        run: |
+          git clone --depth 1 \
+            https://github.com/lindenis-org/lindenis-v536-prebuilt \
+            repos/lindenis-v536-prebuilt
+
+      - name: Build SD package
+        run: sh work/build_sd.sh
+
+      - name: Checksum
+        run: cd work && sha256sum yi-protect-*.tar.gz > SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: |
+            work/yi-protect-*.tar.gz
+            work/SHA256SUMS
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yi-protect-sd
+          path: work/yi-protect-*.tar.gz

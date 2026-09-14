@@ -1,0 +1,71 @@
+yi-protect
+==========
+
+This project emulates a UniFi Protect camera so that generic Yi (and similar
+Allwinner-based) IP cameras can be adopted and used by a UniFi Protect
+controller.
+
+Copyright (C) 2026 yi-protect contributors.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+
+Third-party components
+----------------------
+
+This project is built on and redistributes/derives from the following
+upstream projects. Their licenses apply to their respective portions. When
+publishing or distributing a built SD-card image, make sure the corresponding
+license texts and source are provided.
+
+* yi-hack-Allwinner-v2  -- https://github.com/roleoroleo/yi-hack-Allwinner-v2
+  A large portion of the tooling, scripts and helper binaries (ipc_cmd,
+  set_tz_offset, imggrabber, dropbearmulti, libasound patched for audio-FIFO
+  support) originates here. Mixed licensing (MIT and GPLv3 among others) --
+  see that project.
+
+* roleo's rRTSPServer -- https://github.com/roleoroleo/yi-hack-Allwinner
+  The fshare shared-memory framing and the original video-push path were
+  reverse engineered with reference to this GPLv3 project. `unifi_flv_bridge`
+  is now an independent implementation (work/flv_bridge); neither rRTSPServer
+  nor LIVE555 is compiled into it any more.
+
+* FAAD2 -- https://github.com/knik0/faad2
+  AAC decoder used by unifi_flv_bridge (AAC -> Opus transcode) and talkback_rx
+  (ADTS mobile talkback). Copyright (C) 2003-2005 M. Bakker, Nero AG.
+  GPL-2.0-or-later, compatible with this project's GPL-3.0. Fetched and built
+  from source at build time; not redistributed in this repository.
+
+* libopus -- https://opus-codec.org/
+  Used by talkback_rx for RTP/Opus decode and by unifi_flv_bridge to encode the
+  transcoded FLV type-10 audio track. Copyright Xiph.Org. BSD-2-Clause.
+
+* gorilla/websocket -- https://github.com/gorilla/websocket
+  WebSocket transport for the Go avclient. Copyright (c) 2013 The Gorilla
+  WebSocket Authors. BSD-2-Clause.
+
+* alsa-lib -- https://www.alsa-project.org/
+  The patched `libasound.so.2` is derived from alsa-lib 1.1.4.1 (LGPL-2.1)
+  with the yi-hack audio-FIFO patch applied.
+
+* unifi-cam-proxy -- https://github.com/keshavdv/unifi-cam-proxy
+  Protocol/message-shape reference for the Go avclient. Copyright (c) 2023
+  Keshav Varma. MIT.
+
+* Dropbear SSH -- https://matt.ucc.asn.au/dropbear/dropbear.html
+  MIT-style license.
+
+
+Disclaimer
+----------
+
+This project is not affiliated with, endorsed by, or supported by Ubiquiti
+Inc. "UniFi" and "UniFi Protect" are trademarks of their respective owners.
+Reverse engineering was performed for interoperability. Use at your own risk.
