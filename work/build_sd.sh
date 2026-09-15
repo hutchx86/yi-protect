@@ -18,7 +18,8 @@
 #
 # Prerequisites (checked below):
 #   - git submodule: repos/yi-hack-Allwinner-v2
-#   - repos/lindenis-v536-prebuilt (cross-toolchain), cloned manually
+#   - generic armv7-a hard-float musl cross-toolchain (lindenis prebuilt),
+#     cloned to repos/toolchain-sunxi-musl or pointed at by TOOLCHAIN_DIR
 #   - cmake on PATH (libjpeg-turbo inside imggrabber):
 #       python3 -m pip install --user cmake
 #   - wget + network access to the upstream archives
@@ -36,7 +37,11 @@ BIN="$UNIFI/bin"
 LIB="$UNIFI/lib"
 ETC="$UNIFI/etc"
 YH="$ROOT/repos/yi-hack-Allwinner-v2"
-TCDIR="$ROOT/repos/lindenis-v536-prebuilt/gcc/linux-x86/arm/toolchain-sunxi-musl"
+# Generic armv7-a hard-float musl cross-toolchain. The same compiler ships in
+# the lindenis v536 and v833 prebuilt repos (byte-identical cc1/libc); point
+# TOOLCHAIN_DIR at a clone of either.
+TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$ROOT/repos/toolchain-sunxi-musl}"
+TCDIR="$TOOLCHAIN_DIR/gcc/linux-x86/arm/toolchain-sunxi-musl"
 TCBIN="$TCDIR/toolchain/bin"
 BUILD="$ROOT/work/build"
 YHB="$BUILD/yi-hack"
@@ -47,7 +52,7 @@ export PATH="$TCBIN:$HOME/.local/bin:$PATH"
 export STAGING_DIR="$TCDIR"
 
 echo "== prerequisites =="
-[ -x "$TCBIN/arm-openwrt-linux-gcc" ] || { echo "ERROR: toolchain missing ($TCBIN). Run: git submodule update --init --recursive"; exit 1; }
+[ -x "$TCBIN/arm-openwrt-linux-gcc" ] || { echo "ERROR: cross-toolchain missing ($TCBIN). Clone lindenis-org/lindenis-v536-prebuilt into $TOOLCHAIN_DIR (or set TOOLCHAIN_DIR)."; exit 1; }
 [ -d "$YH/src" ] || { echo "ERROR: yi-hack submodule missing ($YH). Run: git submodule update --init --recursive"; exit 1; }
 command -v cmake >/dev/null 2>&1 || { echo "ERROR: cmake not found (needed for imggrabber). Try: python3 -m pip install --user cmake"; exit 1; }
 

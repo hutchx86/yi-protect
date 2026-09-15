@@ -61,8 +61,10 @@ fw_picked/
 repos/allwinner-isp6xx/
 repos/lindenis-v833-softwinner/
 repos/tinalinux-package/
-# Vendored cross-toolchain (not tracked; clone manually for builds).
+# Vendored cross-toolchain (not tracked; cloned manually / by CI for builds).
+repos/toolchain-sunxi-musl/
 repos/lindenis-v536-prebuilt/
+repos/lindenis-v833-prebuilt/
 # Vendor Allwinner SDK (only used by the retired rmm_replacement prototype).
 repos/lindenis-v536-softwinner/
 # Research-only reference clones, no longer submodules.

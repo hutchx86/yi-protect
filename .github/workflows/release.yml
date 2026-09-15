@@ -38,7 +38,7 @@ jobs:
         run: |
           git clone --depth 1 \
             https://github.com/lindenis-org/lindenis-v536-prebuilt \
-            repos/lindenis-v536-prebuilt
+            repos/toolchain-sunxi-musl
 
       - name: Build SD package
         run: sh work/build_sd.sh
