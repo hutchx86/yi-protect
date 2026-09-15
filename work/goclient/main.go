@@ -752,6 +752,9 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 			} else {
 				log.Printf("mediad ctl: reset %s", r)
 			}
+			// mediad is back at its defaults; clear the delta so the
+			// controller's next settings object is applied in full.
+			mediadDeltaReapply()
 		}()
 		return false, c.send(c.genResponse("ResetIspSettings", m.MessageID, ispSettingsDefaults()))
 	case "ChangeIspSettings":
@@ -863,11 +866,12 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	case "ChangeBrightnessSettings":
 		// Legacy separate brightness message. Schema not captured; log the raw
 		// payload and run it through the same picture-control mapping so it
-		// reaches mediad when the advanced path is enabled.
+		// reaches mediad when the advanced path is enabled. It is a PARTIAL
+		// object, so it must not end the delta seed (see mediadApplyControls).
 		if raw, err := json.Marshal(m.Payload); err == nil {
 			log.Printf("ChangeBrightnessSettings raw payload: %s", raw)
 		}
-		go mediadApplyIspSettings(m.Payload)
+		go mediadApplyIspSettings(m.Payload, false)
 		if m.ResponseExpected {
 			return false, c.send(c.genResponse(fn, m.MessageID, nil))
 		}
@@ -1003,7 +1007,14 @@ func (c *Client) handleIspSettings(m Envelope) error {
 		log.Printf("ChangeIspSettings raw payload: %s", raw)
 	}
 
-	if mode, ok := m.Payload["irLedMode"].(string); ok {
+	// Night vision: when mediad is the producer it owns the applier (CPLD
+	// filter/LED + day/night ISP tuning) via the nightvision/night_lux/ir_led
+	// controls, so skip the local cpld_ctl/lux path and make sure the local lux
+	// poller is off -- otherwise the two would fight. With stock rmm, keep the
+	// historical local behavior (cpld_ctl + lux.go) unchanged.
+	if mediadEnabled() {
+		setIcrLuxMode(false, 0, false)
+	} else if mode, ok := m.Payload["irLedMode"].(string); ok {
 		level, _ := m.Payload["irLedLevel"].(float64)
 		switch mode {
 		case "manual":
@@ -1034,10 +1045,10 @@ func (c *Client) handleIspSettings(m Envelope) error {
 		}
 	}
 
-	// Forward the picture-control subset to mediad when the advanced path is
-	// live. Off the read loop: the dial is local, but a stalled mediad must
-	// never delay the controller's ack. See mediad_ctl.go for the mapping.
-	go mediadApplyIspSettings(m.Payload)
+	// Forward the picture + night-vision controls to mediad when the advanced
+	// path is live. Off the read loop: the dial is local, but a stalled mediad
+	// must never delay the controller's ack. See mediad_ctl.go for the mapping.
+	go mediadApplyIspSettings(m.Payload, true)
 
 	// Echo the controller's real values back, layered under
 	// ispSettingsDefaults() so uncovered fields get a sane fallback.
@@ -1132,28 +1143,22 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	}
 
 	if video, ok := m.Payload["video"].(map[string]interface{}); ok {
+		// Shutter exposure (Video Mode) and the HIGH bitrate -> mediad, in one
+		// delta-gated batch so the controller's periodic resend of the whole
+		// video object doesn't re-issue them. No-op unless the advanced path is
+		// live.
+		var vidControls []mediadCtl
+		vidControls = append(vidControls, shutterControls(video)...)
+		if v1, ok := video["video1"].(map[string]interface{}); ok {
+			if bps := videoStreamBitrate(v1); bps > 0 {
+				vidControls = append(vidControls, mediadCtl{key: "bitrate", value: clampBitrate(bps)})
+			}
+		}
+		go mediadApplyControls(vidControls, mediadVidDelta, true)
 		for _, key := range []string{"video1", "video2", "video3"} {
 			v, ok := video[key].(map[string]interface{})
 			if !ok {
 				continue
-			}
-			// Protect's bitrate -> mediad's HIGH encoder channel (capped at
-			// 3 Mbps). Only video1 (HIGH) is bitrate-controlled; the LOW
-			// encoder is deliberately locked at its fixed rate. No-op unless
-			// the mediad advanced path is live.
-			if key == "video1" {
-				if bps := videoStreamBitrate(v); bps > 0 {
-					go func(b int) {
-						if !mediadEnabled() {
-							return
-						}
-						if err := mediadSet("bitrate", clampBitrate(b)); err != nil {
-							log.Printf("mediad ctl: bitrate=%d: %v", b, err)
-						} else {
-							log.Printf("mediad ctl: bitrate=%d ok", b)
-						}
-					}(bps)
-				}
 			}
 			ser, ok := v["avSerializer"].(map[string]interface{})
 			if !ok {
@@ -1747,6 +1752,12 @@ func run(ctx context.Context) error {
 		micVolume: 100,
 	}
 
+	// Seed the mediad control delta on every fresh WSS connection: the
+	// controller's first ChangeIspSettings/ChangeVideoSettings after connect is
+	// the full object, and must be recorded rather than re-applied (it would
+	// otherwise burst mediad with every non-default field at once).
+	resetMediadDelta()
+
 	// Real hardware asks the controller to correct its clock before it
 	// introduces itself (see timesync.go). Without this the camera's clock
 	// stays at its firmware build date and the controller rejects every
@@ -1754,7 +1765,6 @@ func run(ctx context.Context) error {
 	if err := client.sendTimeSync(); err != nil {
 		log.Printf("initial timeSync send failed: %v", err)
 	}
-
 	if err := client.initAdoption(); err != nil {
 		return fmt.Errorf("send hello: %w", err)
 	}
