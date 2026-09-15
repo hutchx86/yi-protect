@@ -22,7 +22,8 @@ Third-party components
 
 This project is built on, and the compiled SD image redistributes, the
 following upstream projects. Their licenses apply to their respective
-portions. The release tarball ships this NOTICE, the LICENSE, and a
+portions. Full per-component license texts are in `licenses/`. Each release
+tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
 `SOURCES.txt` with the corresponding source locations and a written offer.
 
 * yi-hack-Allwinner-v2  -- https://github.com/roleoroleo/yi-hack-Allwinner-v2

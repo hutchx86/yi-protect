@@ -227,6 +227,8 @@ echo "   lower_half models: $(ls "$LHDIR" | tr '\n' ' ')"
 # ---------------------------------------------------------------------------
 cp "$ROOT/LICENSE" "$SD/LICENSE"
 cp "$ROOT/NOTICE"  "$SD/NOTICE"
+rm -rf "$SD/licenses"
+cp -R "$ROOT/licenses" "$SD/licenses"
 cat > "$SD/SOURCES.txt" <<'SOURCES_EOF'
 Sources for the binaries in this image
 ======================================
@@ -246,8 +248,10 @@ in LICENSE and NOTICE. Corresponding source for the GPL/LGPL components:
   https://opus-codec.org/                                       (BSD-2)
 * alsa-lib (libasound.so.2)           https://www.alsa-project.org/  (LGPL-2.1)
 
-Written offer: the maintainers will provide the complete corresponding source
-for any GPL/LGPL component in this image on request.
+Written offer: the yi-protect maintainers (https://github.com/hutchx86/yi-protect)
+will provide the complete corresponding source for any GPL/LGPL component in
+this image, on physical media or by download, to anyone who requests it. This
+offer is valid for at least three years from the date of distribution.
 SOURCES_EOF
 
 # ---------------------------------------------------------------------------
