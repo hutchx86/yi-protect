@@ -8,7 +8,10 @@
 # Sources, in order:
 #   1. $1 / $SUFFIX -- /backup/init.sh sets this stock model token before
 #      sourcing us (it also names home_${SUFFIX}m updates).
-#   2. MIPI sensor driver /sys/module/<sensor>_mipi, e.g. gc3003_mipi.
+#   2. MIPI sensor driver -- ONLY for a sensor unique to one model (gc3003).
+#      gc2053 is shared by h52ga and r35gb, so it must NOT pick a model here:
+#      mediad keys mounting orientation on the model, and a wrong model would
+#      leave an r35gb's 180-degree-rotated sensor unflipped (upside-down image).
 #   3. /backup/upgrade_conf OTA URL (.../familymonitor-<model>/).
 #   4. fallback default y623.
 
@@ -18,7 +21,10 @@ OUT="$UNIFI_PREFIX/etc/model_suffix"
 model="$1"
 [ -z "$model" ] && model="$SUFFIX"
 
-# 2. sensor driver -> model (only unambiguous mappings; $SUFFIX is preferred)
+# 2. sensor driver -> model, only for a sensor unique to ONE model. gc2053 is
+#    shared by h52ga and r35gb, so mapping it here can mislabel an r35gb as
+#    h52ga (mediad then skips r35gb's mirror+flip and the image is upside-down).
+#    Ambiguous sensors stay unmapped; step 3 (OTA URL) or the y623 default wins.
 if [ -z "$model" ]; then
     for k in /sys/module/*_mipi; do
         [ -e "$k" ] || continue
@@ -26,7 +32,7 @@ if [ -z "$model" ]; then
         s=${s%_mipi}      # gc3003
         case "$s" in
             gc3003) model=y623 ;;
-            gc2053) model=h52ga ;;
+            # gc2053: ambiguous (h52ga, r35gb) - leave unset
         esac
         [ -n "$model" ] && break
     done
