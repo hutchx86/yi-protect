@@ -64,9 +64,9 @@ controller. It is still a moving target — expect rough edges.
 
 Allwinner **sun8iw19**, ~60 MB RAM, BusyBox userland. Developed against:
 
-- Yi `y623`
-- Yi `h52ga`
-- Yi `r35gb`
+- Yi **Pro 2k** (`y623`; PCB silkscreen may read `y621`)
+- Yi **Dome Camera U** (Full HD) (`h52ga`)
+- Yi **Dome Guard** (`r35gb`)
 
 The Go client spoofs a **UVC G3 Instant** (`SAV532Q`) by default, the closest
 native product to these sensors.
