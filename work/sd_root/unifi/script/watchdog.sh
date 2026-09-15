@@ -69,9 +69,11 @@ while true; do
     # rmm. mediad can be restarted; stock rmm cannot, so its path reboots. A
     # missing mediad is restarted after 5 checks, and the box reboots if
     # restarts don't bring it back (a running-but-wedged encoder shows no video).
+    # Match the daemon binary path, not "mediad": the transient mediad.sh
+    # launcher line contains "mediad" too.
     IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
     if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
-        if alive 'mediad'; then
+        if alive "$UNIFI_PREFIX/bin/mediad"; then
             [ "$RMM_FAILS" -ne 0 ] && log "mediad present again (was $RMM_FAILS fails)"
             RMM_FAILS=0
             MEDIAD_RESTARTS=0
