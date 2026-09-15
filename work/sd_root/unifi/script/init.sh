@@ -3,8 +3,9 @@
 # Copyright (C) 2026 yi-protect contributors
 
 # UniFi Protect emulation -- app init, launched by lower_half_init.sh.
-# Starts the stock encoder (rmm) plus this project's stack (unifi_flv_bridge,
-# unifi_avclient_go, talkback_rx, watchdog), reading only unifi.cfg.
+# Starts the media encoder (mediad if installed, else stock rmm) plus this
+# project's stack (unifi_flv_bridge, unifi_avclient_go, talkback_rx, watchdog),
+# reading only unifi.cfg.
 
 UNIFI_PREFIX="/tmp/sd/unifi"
 CONF="$UNIFI_PREFIX/etc/unifi.cfg"
@@ -185,29 +186,41 @@ dropbearmulti dropbear -R $DBKEYS -B -p 0.0.0.0:22
 touch /tmp/audio_in_fifo.requested
 [ -p /tmp/audio_in_fifo ] || mknod /tmp/audio_in_fifo p
 
-# ---- stock media daemon (rmm) ----
-# rmm publishes /dev/shm/fshare_frame_buf, which unifi_flv_bridge reads below.
-cd /home/app
-sleep 2
-./rmm > /tmp/rmm.log 2>&1 &
-RMM_PID=$!
-# Keep rmm off the OOM killer's list (60MB box; snapshots are the victims).
-echo -1000 > "/proc/$RMM_PID/oom_score_adj" 2>/dev/null
-sleep 4
+# ---- media daemon: mediad if installed, else the stock rmm ----
+# Both publish /dev/shm/fshare_frame_buf, which unifi_flv_bridge reads below,
+# so nothing downstream changes. mediad is the sister project's drop-in
+# replacement for rmm; its installer sets unifi.cfg IS_MEDIAD=yes and drops in
+# bin/mediad + script/mediad.sh. Never run both at once: they share the ring
+# and its /dev/shm locks.
+IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
+if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
+    echo "init: starting mediad"
+    "$UNIFI_PREFIX/script/mediad.sh" start
+    sleep 2
+else
+    cd /home/app
+    sleep 2
+    ./rmm > /tmp/rmm.log 2>&1 &
+    RMM_PID=$!
+    # Keep rmm off the OOM killer's list (60MB box; snapshots are the victims).
+    echo -1000 > "/proc/$RMM_PID/oom_score_adj" 2>/dev/null
+    sleep 4
 
-# Kick the encoder ring so rmm actually starts producing (else the bridge sees
-# an empty ring forever). Same trick as the stock system.sh: a brief `cloud`
-# run fills the circular buffer, then `ipc_cmd -x` starts the stream.
-./cloud >/dev/null 2>&1 &
-IDX=$(hexdump -n 16 /dev/shm/fshare_frame_buf | awk 'NR==1{print $8}')
-N=0
-while [ "$IDX" = "0000" ] && [ "$N" -lt 60 ]; do
+    # Kick the encoder ring so rmm actually starts producing (else the bridge
+    # sees an empty ring forever). Same trick as the stock system.sh: a brief
+    # `cloud` run fills the circular buffer, then `ipc_cmd -x` starts the
+    # stream. (mediad produces on its own.)
+    ./cloud >/dev/null 2>&1 &
     IDX=$(hexdump -n 16 /dev/shm/fshare_frame_buf | awk 'NR==1{print $8}')
-    N=$((N+1))
-    sleep 0.2
-done
-killall -q cloud
-ipc_cmd -x
+    N=0
+    while [ "$IDX" = "0000" ] && [ "$N" -lt 60 ]; do
+        IDX=$(hexdump -n 16 /dev/shm/fshare_frame_buf | awk 'NR==1{print $8}')
+        N=$((N+1))
+        sleep 0.2
+    done
+    killall -q cloud
+    ipc_cmd -x
+fi
 
 # Re-arm the stock AI/motion flags on 11.x/12.x firmware so a reboot doesn't
 # lose persisted detection state (ipc_cmd is in our bin/).

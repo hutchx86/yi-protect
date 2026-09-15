@@ -4,8 +4,9 @@
 
 # UniFi Protect emulation -- process watchdog.
 # Polls every $WATCHDOG_INTERVAL seconds and restarts any dead project process.
-# rmm is watched too: 5 consecutive failures reboot the device (a dead encoder
-# can't be restarted, and the box otherwise sits "online" with no video).
+# The encoder is watched too: stock rmm gets 5 strikes then a reboot (a dead rmm
+# can't be restarted); mediad is restarted, and reboots only if 3 restarts fail
+# (the box otherwise sits "online" with no video).
 
 UNIFI_PREFIX="/tmp/sd/unifi"
 MODEL_SUFFIX=$(cat "$UNIFI_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
@@ -60,11 +61,36 @@ restart_talkback() {
 }
 
 RMM_FAILS=0
+MEDIAD_RESTARTS=0
 while true; do
     sleep "$INTERVAL"
 
-    # video encoder: stock rmm
-    if alive './rmm'; then
+    # video encoder: mediad (drop-in) when opted in and installed, else stock
+    # rmm. mediad can be restarted; stock rmm cannot, so its path reboots. A
+    # missing mediad is restarted after 5 checks, and the box reboots if
+    # restarts don't bring it back (a running-but-wedged encoder shows no video).
+    IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
+    if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
+        if alive 'mediad'; then
+            [ "$RMM_FAILS" -ne 0 ] && log "mediad present again (was $RMM_FAILS fails)"
+            RMM_FAILS=0
+            MEDIAD_RESTARTS=0
+        else
+            RMM_FAILS=$((RMM_FAILS+1))
+            log "mediad MISSING ($RMM_FAILS/5)"
+            if [ "$RMM_FAILS" -ge 5 ]; then
+                MEDIAD_RESTARTS=$((MEDIAD_RESTARTS+1))
+                if [ "$MEDIAD_RESTARTS" -le 3 ]; then
+                    log "restarting mediad (attempt $MEDIAD_RESTARTS/3)"
+                    "$UNIFI_PREFIX/script/mediad.sh" restart
+                    RMM_FAILS=0
+                else
+                    log "REBOOT: mediad missing after 3 restarts"
+                    /sbin/reboot
+                fi
+            fi
+        fi
+    elif alive './rmm'; then
         [ "$RMM_FAILS" -ne 0 ] && log "encoder present again (was $RMM_FAILS fails)"
         RMM_FAILS=0
     else
