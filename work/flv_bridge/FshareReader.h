@@ -35,8 +35,7 @@ public:
     // Return false to stop the reader.
     typedef bool (*EmitFn)(void *ctx, int frameType,
                            std::vector<unsigned char> &&payload,
-                           uint32_t counter, uint32_t time,
-                           uint16_t streamCounter);
+                           uint32_t time, uint16_t streamCounter);
 
     explicit FshareReader(int debug) : debug_(debug) {}
 
@@ -47,7 +46,6 @@ public:
 private:
     struct FrameHeader {
         uint32_t len;
-        uint32_t counter;
         uint32_t time;
         uint16_t type;
         uint16_t streamCounter;

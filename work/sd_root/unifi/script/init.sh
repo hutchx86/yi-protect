@@ -225,7 +225,7 @@ cd "$UNIFI_PREFIX/bin"
 
 # Video push daemon (reads rmm's shared-memory stream, pushes extendedFlv).
 AUDIO_OPT="-a $AUDIO"
-./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -s $AUDIO_OPT -p 554 > /tmp/unifi_flv_bridge.log 2>&1 &
+./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -s $AUDIO_OPT > /tmp/unifi_flv_bridge.log 2>&1 &
 
 # Adoption/control client; cert/key are self-generated on first boot. -ptz
 # declares the "ptz" featureFlag so Protect shows PTZ controls.

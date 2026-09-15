@@ -64,7 +64,6 @@ void emitOpusPacket(const unsigned char *data, size_t len) {
     output_frame of;
     of.frame.assign(data, data + len);
     of.time = 0;
-    of.counter = 0;
     if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueueOpus(FLV_CH_HIGH, of);
     if (flvPushActive(FLV_CH_LOW)) flvPushEnqueueOpus(FLV_CH_LOW, of);
     if (flvPushActive(FLV_CH_MED)) flvPushEnqueueOpus(FLV_CH_MED, of);
@@ -169,14 +168,13 @@ struct EmitCtx {
 };
 
 bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
-               uint32_t counter, uint32_t time, uint16_t streamCounter) {
+               uint32_t time, uint16_t streamCounter) {
+    (void)streamCounter;
     EmitCtx *ctx = (EmitCtx *)vctx;
 
     output_frame of;
     of.frame = std::move(payload);
     of.time = time;
-    of.counter = (int)streamCounter;
-    (void)counter;
 
     if (frameType == TYPE_HIGH) {
         if (ctx->resolution == RESOLUTION_HIGH || ctx->resolution == RESOLUTION_BOTH) {

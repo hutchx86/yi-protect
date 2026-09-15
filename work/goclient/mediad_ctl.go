@@ -558,21 +558,22 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	})
 	// Power-line frequency Auto/50/60 -> AW_MPI_ISP_SetFlicker, whose raw
 	// range is [0:disable, 1:50Hz, 2:60Hz, 3:auto]. Protect carries the
-	// power-line setting in `aeMode` ("auto"/"flick50"/"flick60"); auto maps to
-	// the stock default. The numeric `frequency` field (0=auto/1=50/2=60) is
-	// kept for a raw field if it ever appears.
-	add("frequency", "flicker", func(v float64) int {
-		switch int(v) {
-		case 1:
-			return 1 // 50 Hz
-		case 2:
-			return 2 // 60 Hz
-		default:
-			return 3 // auto
-		}
-	})
+	// power-line setting in `aeMode` ("auto"/"flick50"/"flick60"); the numeric
+	// `frequency` field (0=auto/1=50/2=60) is a fallback for a raw field if it
+	// ever appears. Only one source emits, so there is never a duplicate key.
 	if mode, ok := payload["aeMode"].(string); ok {
 		out = append(out, mediadCtl{"flicker", aeModeToFlicker(mode)})
+	} else {
+		add("frequency", "flicker", func(v float64) int {
+			switch int(v) {
+			case 1:
+				return 1 // 50 Hz
+			case 2:
+				return 2 // 60 Hz
+			default:
+				return 3 // auto
+			}
+		})
 	}
 	return out
 }

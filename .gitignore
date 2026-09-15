@@ -2,7 +2,6 @@ devices.md
 fw-download/
 fw_extract/
 fw_disassembly/
-fw-download/
 *.bin
 *.img
 *.key
@@ -24,7 +23,10 @@ work/build/
 work/sd_root/unifi/bin/
 work/sd_root/unifi/lib/
 work/sd_root/unifi/script/lower_half/
-work/unifi-uvc-emu-*.tar.gz
+# License files copied into the SD image by build_sd.sh (generated).
+work/sd_root/LICENSE
+work/sd_root/NOTICE
+work/sd_root/SOURCES.txt
 work/yi-protect-*.tar.gz
 work/SHA256SUMS
 
@@ -83,6 +85,7 @@ archive/cameras.json
 /implementation.md
 /llm_decisions.md
 /other.md
+/protocol.md
 /status.md
 /todo.md
 

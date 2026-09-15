@@ -87,7 +87,6 @@ int parseModel(const char *name);
 typedef struct {
     std::vector<unsigned char> frame;
     uint32_t time;
-    int counter;
 } output_frame;
 
 // A bounded FIFO protected by a mutex.

@@ -50,7 +50,7 @@ struct Seen { int type; std::vector<unsigned char> data; };
 static std::vector<Seen> g_seen;
 
 static bool emit(void *, int frameType, std::vector<unsigned char> &&payload,
-                 uint32_t, uint32_t, uint16_t sc) {
+                 uint32_t, uint16_t sc) {
     (void)sc;
     g_seen.push_back({frameType, std::move(payload)});
     return g_seen.size() < 4;

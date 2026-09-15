@@ -64,11 +64,13 @@ echo "== 1/6 preparing yi-hack build tree =="
 rm -rf "$YHB"
 mkdir -p "$YHB"
 git -C "$YH" archive HEAD src scripts | tar -x -C "$YHB"
-for p in "$ROOT"/work/patches/*.patch; do
-    [ -f "$p" ] || continue
-    echo "   applying $(basename "$p")"
-    patch -p1 -d "$YHB" -s < "$p"
-done
+if [ -d "$ROOT/work/patches" ]; then
+    for p in "$ROOT"/work/patches/*.patch; do
+        [ -f "$p" ] || continue
+        echo "   applying $(basename "$p")"
+        patch -p1 -d "$YHB" -s < "$p"
+    done
+fi
 grep -rl "/opt/yi/toolchain-sunxi-musl" "$YHB" 2>/dev/null | while read -r f; do
     sed -i "s|/opt/yi/toolchain-sunxi-musl|$TCDIR|g" "$f"
 done

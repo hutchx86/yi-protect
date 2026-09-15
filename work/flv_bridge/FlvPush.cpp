@@ -11,6 +11,7 @@
 #include <cstring>
 #include <strings.h>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 #include <string>
 #include <pthread.h>
@@ -113,6 +114,8 @@ const char *dumpPathFor(int channel, bool sync) {
 }
 
 void hexDump(int channel, const char *label, const unsigned char *data, size_t len, const char *pathOverride = nullptr) {
+    static const bool enabled = getenv("FLVPUSH_DUMP_RAW") != nullptr;
+    if (!enabled) return;
     const char *path = pathOverride ? pathOverride : dumpPathFor(channel, false);
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return;

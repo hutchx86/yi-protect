@@ -36,7 +36,6 @@ long long nowMs() {
 unsigned char *FshareReader::movePtr(unsigned char *p, long delta) const {
     p += delta;
     if (delta > 0 && p > buffer_ + size_) p -= (size_ - offset_);
-    if (delta < 0 && p < buffer_ + offset_) p += (size_ - offset_);
     return p;
 }
 
@@ -60,7 +59,6 @@ FshareReader::FrameHeader FshareReader::readHeader(const unsigned char *p) const
     std::memset(&fh, 0, sizeof(fh));
     copyFromRing(h, p, n);
     std::memcpy(&fh.len, h + 0, 4);
-    std::memcpy(&fh.counter, h + 4, 4);
     if (headerSize_ == 22 || headerSize_ == 24) {
         std::memcpy(&fh.time, h + 12, 4);
         std::memcpy(&fh.type, h + 16, 2);
@@ -94,8 +92,7 @@ int FshareReader::autodetectHeaderSize() const {
     if (marker == pps) return 0;
 
     long hs = (long)(pps - marker);
-    if (hs < 0) hs += (long)(size_ - offset_);
-    if (hs < 0 || hs > 40) return 0;
+    if (hs <= 0 || hs > 40) return 0;
     return (int)hs;
 }
 
@@ -245,8 +242,7 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             std::vector<unsigned char> linear((size_t)plen);
             copyFromRing(linear.data(), payload, (size_t)plen);
 
-            if (!emit(ctx, frameType, std::move(linear), h.counter, h.time, h.streamCounter)) {
-                endPrev = end;
+            if (!emit(ctx, frameType, std::move(linear), h.time, h.streamCounter)) {
                 munmap(buffer_, size_);
                 buffer_ = nullptr;
                 return;
