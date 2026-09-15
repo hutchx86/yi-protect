@@ -220,6 +220,35 @@ cp "$LHDIR/y623.sh" "$LHDIR/default.sh" 2>/dev/null || true
 echo "   lower_half models: $(ls "$LHDIR" | tr '\n' ' ')"
 
 # ---------------------------------------------------------------------------
+# 6c. License texts + source offer: the image redistributes compiled GPL/LGPL
+#     components, so ship the texts and a pointer to their source.
+# ---------------------------------------------------------------------------
+cp "$ROOT/LICENSE" "$SD/LICENSE"
+cp "$ROOT/NOTICE"  "$SD/NOTICE"
+cat > "$SD/SOURCES.txt" <<'SOURCES_EOF'
+Sources for the binaries in this image
+======================================
+
+This SD image redistributes compiled third-party components. License texts are
+in LICENSE and NOTICE. Corresponding source for the GPL/LGPL components:
+
+* yi-hack-Allwinner-v2 (ipc_cmd/libipc, ipc_multiplex.so, imggrabber,
+  set_tz_offset, dropbearmulti, patched alsa-lib)
+  https://github.com/roleoroleo/yi-hack-Allwinner-v2            (GPL-3.0 / MIT)
+* FFmpeg (static in imggrabber)       https://ffmpeg.org/       (LGPL-2.1)
+* libjpeg-turbo (static in imggrabber)
+  https://github.com/libjpeg-turbo/libjpeg-turbo                (BSD-3/IJG)
+* FAAD2 (static in unifi_flv_bridge, talkback_rx)
+  https://github.com/knik0/faad2                               (GPL-2.0-or-later)
+* libopus (static in unifi_flv_bridge, talkback_rx)
+  https://opus-codec.org/                                       (BSD-2)
+* alsa-lib (libasound.so.2)           https://www.alsa-project.org/  (LGPL-2.1)
+
+Written offer: the maintainers will provide the complete corresponding source
+for any GPL/LGPL component in this image on request.
+SOURCES_EOF
+
+# ---------------------------------------------------------------------------
 # 7. Single downloadable package: the whole SD layout in one tarball. Extract
 #    its contents to the SD card root and boot.
 # ---------------------------------------------------------------------------

@@ -99,3 +99,16 @@ archive/cameras.json
 *.pem
 *.crt
 .env
+
+# Credentials / keys that must never be committed.
+.ssh/
+id_rsa*
+id_ed25519*
+known_hosts
+*.p12
+*.pfx
+*.jks
+
+# WireGuard configs.
+wg*.conf
+*.wg.conf

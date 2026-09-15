@@ -88,8 +88,8 @@ low-level daemons (sensor/ISP/encoder) in place.
 | boot scripts | shell | `init.sh`, `watchdog.sh`, network/identity detection, model auto-detection. |
 
 Protocol findings (wire formats, message shapes, discovery TLVs, the
-`extendedFlv` trailer clock, talkback framing) live in
-[`protocol.md`](protocol.md).
+`extendedFlv` trailer clock, talkback framing) come from reverse engineering
+done for interoperability and are not published in this repository.
 
 ## Install (prebuilt)
 
@@ -209,8 +209,11 @@ attribution is in [`NOTICE`](NOTICE).
   Protect" are trademarks of Ubiquiti Inc.
 - **No Ubiquiti firmware or binaries are distributed here.** Vendor firmware,
   extracted root filesystems and stock scripts/watermark bitmaps are not in this
-  repository; supply your own. This repo includes only our own source, scripts
-  and documentation, plus GPL-3.0-compatible libraries (see [`NOTICE`](NOTICE)).
+  repository; supply your own. This repo is our own source, scripts and
+  documentation, plus a few helper scripts vendored from
+  [yi-hack-Allwinner-v2](https://github.com/roleoroleo/yi-hack-Allwinner-v2)
+  (`unifi/script/ethdhcp.sh`, `wifidhcp.sh`) and the BSD-licensed libopus
+  headers; see [`NOTICE`](NOTICE).
 - Intended for interoperability and personal use on hardware you own. Reverse
   engineering may be restricted in your jurisdiction; you are responsible for
   how you use it.
@@ -232,6 +235,8 @@ Only proceed if you understand the risks and are working on hardware you own.
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE). Every linked library is GPL-3.0-compatible
-(FAAD2 GPL-2.0-or-later, libopus BSD-2-Clause), so precompiled SD images may be
-redistributed under the GPL.
+GPL-3.0. See [LICENSE](LICENSE). The compiled SD image bundles GPL/LGPL
+components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later, LGPL-2.1
+libasound, and FFmpeg/libjpeg-turbo statically linked into `imggrabber`); the
+release tarball includes `LICENSE`, `NOTICE` and `SOURCES.txt` with the
+corresponding source locations and a written offer. See [`NOTICE`](NOTICE).

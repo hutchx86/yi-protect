@@ -20,16 +20,22 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 Third-party components
 ----------------------
 
-This project is built on and redistributes/derives from the following
-upstream projects. Their licenses apply to their respective portions. When
-publishing or distributing a built SD-card image, make sure the corresponding
-license texts and source are provided.
+This project is built on, and the compiled SD image redistributes, the
+following upstream projects. Their licenses apply to their respective
+portions. The release tarball ships this NOTICE, the LICENSE, and a
+`SOURCES.txt` with the corresponding source locations and a written offer.
 
 * yi-hack-Allwinner-v2  -- https://github.com/roleoroleo/yi-hack-Allwinner-v2
-  A large portion of the tooling, scripts and helper binaries (ipc_cmd,
-  set_tz_offset, imggrabber, dropbearmulti, libasound patched for audio-FIFO
-  support) originates here. Mixed licensing (MIT and GPLv3 among others) --
-  see that project.
+  The tooling, scripts and helper binaries (ipc_cmd, ipc_multiplex.so,
+  imggrabber, set_tz_offset, dropbearmulti, and alsa-lib patched for audio-FIFO
+  support) are built from this tree at build time. Mixed licensing: the repo
+  `LICENSE` file is MIT, but several components are GPL-3.0 (notably ipc_cmd /
+  libipc and imggrabber) -- see that project. `set_tz_offset` ships no license
+  header in its source.
+
+* libipc -- https://github.com/TheCrypt0/libipc
+  Upstream library that yi-hack's `ipc_cmd` and `ipc_multiplex.so` derive from.
+  GPL-3.0.
 
 * roleo's rRTSPServer -- https://github.com/roleoroleo/yi-hack-Allwinner
   The fshare shared-memory framing and the original video-push path were
@@ -54,6 +60,14 @@ license texts and source are provided.
 * alsa-lib -- https://www.alsa-project.org/
   The patched `libasound.so.2` is derived from alsa-lib 1.1.4.1 (LGPL-2.1)
   with the yi-hack audio-FIFO patch applied.
+
+* FFmpeg -- https://ffmpeg.org/
+  Statically linked into the distributed `imggrabber` (still capture) by
+  yi-hack's snapshot module. LGPL-2.1.
+
+* libjpeg-turbo -- https://github.com/libjpeg-turbo/libjpeg-turbo
+  Statically linked into the distributed `imggrabber` for JPEG encoding.
+  BSD-3-Clause / IJG.
 
 * unifi-cam-proxy -- https://github.com/keshavdv/unifi-cam-proxy
   Protocol/message-shape reference for the Go avclient. Copyright (c) 2023
