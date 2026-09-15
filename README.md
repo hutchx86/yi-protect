@@ -214,6 +214,16 @@ attribution is in [`NOTICE`](NOTICE).
   [yi-hack-Allwinner-v2](https://github.com/roleoroleo/yi-hack-Allwinner-v2)
   (`unifi/script/ethdhcp.sh`, `wifidhcp.sh`) and the BSD-licensed libopus
   headers; see [`NOTICE`](NOTICE).
+- **This project exists to ensure interoperability between Unifi Protect and
+  other cameras.** This interoperability goal is recognised under EU law:
+  Directive 2009/24/EC (the Software Directive), **Art. 6**, which permits
+  decompilation and reverse engineering to achieve interoperability with an
+  independently created program without the rightsholder's authorisation, and
+  **Art. 5(3)**, which permits observing, studying or testing the functioning of
+  the program to determine its underlying ideas and principles; Regulation (EU)
+  2024/903 (the Interoperable Europe Act); and Regulation (EU) 2022/1925 (the
+  Digital Markets Act), Art. 6(7), which imposes interoperability obligations on
+  gatekeepers.
 - Intended for interoperability and personal use on hardware you own. Reverse
   engineering may be restricted in your jurisdiction; you are responsible for
   how you use it.
