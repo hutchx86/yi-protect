@@ -43,10 +43,22 @@ controller. It is still a moving target — expect rough edges.
   `extendedFlv` and pushed over a plain TCP socket. Low latency; no RTSP hop.
 - **Audio** — the camera's native AAC plus a transcoded Opus track for web live.
   The mic volume follows Protect's "Microphone Level" via the codec capture gain
-  (the same linear curve real hardware uses); the slider minimum silences it.
+  (the same linear curve real hardware uses). Dragging the slider to its minimum
+  (**1%**) intentionally mutes the mic: the capture gain drops to zero and the
+  bridge substitutes silent AAC/Opus frames, so the audio track **keeps flowing**
+  (silenced) rather than the camera being told to stop sending audio.
 - **Snapshots**, **motion events**, **PTZ** (models with a motorized base), and
   rudimentary **IR / night-vision** control.
 - **Two-way audio (talkback)** — from the Protect mobile/web app to the speaker.
+- **SSH access** — a Dropbear server serving two independent accounts: `root`
+  (admin) and `ubnt` (the account native Protect cameras expose, kept separate
+  so a controller credential rotation cannot lock out root). See
+  [Access](#access-ssh).
+- **Optional Yi cloud** — the `unifi.cfg` key `YI_CLOUD` also runs the stock Yi
+  cloud daemons (`cloud`, `p2p_tnp`, `oss`) so the camera still appears in the
+  YI app alongside Protect. It is **on by default**, except on `mediad` builds
+  (`IS_MEDIAD=yes`) where it defaults off; set `yes`/`no` to force it. Off =
+  local-only, no Yi cloud traffic.
 - **Self-contained SD deploy** — everything builds from source into
   `/tmp/sd/unifi/`; no yi-hack install required at runtime.
 - **One image, any supported camera** — the model is auto-detected at boot, so
@@ -144,6 +156,11 @@ To update later, overwrite the card contents with a newer package and reboot.
 The stock camera has no AP-mode provisioning of its own (the Yi app does that),
 so yi-protect sets WiFi from a credentials file on the card:
 
+> **Untested on hardware.** The conf-partition write is unit-tested against a
+> synthetic mtd7 (offsets, padding, idempotency, validation), but a real
+> first-boot association has not been validated yet — WiFi provisioning still
+> needs an on-camera test.
+
 - **First boot (fresh card):** rename `Factory/configure_wifi.cfg.ori` to
   `Factory/configure_wifi.cfg`, edit `wifi_ssid=` / `wifi_psk=`, then power on.
   The installer writes the credentials, then reboots once.
@@ -185,7 +202,7 @@ work/release.sh
 ```
 
 Config lives in `work/sd_root/unifi/etc/unifi.cfg` (resolution, audio, optional
-static controller override, PTZ auto-detect).
+static controller override, PTZ auto-detect, optional Yi cloud).
 
 ## Access (SSH)
 
@@ -232,6 +249,12 @@ binaries (`ipc_cmd`, `dropbear`, `imggrabber`, the patched `alsa-lib`) are all
 built from his tree. The `fshare` shared-memory framing was reverse-engineered
 with reference to his **rRTSPServer**, and the on-device boot flow follows the
 yi-hack pattern. Thank you.
+
+**A special thank you to [dciancu](https://github.com/dciancu).** His
+[**unifi-protect-unvr-docker-arm64**](https://github.com/dciancu/unifi-protect-unvr-docker-arm64)
+was the original inspiration and motivation for this project — it demonstrated
+running UniFi Protect off Ubiquiti hardware — and his published findings
+informed the early reverse engineering. Thank you.
 
 Further thanks: [unifi-cam-proxy](https://github.com/keshavdv/unifi-cam-proxy)
 (control-protocol reference), [FAAD2](https://github.com/knik0/faad2) (AAC),

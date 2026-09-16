@@ -27,7 +27,12 @@ if [ -z "$PTZ" ]; then
         *) PTZ=no ;;
     esac
 fi
-YI_CLOUD=$(get_cfg YI_CLOUD); [ -z "$YI_CLOUD" ] && YI_CLOUD=no
+YI_CLOUD=$(get_cfg YI_CLOUD)
+if [ -z "$YI_CLOUD" ]; then
+    # Default on, except on mediad builds (IS_MEDIAD=yes): mediad replaces the
+    # stock encoder daemon and the Yi cloud is not run alongside it.
+    if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
+fi
 
 alive() {
     ps | grep -v grep | grep -q "$1"
