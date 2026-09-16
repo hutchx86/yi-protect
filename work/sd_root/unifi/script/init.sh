@@ -33,7 +33,12 @@ if [ -z "$PTZ" ]; then
     esac
 fi
 WATCHDOG_INTERVAL=$(get_cfg WATCHDOG_INTERVAL); [ -z "$WATCHDOG_INTERVAL" ] && WATCHDOG_INTERVAL=10
-YI_CLOUD=$(get_cfg YI_CLOUD); [ -z "$YI_CLOUD" ] && YI_CLOUD=no
+YI_CLOUD=$(get_cfg YI_CLOUD)
+if [ -z "$YI_CLOUD" ]; then
+    # Default on, except on mediad builds (IS_MEDIAD=yes): mediad replaces the
+    # stock encoder daemon and the Yi cloud is not run alongside it.
+    if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
+fi
 
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/home/base/tools:/home/app/localbin:/home/base:$UNIFI_PREFIX/bin
 export LD_LIBRARY_PATH=/lib:/usr/lib:/home/lib:/home/qigan/lib:/home/app/locallib:/tmp/sd:$UNIFI_PREFIX/lib
