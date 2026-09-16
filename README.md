@@ -42,6 +42,8 @@ controller. It is still a moving target — expect rough edges.
 - **Live video & recording** — the stock encoder's output is muxed into UniFi's
   `extendedFlv` and pushed over a plain TCP socket. Low latency; no RTSP hop.
 - **Audio** — the camera's native AAC plus a transcoded Opus track for web live.
+  The mic volume follows Protect's "Microphone Level" via the codec capture gain
+  (the same linear curve real hardware uses); the slider minimum silences it.
 - **Snapshots**, **motion events**, **PTZ** (models with a motorized base), and
   rudimentary **IR / night-vision** control.
 - **Two-way audio (talkback)** — from the Protect mobile/web app to the speaker.
@@ -137,6 +139,28 @@ card works in any supported camera. SSH is at `root@<camera-ip>`
 
 To update later, overwrite the card contents with a newer package and reboot.
 
+## WiFi provisioning
+
+The stock camera has no AP-mode provisioning of its own (the Yi app does that),
+so yi-protect sets WiFi from a credentials file on the card:
+
+- **First boot (fresh card):** rename `Factory/configure_wifi.cfg.ori` to
+  `Factory/configure_wifi.cfg`, edit `wifi_ssid=` / `wifi_psk=`, then power on.
+  The installer writes the credentials, then reboots once.
+- **Later:** rename `unifi/etc/configure_wifi.cfg.example` to
+  `configure_wifi.cfg`, edit it, drop it on the card, and reboot. `init.sh`
+  applies it, reboots once, and renames it `.applied`.
+
+Format is plain `KEY=value` (spaces allowed, no quotes, no backslash, max 63
+chars); see the example file. `unifi/script/configure-wifi.sh` writes the SSID at
+offset 28 and the PSK at offset 92 of the conf partition (`/dev/mtdblock7`),
+after backing it up to the card. That is the same partition the stock WiFi stack
+reads, so it works without the Yi app or cloud.
+
+An on-camera **hotspot / captive-portal flow is not yet possible**: the Yi
+firmware ships no `hostapd`, no `udhcpd`, and a `wpa_supplicant` built without AP
+mode. It needs a cross-built AP daemon (see `todo.md`).
+
 ## Build from source
 
 The `repos/yi-hack-Allwinner-v2` submodule and the ~1.2 GB cross-toolchain are
@@ -165,13 +189,26 @@ static controller override, PTZ auto-detect).
 
 ## Access (SSH)
 
-A Dropbear SSH server starts on boot (`:22`), with per-camera host keys generated
-on first boot. Log in as `root` using the camera's stock Yi password (default
-`admin`, the same one the stock firmware / YI app uses):
+A single Dropbear SSH server starts on boot (`:22`), with per-camera host keys
+generated on first boot. It serves two independent accounts:
+
+| user | password | purpose |
+|---|---|---|
+| `root` | `unifi.cfg` `SSH_PASSWORD` (default `admin`) | human/admin login |
+| `ubnt` | `unifi.cfg` `SSH_UBUNT_PASSWORD` (default `ubnt`) | account native Protect cameras expose; managed by the controller |
 
 ```
-ssh root@<camera-ip>
+ssh root@<camera-ip>        # admin
+ssh ubnt@<camera-ip>        # Protect
 ```
+
+At boot `init.sh` hashes each password to the one scheme the camera's libc
+supports (MD5-crypt, `$1$`) and installs it in `/etc/shadow`, replacing the stock
+blank root password. Edit `SSH_PASSWORD` / `SSH_UBUNT_PASSWORD` in
+`unifi/etc/unifi.cfg` on the card and reboot to change them; an empty
+`SSH_PASSWORD` keeps the stock blank root login. Keeping `ubnt`'s credential
+separate from root's means a controller credential rotation cannot lock out the
+root login (the controller push is not applied yet -- `todo.md` item 26).
 
 ## Backup & recovery
 
@@ -245,8 +282,13 @@ Only proceed if you understand the risks and are working on hardware you own.
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE). The compiled SD image bundles GPL/LGPL
-components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later, LGPL-2.1
+AGPL-3.0-or-later. See [LICENSE](LICENSE). This program can be run as a network
+service, so section 13 of the AGPL requires anyone running a modified version
+to offer its corresponding source to users interacting with it over a network.
+The project's own code is AGPL-3.0-or-later; the two vendored yi-hack scripts
+(`unifi/script/ethdhcp.sh`, `wifidhcp.sh`) remain GPL-3.0-or-later and are
+combined with it under GPLv3/AGPLv3 section 13. The compiled SD image bundles
+GPL/LGPL components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later, LGPL-2.1
 libasound, and FFmpeg/libjpeg-turbo statically linked into `imggrabber`); the
 release tarball includes `LICENSE`, `NOTICE` and `SOURCES.txt` with the
 corresponding source locations and a written offer. See [`NOTICE`](NOTICE).

@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
 # One-time install on a stock camera: patch /backup/init.sh to source
@@ -45,7 +45,7 @@ EOF
 cp -f /tmp/init.sh "$INIT"
 sync
 
-if cmp -s /tmp/init.sh "$INIT"; then
+if [ "$(md5sum < /tmp/init.sh)" = "$(md5sum < "$INIT")" ]; then
     echo "install-backup-hook: done -- reboot to boot from the SD card"
 else
     echo "install-backup-hook: ERROR: write to $INIT failed (backup at ${INIT}.unifi-orig)"
