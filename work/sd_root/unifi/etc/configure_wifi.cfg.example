@@ -1,0 +1,16 @@
+# WiFi credentials for yi-protect, applied at boot by init.sh + configure-wifi.sh.
+#
+# To provision: rename this file to configure_wifi.cfg (same directory), edit the
+# two lines below, then reboot the camera. init.sh writes them into the camera's
+# conf partition (mtd7) and reboots once so the stock WiFi stack associates.
+# The file is renamed to configure_wifi.cfg.applied afterwards; to re-provision,
+# rename it back, edit, and reboot.
+#
+# Rules (same as yi-hack):
+#   - one value per line, KEY=value, no quotes around the value
+#   - spaces in the SSID/PSK are allowed
+#   - do not use a backslash
+#   - WPA2 max length is 63 characters
+
+wifi_ssid=My Network
+wifi_psk=my-password

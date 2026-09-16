@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
 // Lux-threshold "Custom" IR mode. The Protect UI's night-vision control is

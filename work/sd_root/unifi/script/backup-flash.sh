@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
 # Dump every raw MTD partition to the SD card for emergency recovery, before
@@ -47,7 +47,7 @@ while read -r dev size erasesize name; do
         ok=$((ok + 1))
         continue
     fi
-    log "dumping $num ($part, $want bytes) -> $(basename "$out")"
+    log "dumping $num ($part, $want bytes) -> ${out##*/}"
     # mtdchar read() fails on this kernel; the mtdblock view reads cleanly.
     dd if="/dev/mtdblock$blk" of="$out" bs=4096 2>/dev/null
     got=$(ls -l "$out" 2>/dev/null | awk '{print $5}')
@@ -86,7 +86,10 @@ cat > "$DIR/restore.sh" <<'EOF'
 set -e
 [ -n "$1" ] || { echo "usage: $0 <mtdN>"; sed -n '3,6p' /proc/mtd; exit 2; }
 part="$1"
-file=$(ls "$(dirname "$0")/${part}"_*.bin 2>/dev/null | head -1)
+d=${0%/*}; [ "$d" = "$0" ] && d=.
+set -- "$d/${part}"_*.bin
+file=$1
+[ -e "$file" ] || file=""
 [ -n "$file" ] || { echo "no dump for $part"; exit 2; }
 
 # Refuse if the partition is currently mounted.

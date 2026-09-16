@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 
 # UniFi Protect emulation -- process watchdog.
@@ -27,6 +27,7 @@ if [ -z "$PTZ" ]; then
         *) PTZ=no ;;
     esac
 fi
+YI_CLOUD=$(get_cfg YI_CLOUD); [ -z "$YI_CLOUD" ] && YI_CLOUD=no
 
 alive() {
     ps | grep -v grep | grep -q "$1"
@@ -107,4 +108,12 @@ while true; do
     alive 'unifi_flv_bridge' || restart_flv_bridge
     alive 'unifi_avclient_go' || restart_avclient
     alive 'talkback_rx' || restart_talkback
+
+    # Yi cloud daemons (YI_CLOUD=yes only). Restart only the one that died, so a
+    # single failure does not spawn duplicate P2P/storage sessions.
+    if [ "$YI_CLOUD" = "yes" ]; then
+        alive 'p2p_tnp' || ( cd /home/app; ./p2p_tnp >/dev/null 2>&1 & )
+        alive 'oss'     || ( cd /home/app; ./oss     >/dev/null 2>&1 & )
+        alive 'cloud'   || ( cd /home/app; ./cloud   >/dev/null 2>&1 & )
+    fi
 done

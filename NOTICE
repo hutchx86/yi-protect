@@ -8,13 +8,18 @@ controller.
 Copyright (C) 2026 yi-protect contributors.
 
 This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
+the terms of the GNU Affero General Public License as published by the Free Software
 Foundation, either version 3 of the License, or (at your option) any later
 version. See the LICENSE file for the full text.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+
+Because this program can be provided as a network service, section 13 of the
+AGPL requires that users who interact with a modified version over a network be
+offered its Corresponding Source.
 
 
 Third-party components
@@ -32,7 +37,10 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
   support) are built from this tree at build time. Mixed licensing: the repo
   `LICENSE` file is MIT, but several components are GPL-3.0 (notably ipc_cmd /
   libipc and imggrabber) -- see that project. `set_tz_offset` ships no license
-  header in its source.
+  header in its source. The vendored `unifi/script/ethdhcp.sh` and
+  `wifidhcp.sh` are derivatives of this tree; they remain GPL-3.0-or-later and
+  are combined into this AGPL-3.0-or-later work under GPLv3 section 13 /
+  AGPLv3 section 13.
 
 * libipc -- https://github.com/TheCrypt0/libipc
   Upstream library that yi-hack's `ipc_cmd` and `ipc_multiplex.so` derive from.
@@ -47,7 +55,7 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
 * FAAD2 -- https://github.com/knik0/faad2
   AAC decoder used by unifi_flv_bridge (AAC -> Opus transcode) and talkback_rx
   (ADTS mobile talkback). Copyright (C) 2003-2005 M. Bakker, Nero AG.
-  GPL-2.0-or-later, compatible with this project's GPL-3.0. Fetched and built
+  GPL-2.0-or-later, compatible with this project's AGPL-3.0. Fetched and built
   from source at build time; not redistributed in this repository.
 
 * libopus -- https://opus-codec.org/

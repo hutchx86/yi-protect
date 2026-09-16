@@ -1,10 +1,11 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
 # Build the SD-card package and, optionally, publish it as a GitHub release.
-# Also bundles the corresponding source for the redistributed GPL/LGPL
-# components, so the binary release meets its source obligation.
+# Also bundles the corresponding source for this AGPL project and the
+# redistributed GPL/LGPL components, so the release meets its source
+# obligations.
 #
 #   work/release.sh                 # build; print artifact + checksum
 #   PUBLISH=1 work/release.sh       # build; gh release create
@@ -18,9 +19,9 @@ REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
 PKG="$ROOT/work/yi-protect-$REV.tar.gz"
 [ -f "$PKG" ] || { echo "ERROR: expected $PKG missing"; exit 1; }
 
-# Complete corresponding source for the GPL/LGPL components in the image, plus
-# this project's own source at this revision. Anything not captured here is
-# covered by the written offer in the image's SOURCES.txt.
+# Complete corresponding source for this AGPL project and the GPL/LGPL
+# components in the image. Anything not captured here is covered by the written
+# offer in the image's SOURCES.txt.
 SRC="$ROOT/work/yi-protect-$REV-src.tar.gz"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT INT TERM

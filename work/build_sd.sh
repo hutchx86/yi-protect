@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
 # Build the self-contained SD-card layout for the UniFi Protect emulation.
@@ -161,6 +161,19 @@ echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv
 "$CC" -O2 -o "$BIN/cpld_ctl" "$ROOT/work/cpld_ctl/cpld_ctl.c"
 "$STRIP" "$BIN/cpld_ctl"
 
+# MD5-crypt hashing helper for unifi.cfg SSH_PASSWORD: the camera libc has no
+# mkpasswd/cryptpw applet and no openssl, so init.sh needs our own crypt() call.
+"$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/work/mkpasswd/mkpasswd.c"
+"$STRIP" "$BIN/mkpasswd"
+
+# ALSA capture-gain setter: maps the controller's mic volume onto the codec
+# capture element (see mixer_set.c), the analog of a real camera's UBNT_CVOLUME
+# write. Built against the alsa-lib from step 2; loads the shipped libasound.so.2.
+ALSASRC=$(printf '%s\n' "$YHB"/src/alsa-lib/alsa-lib-* | sed -n '1p')
+"$CC" -O2 -Wall -o "$BIN/mixer_set" "$ROOT/work/mixer_set/mixer_set.c" \
+    -I"$ALSASRC/include" "$YHB/src/alsa-lib/_install/lib/libasound.so.2" -lpthread
+"$STRIP" "$BIN/mixer_set"
+
 FAAD2="$BUILD/faad2-$FAAD2_VER"
 
 # Our FlvPush/FshareReader bridge; FAAD2/OPUS feed its AAC->Opus transcode.
@@ -227,8 +240,9 @@ cp "$LHDIR/y623.sh" "$LHDIR/default.sh" 2>/dev/null || true
 echo "   lower_half models: $(ls "$LHDIR" | tr '\n' ' ')"
 
 # ---------------------------------------------------------------------------
-# 6c. License texts + source offer: the image redistributes compiled GPL/LGPL
-#     components, so ship the texts and a pointer to their source.
+# 6c. License texts + source offer: the image contains this project's own AGPL
+#     code plus compiled GPL/LGPL third-party components, so ship the texts and
+#     a pointer to their source.
 # ---------------------------------------------------------------------------
 cp "$ROOT/LICENSE" "$SD/LICENSE"
 cp "$ROOT/NOTICE"  "$SD/NOTICE"
@@ -238,8 +252,11 @@ cat > "$SD/SOURCES.txt" <<'SOURCES_EOF'
 Sources for the binaries in this image
 ======================================
 
-This SD image redistributes compiled third-party components. License texts are
-in LICENSE and NOTICE. Corresponding source for the GPL/LGPL components:
+This SD image contains this project's own code (AGPL-3.0-or-later) and
+redistributes compiled third-party components. License texts are in LICENSE and
+NOTICE. The project's own source is at
+https://github.com/hutchx86/yi-protect . Corresponding source for the bundled
+GPL/LGPL components:
 
 * yi-hack-Allwinner-v2 (ipc_cmd/libipc, ipc_multiplex.so, imggrabber,
   set_tz_offset, dropbearmulti, patched alsa-lib)

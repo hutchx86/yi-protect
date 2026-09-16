@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 
 # UniFi Protect emulation -- app init, launched by lower_half_init.sh.
@@ -33,6 +33,7 @@ if [ -z "$PTZ" ]; then
     esac
 fi
 WATCHDOG_INTERVAL=$(get_cfg WATCHDOG_INTERVAL); [ -z "$WATCHDOG_INTERVAL" ] && WATCHDOG_INTERVAL=10
+YI_CLOUD=$(get_cfg YI_CLOUD); [ -z "$YI_CLOUD" ] && YI_CLOUD=no
 
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/home/base/tools:/home/app/localbin:/home/base:$UNIFI_PREFIX/bin
 export LD_LIBRARY_PATH=/lib:/usr/lib:/home/lib:/home/qigan/lib:/home/app/locallib:/tmp/sd:$UNIFI_PREFIX/lib
@@ -154,6 +155,24 @@ if mount 2>/dev/null | grep -q "/tmp/sd "; then
     echo 15 > /proc/sys/vm/swappiness 2>/dev/null
 fi
 
+# ---- WiFi provisioning (SD config) ----
+# On an already-installed card, drop unifi/etc/configure_wifi.cfg (wifi_ssid=/
+# wifi_psk=) and reboot: this writes the credentials into the conf partition
+# (mtd7) and reboots once so the stock stack associates. First-boot
+# provisioning is done by Factory/config.sh, because init.sh does not run on the
+# install boot. The file is renamed to *.applied afterwards so it is one-shot;
+# edit + rename it back to re-provision.
+WCFG="$UNIFI_PREFIX/etc/configure_wifi.cfg"
+if [ -f "$WCFG" ] && [ -x "$UNIFI_PREFIX/script/configure-wifi.sh" ]; then
+    "$UNIFI_PREFIX/script/configure-wifi.sh" "$WCFG"
+    rc=$?
+    case $rc in
+        0) mv "$WCFG" "$WCFG.applied"; sync; echo "init: wifi credentials applied; rebooting"; reboot ;;
+        2) mv "$WCFG" "$WCFG.applied"; sync ;;
+        *) echo "init: wifi provisioning failed (rc=$rc); leaving $WCFG in place" ;;
+    esac
+fi
+
 # ---- SSH (dropbear), started early ----
 # Kept before the video pipeline so a failure there can't lock us out. Generate
 # both ECDSA and ED25519 keys up front (stock clients prefer ed25519; missing
@@ -169,6 +188,56 @@ DBKEYS=""
 for kt in ecdsa ed25519; do
     [ -f "$DBDIR/dropbear_${kt}_host_key" ] && DBKEYS="$DBKEYS -r $DBDIR/dropbear_${kt}_host_key"
 done
+
+# ---- SSH passwords ----
+# Root: from unifi.cfg SSH_PASSWORD (shipped default "admin"). The stock
+# /etc/shadow gives root an empty password and dropbear runs with -B, so without
+# this anyone can log in. mkpasswd hashes it to the one scheme the camera's musl
+# crypt() implements ($1$ MD5-crypt); dropbear verifies through the same
+# getspnam()+crypt() path. Empty SSH_PASSWORD leaves stock behavior.
+#
+# ubnt: the second account native Protect cameras expose; on real hardware the
+# controller manages it. Kept separate from root so a controller credential
+# rotation cannot lock out the human root login. Password from
+# SSH_UBUNT_PASSWORD (default "ubnt", the native pre-adoption value). The
+# controller's UpdateUsernamePassword push will override it once wired
+# (todo.md item 26).
+#
+# Both fixes run after the /etc bind-mount above, so they land in the writable
+# tmpfs and are re-applied fresh from the read-only rootfs on every boot.
+set_shadow() {
+    # $1 = user, $2 = md5-crypt hash; replace the entry, else append.
+    if grep -q "^$1:" /etc/shadow; then
+        sed -i "s|^$1:.*|$1:$2:1:0:99999:7:::|" /etc/shadow
+    else
+        printf '%s:%s:1:0:99999:7:::\n' "$1" "$2" >> /etc/shadow
+    fi
+}
+
+SSH_PASSWORD=$(get_cfg SSH_PASSWORD)
+if [ -n "$SSH_PASSWORD" ] && [ -x "$UNIFI_PREFIX/bin/mkpasswd" ]; then
+    SSH_HASH=$(printf '%s\n' "$SSH_PASSWORD" | "$UNIFI_PREFIX/bin/mkpasswd")
+    if [ -n "$SSH_HASH" ]; then
+        sed -i "s|^root::|root:${SSH_HASH}:|" /etc/shadow
+        sed -i "s|^root::|root:x:|" /etc/passwd
+    fi
+fi
+
+UBUNT_PASSWORD=$(get_cfg SSH_UBUNT_PASSWORD); [ -z "$UBUNT_PASSWORD" ] && UBUNT_PASSWORD=ubnt
+if [ -x "$UNIFI_PREFIX/bin/mkpasswd" ]; then
+    UBUNT_HASH=$(printf '%s\n' "$UBUNT_PASSWORD" | "$UNIFI_PREFIX/bin/mkpasswd")
+    if [ -n "$UBUNT_HASH" ]; then
+        grep -q '^ubnt:' /etc/passwd || \
+            echo 'ubnt:x:1000:1000:ubnt:/tmp:/bin/ash' >> /etc/passwd
+        grep -q '^ubnt:' /etc/group || echo 'ubnt:x:1000:' >> /etc/group
+        set_shadow ubnt "$UBUNT_HASH"
+    fi
+fi
+chmod 0600 /etc/shadow /etc/passwd 2>/dev/null
+
+# One dropbear on :22 serves both accounts -- several users per daemon is
+# normal; a second daemon cannot share the port. Each user has its own
+# /etc/shadow hash, so root's and ubnt's credentials are independent.
 dropbearmulti dropbear -R $DBKEYS -B -p 0.0.0.0:22
 
 # Hide the stock Yi watermark: bind all-white blanks (the OSD's transparent
@@ -186,6 +255,23 @@ dropbearmulti dropbear -R $DBKEYS -B -p 0.0.0.0:22
 touch /tmp/audio_in_fifo.requested
 [ -p /tmp/audio_in_fifo ] || mknod /tmp/audio_in_fifo p
 
+# ---- Yi cloud daemons (optional, YI_CLOUD=yes) ----
+# The stock app's daemons live in /home/app: cloud (registration/control),
+# p2p_tnp (P2P tunnel the YI app streams over) and oss (cloud storage upload),
+# plus the stock cloudAPI which cloud spawns. We leave cloudAPI in place, so this
+# behaves like an unmodified camera. In the rmm path cloud already runs as the
+# ring kicker, so it is only started here when absent.
+start_yi_cloud() {
+    cd /home/app
+    if ! ps | grep -v grep | grep -q '[c]loud'; then
+        ./cloud >/dev/null 2>&1 &
+    fi
+    ./p2p_tnp  >/dev/null 2>&1 &
+    ./oss      >/dev/null 2>&1 &
+    [ -f ./oss_fast ]  && ./oss_fast  >/dev/null 2>&1 &
+    [ -f ./oss_lapse ] && ./oss_lapse >/dev/null 2>&1 &
+}
+
 # ---- media daemon: mediad if installed, else the stock rmm ----
 # Both publish /dev/shm/fshare_frame_buf, which unifi_flv_bridge reads below,
 # so nothing downstream changes. mediad is the sister project's drop-in
@@ -197,6 +283,7 @@ if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI
     echo "init: starting mediad"
     "$UNIFI_PREFIX/script/mediad.sh" start
     sleep 2
+    [ "$YI_CLOUD" = "yes" ] && start_yi_cloud
 else
     cd /home/app
     sleep 2
@@ -209,7 +296,8 @@ else
     # Kick the encoder ring so rmm actually starts producing (else the bridge
     # sees an empty ring forever). Same trick as the stock system.sh: a brief
     # `cloud` run fills the circular buffer, then `ipc_cmd -x` starts the
-    # stream. (mediad produces on its own.)
+    # stream. (mediad produces on its own.) When YI_CLOUD=yes this same `cloud`
+    # is left running as the Yi cloud daemon instead of being killed.
     ./cloud >/dev/null 2>&1 &
     IDX=$(hexdump -n 16 /dev/shm/fshare_frame_buf | awk 'NR==1{print $8}')
     N=0
@@ -218,7 +306,12 @@ else
         N=$((N+1))
         sleep 0.2
     done
-    killall -q cloud
+    if [ "$YI_CLOUD" = "yes" ]; then
+        start_yi_cloud
+        echo "init: Yi cloud daemons running (cloud/p2p_tnp/oss)"
+    else
+        killall -q cloud
+    fi
     ipc_cmd -x
 fi
 

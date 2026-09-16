@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
 // unifi-avclient: UniFi Protect "avclient" adoption/control client for
@@ -46,6 +46,16 @@ import (
 // client persists or shells out to lives under here, not inside a yi-hack
 // install.
 const unifiPrefix = "/tmp/sd/unifi"
+
+// Codec ALSA capture-gain control driven by setMicLevel (via bin/mixer_set).
+// On sun8iw19 (sun8iw19codec, hw:0) the mic/ADC gain is "MIC1 gain volume",
+// range 0..31 with the stock 0 dB point at 30 -- the functional analog of the
+// UBNT_CVOLUME element a real camera writes. Setting it scales the mic before
+// the encoder, so both the AAC and Opus tracks follow the controller volume.
+const (
+	micGainCard    = "hw:0"
+	micGainControl = "MIC1 gain volume"
+)
 
 type Config struct {
 	Host      string
@@ -215,14 +225,15 @@ type Client struct {
 	snapshotAt   map[string]time.Time
 
 	// Microphone state, driven by ChangeVideoSettings' `audio` block. The
-	// controller sends {bitRate, volume} with volume==0 when the mic is
-	// disabled. micVolume remembers the last value so a later message with no
-	// audio block echoes the real state instead of resetting to 100;
-	// micMutedSet suppresses repeat MUTE writes to FlvPush.
+	// controller sends {bitRate, volume}; micVolume remembers the raw value so
+	// a later message with no audio block echoes the real state instead of
+	// resetting to 100. micLevel is the effective level after the Protect
+	// 1..100 -> mute/gain remap (micLevelFromVolume); micLevelSet suppresses
+	// repeat MUTE/gain writes.
 	micMu       sync.Mutex
 	micVolume   int
-	micMuted    bool
-	micMutedSet bool
+	micLevel    int
+	micLevelSet bool
 }
 
 // newUUIDv4 hand-rolls a random RFC 4122 v4 UUID -- no stdlib package, and one
@@ -1123,7 +1134,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	}
 	c.micMu.Unlock()
 	if hasAudio {
-		c.setMicMuted(audioVolume <= 0)
+		c.setMicLevel(micLevelFromVolume(audioVolume))
 	}
 
 	vidDst := map[string]string{
@@ -1581,9 +1592,11 @@ var (
 	// controller's normal reassignment cadence. Holding one writer open for
 	// the client's lifetime sidesteps the race.
 	flvPushFifoFile *os.File
-	// currentMicMuted mirrors FlvPush's own mute flag so startVideoStream can
-	// re-assert it on a fresh CONNECT (guarded by videoStreamMu).
-	currentMicMuted bool
+	// currentMicLevel mirrors the effective mic level applied to FlvPush and
+	// the codec gain so startVideoStream can re-assert both on a fresh CONNECT
+	// (guarded by videoStreamMu). Defaults to full so a CONNECT before the
+	// controller's first audio settings doesn't silence the mic.
+	currentMicLevel = 100
 )
 
 // channel is "high", "low", or "medium" -- FlvPush tracks each destination
@@ -1596,15 +1609,18 @@ func startVideoStream(dest, streamName, channel string) {
 		log.Printf("startVideoStream[%s]: failed to write FlvPush FIFO: %v", channel, err)
 		return
 	}
-	// Re-assert mute on every CONNECT: FlvPush's flag is process-global and
-	// resets if the bridge restarts, while setMicMuted only writes on change.
-	arg := "on"
-	if !currentMicMuted {
-		arg = "off"
+	// Re-assert the mic state on every CONNECT: FlvPush's flag is
+	// process-global and resets if the bridge restarts (while setMicLevel only
+	// writes on change), and the codec gain is re-applied in case the encoder
+	// re-initialised the mixer.
+	arg := "off"
+	if currentMicLevel <= 0 {
+		arg = "on"
 	}
 	if err := writeFlvPushFifoLocked(fmt.Sprintf("MUTE %s\n", arg)); err != nil {
 		log.Printf("startVideoStream[%s]: failed to re-assert mic mute: %v", channel, err)
 	}
+	applyMicGain(currentMicLevel)
 	log.Printf("startVideoStream[%s]: told FlvPush to push to %s, streamName=%s", channel, dest, streamName)
 }
 
@@ -1616,34 +1632,64 @@ func stopVideoStream(channel string) {
 	}
 }
 
-// setMicMuted tells FlvPush whether to substitute silent audio (its
-// `MUTE on|off` FIFO command). No-op unless the state changes, since
-// ChangeVideoSettings resends the same audio block. The controller's mute
-// reaches us as audio.volume==0, implemented as ADC gain 0 -- silent tags,
-// track still flowing.
-func (c *Client) setMicMuted(muted bool) {
+// micLevelFromVolume maps the controller's microphone volume onto our
+// effective level (0..100, where 0 means mute). Protect's Microphone Level
+// slider is 1..100 and never offers 0, so its minimum is treated as mute --
+// otherwise the mic could not be silenced from the UI. The rest maps linearly.
+func micLevelFromVolume(volume int) int {
+	if volume <= 1 {
+		return 0
+	}
+	if volume > 100 {
+		return 100
+	}
+	return volume
+}
+
+// setMicLevel applies an effective mic level (0..100). FlvPush substitutes
+// silent audio at level 0 (its `MUTE on|off` FIFO command), and the codec
+// capture gain is set proportionally via bin/mixer_set, mirroring a real
+// camera's linear mapping of audio.volume onto the hardware capture element
+// (upstream of the encoder, so both the AAC and Opus tracks follow). No-op
+// unless the level changes: ChangeVideoSettings resends the same audio block.
+func (c *Client) setMicLevel(level int) {
 	c.micMu.Lock()
 	defer c.micMu.Unlock()
-	if c.micMutedSet && c.micMuted == muted {
+	if c.micLevelSet && c.micLevel == level {
 		return
 	}
-	c.micMuted = muted
-	c.micMutedSet = true
+	c.micLevel = level
+	c.micLevelSet = true
 
-	arg := "on"
-	state := "muted"
-	if !muted {
-		arg = "off"
-		state = "unmuted"
-	}
 	videoStreamMu.Lock()
 	defer videoStreamMu.Unlock()
-	currentMicMuted = muted
+	currentMicLevel = level
+	arg := "off"
+	if level <= 0 {
+		arg = "on"
+	}
 	if err := writeFlvPushFifoLocked(fmt.Sprintf("MUTE %s\n", arg)); err != nil {
-		log.Printf("setMicMuted: failed to write FlvPush FIFO: %v", err)
+		log.Printf("setMicLevel: failed to write FlvPush FIFO: %v", err)
+	}
+	applyMicGain(level)
+	state := "unmuted"
+	if level <= 0 {
+		state = "muted"
+	}
+	log.Printf("setMicLevel: mic %s, level %d (controller audio volume)", state, level)
+}
+
+// applyMicGain writes the level as a percentage of the codec capture-gain
+// element via bin/mixer_set (see micGainCard/micGainControl). Best-effort: a
+// failure is logged, not fatal. Caller must hold videoStreamMu.
+func applyMicGain(level int) {
+	out, err := exec.Command(unifiPrefix+"/bin/mixer_set",
+		micGainCard, micGainControl, strconv.Itoa(level)).CombinedOutput()
+	if err != nil {
+		log.Printf("applyMicGain: mixer_set failed: %v (%s)", err, strings.TrimSpace(string(out)))
 		return
 	}
-	log.Printf("setMicMuted: mic %s (controller audio volume)", state)
+	log.Printf("applyMicGain: %s", strings.TrimSpace(string(out)))
 }
 
 // Caller must hold videoStreamMu.
