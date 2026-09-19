@@ -205,6 +205,14 @@ work/release.sh
 Config lives in `work/sd_root/unifi/etc/unifi.cfg` (resolution, audio, optional
 static controller override, PTZ auto-detect, optional Yi cloud).
 
+Per-model **facts** live in `work/sd_root/unifi/etc/model_table` — one row per
+camera (sensor, fshare ring geometry, HIGH-channel resolution, PTZ). The bridge,
+the client, the boot scripts, `detect-model.sh` and `build_sd.sh` all read that
+one table and never hardcode a model name, so adding a camera is a single row
+plus — only if its hardware bring-up actually differs — a
+`work/sd_root/unifi/script/lower_half/<model>.sh`. An unlisted model gets a
+conservative default and a warning rather than a silent guess.
+
 ## Access (SSH)
 
 A single Dropbear SSH server starts on boot (`:22`), with per-camera host keys
