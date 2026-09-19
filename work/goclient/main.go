@@ -279,7 +279,11 @@ func readHardwareSerial() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read bootargs: %w", err)
 	}
-	m := regexp.MustCompile(`mfg@(\S+)`).FindSubmatch(bootargs)
+	// Stop at whitespace or ':' -- the kernel partitions= list is
+	// "name@dev:name@dev:...", so a greedy \S+ would swallow the entries
+	// that follow mfg@ (e.g. mfg@mtdblock6:conf@mtdblock7), yielding an
+	// unopenable "/dev/mtdblock6:conf@...".
+	m := regexp.MustCompile(`mfg@([^\s:]+)`).FindSubmatch(bootargs)
 	if m == nil {
 		return "", fmt.Errorf("no mfg@ partition token in bootargs")
 	}
@@ -323,6 +327,41 @@ func readHardwareModel() string {
 		}
 	}
 	return "y623"
+}
+
+// modelProfilesFilePath holds per-model encoder geometry ("<model> <high_w>
+// <high_h>" per line; see the file header). It is data on the SD card, not
+// logic in this binary, so one universal client serves every model -- including
+// models added after the client was built.
+const modelProfilesFilePath = unifiPrefix + "/etc/model_profiles"
+
+// readHighResolution returns the real HIGH-channel (video1) encoder
+// width/height for this physical camera, looked up by model suffix in
+// modelProfilesFilePath. Falls back to the y623-class 2304x1296 when the file
+// or the model's line is absent, with the historical h52ga special case kept
+// so an SD layout predating the profile file behaves exactly as before.
+func readHighResolution() (int, int) {
+	model := readHardwareModel()
+	if b, err := os.ReadFile(modelProfilesFilePath); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if i := strings.IndexByte(line, '#'); i >= 0 {
+				line = line[:i]
+			}
+			f := strings.Fields(line)
+			if len(f) < 3 || f[0] != model {
+				continue
+			}
+			w, werr := strconv.Atoi(f[1])
+			h, herr := strconv.Atoi(f[2])
+			if werr == nil && herr == nil && w > 0 && h > 0 {
+				return w, h
+			}
+		}
+	}
+	if model == "h52ga" {
+		return 1920, 1080
+	}
+	return 2304, 1296
 }
 
 // loadOrCreateAdoptionUUID returns a stable per-device UUID (string and raw
@@ -1143,15 +1182,10 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		"video3": "file:///dev/null",
 	}
 
-	// Real HIGH-channel (video1) resolution differs per physical model: y623
-	// (GC3003) is 2304x1296, h52ga (GC2053) is 1920x1080. Confirmed by
-	// decoding a real SPS NAL from each camera's encoder output. readHardwareModel
-	// is the real hardware model, distinct from the spoofed cfg.Model/cfg.SysID.
-	hwModel := readHardwareModel()
-	video1Width, video1Height := 2304, 1296
-	if hwModel == "h52ga" {
-		video1Width, video1Height = 1920, 1080
-	}
+	// Real HIGH-channel (video1) resolution is a property of the physical
+	// encoder, so it comes from the shipped per-model profile (see
+	// readHighResolution), not a model table in this binary.
+	video1Width, video1Height := readHighResolution()
 
 	if video, ok := m.Payload["video"].(map[string]interface{}); ok {
 		// Shutter exposure (Video Mode) and the HIGH bitrate -> mediad, in one

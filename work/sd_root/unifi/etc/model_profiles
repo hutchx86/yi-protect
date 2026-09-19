@@ -1,0 +1,26 @@
+# Per-model encoder geometry for unifi_avclient_go.
+#
+# The HIGH channel's real width/height are a property of the physical encoder,
+# not of the declared catalog model, so the client reads them from here instead
+# of carrying a model table in the binary. That is what keeps one universal
+# client correct on every model -- including models introduced after the client
+# was built -- with per-model facts living next to that model's bring-up.
+#
+# Format, one model per line, whitespace-separated; '#' starts a comment:
+#
+#     <model_suffix> <high_width> <high_height>
+#
+# A model with no line here falls back to the y623-class 2304x1296. Values are
+# verified by decoding a real SPS NAL from that model's encoder output.
+#
+# Keep this list additive and minimal: a fix for one model must not silently
+# change another. Do not add a model until its geometry has actually been
+# measured on that hardware.
+y623    2304 1296
+h52ga   1920 1080
+y291ga  1920 1080
+# r35gb is GC2053-class and is expected to be 1920x1080, but is deliberately
+# left unlisted: correcting it is an r35gb change and must be verified/deployed
+# as such, not ride along with another model's bring-up. Uncomment after it has
+# been confirmed from that camera's own SPS.
+#r35gb  1920 1080
