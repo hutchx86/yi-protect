@@ -329,39 +329,71 @@ func readHardwareModel() string {
 	return "y623"
 }
 
-// modelProfilesFilePath holds per-model encoder geometry ("<model> <high_w>
-// <high_h>" per line; see the file header). It is data on the SD card, not
-// logic in this binary, so one universal client serves every model -- including
-// models added after the client was built.
-const modelProfilesFilePath = unifiPrefix + "/etc/model_profiles"
+// modelTablePath is the single per-model definition file (see
+// work/sd_root/unifi/etc/model_table). Columns:
+//
+//	model sensor ring_offset ring_header high_w high_h ptz
+//
+// The client reads only its own row and never tests model names, so one
+// universal binary serves every model -- including ones added after the build.
+const modelTablePath = unifiPrefix + "/etc/model_table"
 
-// readHighResolution returns the real HIGH-channel (video1) encoder
-// width/height for this physical camera, looked up by model suffix in
-// modelProfilesFilePath. Falls back to the y623-class 2304x1296 when the file
-// or the model's line is absent, with the historical h52ga special case kept
-// so an SD layout predating the profile file behaves exactly as before.
-func readHighResolution() (int, int) {
-	model := readHardwareModel()
-	if b, err := os.ReadFile(modelProfilesFilePath); err == nil {
-		for _, line := range strings.Split(string(b), "\n") {
-			if i := strings.IndexByte(line, '#'); i >= 0 {
-				line = line[:i]
-			}
-			f := strings.Fields(line)
-			if len(f) < 3 || f[0] != model {
-				continue
-			}
-			w, werr := strconv.Atoi(f[1])
-			h, herr := strconv.Atoi(f[2])
-			if werr == nil && herr == nil && w > 0 && h > 0 {
-				return w, h
+// modelDef is this client's slice of a model_table row.
+type modelDef struct {
+	highWidth  int
+	highHeight int
+	ptz        bool
+}
+
+// readModelDef returns the model_table row for `model`. ok is false when the
+// table or the row is missing; the caller then keeps conservative defaults.
+func readModelDef(model string) (def modelDef, ok bool) {
+	def = modelDef{highWidth: 2304, highHeight: 1296}
+	b, err := os.ReadFile(modelTablePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("model_table %q unreadable: %v; using defaults", modelTablePath, err)
+		}
+		return def, false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = line[:i]
+		}
+		f := strings.Fields(line)
+		if len(f) < 7 || f[0] != model {
+			continue
+		}
+		if w, e1 := strconv.Atoi(f[4]); e1 == nil {
+			if h, e2 := strconv.Atoi(f[5]); e2 == nil && w > 0 && h > 0 {
+				def.highWidth, def.highHeight = w, h
 			}
 		}
+		def.ptz = strings.EqualFold(f[6], "yes")
+		return def, true
 	}
-	if model == "h52ga" {
-		return 1920, 1080
-	}
-	return 2304, 1296
+	log.Printf("model_table: model %q not listed; using defaults (2304x1296, no PTZ)", model)
+	return def, false
+}
+
+// readHighResolution returns the real HIGH-channel (video1) encoder geometry
+// for this physical camera, from the model table.
+func readHighResolution() (int, int) {
+	def, _ := readModelDef(readHardwareModel())
+	return def.highWidth, def.highHeight
+}
+
+// flagSet reports whether the named flag was given on the command line (as
+// opposed to being left at its default), so callers can layer an explicit flag
+// over config-file and model-table defaults.
+func flagSet(name string) bool {
+	set := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
 }
 
 // loadOrCreateAdoptionUUID returns a stable per-device UUID (string and raw
@@ -2290,7 +2322,17 @@ func main() {
 	cfg.Model = *model
 	cfg.CertFile = *certFile
 	cfg.KeyFile = *keyFile
-	cfg.HasPTZ = *ptz
+	// PTZ capability precedence: an explicit -ptz flag wins, then unifi.cfg
+	// PTZ=, else the model table. The boot scripts no longer carry a per-model
+	// PTZ list; this is the single place the capability is decided.
+	if flagSet("ptz") {
+		cfg.HasPTZ = *ptz
+	} else if v := unifiCfg["PTZ"]; v != "" {
+		cfg.HasPTZ = isTruthy(v)
+	} else {
+		def, _ := readModelDef(readHardwareModel())
+		cfg.HasPTZ = def.ptz
+	}
 	cfg.IsMediad = *mediad
 
 	// One-shot visibility of the mediad state when IS_MEDIAD is set; the

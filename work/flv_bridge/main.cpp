@@ -28,9 +28,10 @@
 #define AAC_MAX_NSAMPS 1024
 #define AAC_MAX_NCHANS 2
 
-// Set from -m / RRTSP_MODEL; read by FlvPush.cpp to pick the HIGH-channel
-// encoder resolution for this model.
-int model = Y21GA;
+// Set from -m / RRTSP_MODEL. Kept as the model *name*: all per-model facts are
+// looked up in unifi/etc/model_table (see modelParams), so the bridge carries
+// no model table of its own.
+static const char *modelName = "";
 
 namespace {
 
@@ -233,7 +234,7 @@ int main(int argc, char **argv) {
         if (c == -1) break;
 
         switch (c) {
-        case 'm': model = parseModel(optarg); break;
+        case 'm': modelName = optarg; break;
         case 'r':
             if (strcasecmp("low", optarg) == 0) resolution = RESOLUTION_LOW;
             else if (strcasecmp("high", optarg) == 0) resolution = RESOLUTION_HIGH;
@@ -268,7 +269,7 @@ int main(int argc, char **argv) {
 
     // Environment overrides, kept for parity with the old daemon.
     const char *env = getenv("RRTSP_MODEL");
-    if (env != nullptr) model = parseModel(env);
+    if (env != nullptr) modelName = env;
     env = getenv("RRTSP_RES");
     if (env != nullptr) {
         if (strcasecmp("low", env) == 0) resolution = RESOLUTION_LOW;
@@ -300,14 +301,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    ModelParams mp = modelParams(model);
+    ModelParams mp = modelParams(modelName);
     // Match the old daemon: run slightly above the stock encoder's own
     // priority so a busy box still drains the ring in time.
     setpriority(PRIO_PROCESS, 0, -10);
-    std::fprintf(stderr, "unifi_flv_bridge: model=%d resolution=%d audio=%d "
-                         "ring=%lld offset=%u header=%d\n",
-                 model, resolution, audio, (long long)st.st_size,
-                 mp.offset, mp.headerSize);
+    std::fprintf(stderr, "unifi_flv_bridge: model=%s resolution=%d audio=%d "
+                         "ring=%lld offset=%u header=%d high=%ux%u ptz=%d\n",
+                 modelName, resolution, audio, (long long)st.st_size,
+                 mp.offset, mp.headerSize, mp.highWidth, mp.highHeight,
+                 mp.ptz ? 1 : 0);
+
+    // Per-model HIGH geometry reaches FlvPush as data, not a model branch.
+    flvPushSetHighResolution(mp.highWidth, mp.highHeight);
 
     // Starts the control-FIFO thread and per-channel state.
     flvPushInit();

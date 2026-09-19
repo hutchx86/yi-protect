@@ -23,15 +23,6 @@ get_cfg() {
 
 RESOLUTION=$(get_cfg RESOLUTION); [ -z "$RESOLUTION" ] && RESOLUTION=both
 AUDIO=$(get_cfg AUDIO); [ -z "$AUDIO" ] && AUDIO=aac
-# PTZ default by model (unifi.cfg PTZ= overrides); mirrors yi-hack's is_ptz().
-PTZ=$(get_cfg PTZ)
-if [ -z "$PTZ" ]; then
-    case "$MODEL_SUFFIX" in
-        r30gb|r35gb|r37gb|r40ga|q321br_lsx|qg311r|b091qp|h30ga|h51ga|h52ga|h60ga)
-            PTZ=yes ;;
-        *) PTZ=no ;;
-    esac
-fi
 WATCHDOG_INTERVAL=$(get_cfg WATCHDOG_INTERVAL); [ -z "$WATCHDOG_INTERVAL" ] && WATCHDOG_INTERVAL=10
 YI_CLOUD=$(get_cfg YI_CLOUD)
 if [ -z "$YI_CLOUD" ]; then
@@ -344,12 +335,10 @@ cd "$UNIFI_PREFIX/bin"
 AUDIO_OPT="-a $AUDIO"
 ./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -s $AUDIO_OPT > /tmp/unifi_flv_bridge.log 2>&1 &
 
-# Adoption/control client; cert/key are self-generated on first boot. -ptz
-# declares the "ptz" featureFlag so Protect shows PTZ controls.
-PTZ_OPT=""
-[ "$PTZ" = "yes" ] && PTZ_OPT="-ptz"
+# Adoption/control client; cert/key are self-generated on first boot. PTZ and
+# per-model geometry are read by the client from model_table (the single
+# per-model definition file), so no per-model list lives here.
 ./unifi_avclient_go \
-    $PTZ_OPT \
     -cert "$UNIFI_PREFIX/etc/unifi_client_go.crt" \
     -key  "$UNIFI_PREFIX/etc/unifi_client_go.key" \
     > /tmp/avclient.log 2>&1 &

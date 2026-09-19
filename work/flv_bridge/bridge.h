@@ -40,48 +40,22 @@
 #define RESOLUTION_HIGH 1080
 #define RESOLUTION_BOTH 1440
 
-// Supported cameras (the subset yi-hack/rmm knows about). Only the frame
-// ring offset/header-size differ between them; see modelParams().
-enum {
-    Y20GA,
-    Y25GA,
-    Y30QA,
-    Y501GC,
-    Y21GA,
-    Y211GA,
-    Y211BA,
-    Y213GA,
-    Y291GA,
-    H30GA,
-    R30GB,
-    R35GB,
-    R37GB,
-    R40GA,
-    H51GA,
-    H52GA,
-    H60GA,
-    Y28GA,
-    Y29GA,
-    Y623,
-    Q321BR_LSX,
-    QG311R,
-    B091QP,
-};
-
-// Where the frame stream begins inside the ring (bytes), and how many bytes
-// of frame header precede each payload. A value of 0 for either requests
-// autodetection at startup (used by the R30GB/R35GB/R37GB family).
+// Per-model facts, read from unifi/etc/model_table (the single per-model
+// definition file; see work/sd_root/unifi/etc/model_table). The bridge never
+// tests model names itself -- it asks for the row by name.
 struct ModelParams {
-    unsigned offset;
-    int headerSize;
+    unsigned offset;      // ring control-header bytes; 0 => autodetect
+    int headerSize;       // frame-header bytes; 0 => autodetect
+    unsigned highWidth;   // HIGH-channel (video1) encoder width
+    unsigned highHeight;  // HIGH-channel (video1) encoder height
+    bool ptz;             // real motorized pan/tilt base
 };
 
-ModelParams modelParams(int model);
-
-// Parses a model name (as passed with -m, and as found in yi-hack's
-// model_suffix file), returning one of the enum values above. Unknown names
-// fall back to Y21GA, matching the upstream tool's default.
-int parseModel(const char *name);
+// Looks `name` up in $UNIFI_MODEL_TABLE (default /tmp/sd/unifi/etc/model_table)
+// and returns its row. A missing table or row returns the conservative
+// defaults (368/28, 2304x1296, no PTZ) and warns on stderr -- never a silent
+// guess.
+ModelParams modelParams(const char *name);
 
 // One encoded frame handed from the reader to FlvPush.
 typedef struct {

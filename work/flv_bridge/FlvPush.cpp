@@ -27,8 +27,10 @@
 #include <csignal>
 #include <sys/time.h>
 
-// Set by main.cpp from -m; picks the per-model HIGH-channel resolution.
-extern int model;
+// Per-model HIGH-channel geometry, set by main() from the model table before
+// flvPushInit(). FlvPush never sees the model name.
+static unsigned g_highWidth = 2304;
+static unsigned g_highHeight = 1296;
 
 static double nowSeconds() {
     struct timeval tv;
@@ -1122,6 +1124,13 @@ static void *ctlThreadMain(void *) {
     return nullptr;
 }
 
+void flvPushSetHighResolution(unsigned width, unsigned height) {
+    if (width > 0 && height > 0) {
+        g_highWidth = width;
+        g_highHeight = height;
+    }
+}
+
 void flvPushInit() {
     // Without this, write() to a peer-closed socket raises SIGPIPE, whose
     // default disposition kills the whole process (the watchdog would then
@@ -1136,15 +1145,11 @@ void flvPushInit() {
         high.generation = 0;
         high.haveCachedSpsPps = false;
         // Matches video1's Go-client declaration (streamId=1, 1400000, fps 15).
-        // HIGH resolution differs per model: y623 (GC3003) 2304x1296, h52ga
-        // (GC2053) 1920x1080, both confirmed by SPS decode; LOW is 640x360.
+        // HIGH geometry comes from the model table (set by main() before this
+        // call); LOW is the real 640x360 encoder output.
         high.channelId = 0; high.streamId = 1;
         high.videoBandwidth = 1400000; high.videoFps = 15;
-        if (model == H52GA) {
-            high.videoWidth = 1920; high.videoHeight = 1080;
-        } else {
-            high.videoWidth = 2304; high.videoHeight = 1296;
-        }
+        high.videoWidth = g_highWidth; high.videoHeight = g_highHeight;
         high.cachedMeasuredFps = 0;
 
         ChannelState &low = g_ch[FLV_CH_LOW];

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 yi-protect contributors
+#
+# model_table -- the single per-model definition file.
+#
+# Every per-model *fact* lives here, exactly once. General code (the bridge, the
+# client, the boot scripts, detect-model, build_sd) looks its model up in this
+# table and never tests a model name itself. Per-model *code* (hardware
+# bring-up that can't be a data value) stays in script/lower_half/<model>.sh,
+# selected by the model key. So adding a camera is: one row here, plus a
+# lower_half script only if its hardware bring-up actually differs.
+#
+# Columns, whitespace-separated ('#' starts a comment):
+#
+#   model  sensor  ring_offset  ring_header  high_w  high_h  ptz
+#
+#   model        model_suffix token: what /backup/init.sh sets and -m carries
+#   sensor       MIPI sensor driver basename (e.g. gc3003). detect-model maps a
+#                sensor to a model ONLY when exactly one row names it; a sensor
+#                shared by several models (gc2053) is ambiguous and ignored.
+#   ring_offset  fshare ring control-header size in bytes; 0 = autodetect
+#   ring_header  per-frame header bytes before the payload; 0 = autodetect
+#   high_w/h     real HIGH-channel (video1) encoder geometry, SPS-verified
+#   ptz          yes/no -- real motorized pan/tilt base
+#
+# A model with no row gets the conservative default (368/28, 2304x1296, no PTZ)
+# and a warning; never a silent guess. Keep this list to models we actually
+# support -- a row is a claim about real hardware.
+y623     gc3003  368  28  2304  1296  no
+h52ga    gc2053  368  28  1920  1080  yes
+r35gb    gc2053  0    0   1920  1080  yes
+y291ga   gc2053  368  28  1920  1080  no

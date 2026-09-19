@@ -221,8 +221,15 @@ done
 #     one by the auto-detected model, so one image boots any supported model.
 # ---------------------------------------------------------------------------
 echo "== 6b/7 vendoring per-model bring-up =="
-# Only the models we actually own/support; add more here as they are brought up.
-SUPPORTED_MODELS="${SUPPORTED_MODELS:-y623 h52ga r35gb y291ga}"
+# Supported models come from the single per-model definition file (one row per
+# model); a row here means "we own this hardware and can bring it up". The
+# vendoring loop needs a sysroot/<model>/lower_half_init.sh for each row.
+MODEL_TABLE="$ETC/model_table"
+if [ ! -f "$MODEL_TABLE" ]; then
+    echo "ERROR: $MODEL_TABLE missing (it defines the supported models)"; exit 1
+fi
+SUPPORTED_MODELS="${SUPPORTED_MODELS:-$(awk '!/^[[:space:]]*#/ && NF {print $1}' "$MODEL_TABLE")}"
+[ -n "$SUPPORTED_MODELS" ] || { echo "ERROR: no models in $MODEL_TABLE"; exit 1; }
 LHDIR="$UNIFI/script/lower_half"
 mkdir -p "$LHDIR"
 for m in $SUPPORTED_MODELS; do

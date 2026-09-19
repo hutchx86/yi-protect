@@ -17,16 +17,6 @@ INTERVAL=${WATCHDOG_INTERVAL:-$(get_cfg WATCHDOG_INTERVAL)}
 [ -z "$INTERVAL" ] && INTERVAL=10
 RESOLUTION=$(get_cfg RESOLUTION); [ -z "$RESOLUTION" ] && RESOLUTION=both
 AUDIO=$(get_cfg AUDIO); [ -z "$AUDIO" ] && AUDIO=aac
-# PTZ default by model, as in init.sh; without it a watchdog restart dropped
-# -ptz and Protect lost the PTZ controls until reboot.
-PTZ=$(get_cfg PTZ)
-if [ -z "$PTZ" ]; then
-    case "$MODEL_SUFFIX" in
-        r30gb|r35gb|r37gb|r40ga|q321br_lsx|qg311r|b091qp|h30ga|h51ga|h52ga|h60ga)
-            PTZ=yes ;;
-        *) PTZ=no ;;
-    esac
-fi
 YI_CLOUD=$(get_cfg YI_CLOUD)
 if [ -z "$YI_CLOUD" ]; then
     # Default on, except on mediad builds (IS_MEDIAD=yes): mediad replaces the
@@ -51,9 +41,7 @@ restart_avclient() {
     killall -q unifi_avclient_go
     sleep 1
     cd "$UNIFI_PREFIX/bin"
-    PTZ_OPT=""
-    [ "$PTZ" = "yes" ] && PTZ_OPT="-ptz"
-    ./unifi_avclient_go $PTZ_OPT \
+    ./unifi_avclient_go \
         -cert "$UNIFI_PREFIX/etc/unifi_client_go.crt" \
         -key  "$UNIFI_PREFIX/etc/unifi_client_go.key" \
         > /tmp/avclient.log 2>&1 &
