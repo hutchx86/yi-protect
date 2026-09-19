@@ -222,7 +222,7 @@ done
 # ---------------------------------------------------------------------------
 echo "== 6b/7 vendoring per-model bring-up =="
 # Only the models we actually own/support; add more here as they are brought up.
-SUPPORTED_MODELS="${SUPPORTED_MODELS:-y623 h52ga r35gb}"
+SUPPORTED_MODELS="${SUPPORTED_MODELS:-y623 h52ga r35gb y291ga}"
 LHDIR="$UNIFI/script/lower_half"
 mkdir -p "$LHDIR"
 for m in $SUPPORTED_MODELS; do
