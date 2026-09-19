@@ -239,6 +239,17 @@ camera. Verify with `md5sum -c md5sums`.
 confirmation). The safest recovery for a bricked camera is U-Boot/UART or the
 stock vendor flash tool.
 
+## Troubleshooting
+
+**No camera audio in Protect (live view *or* recordings).** Check the camera's
+**Microphone Level** slider before anything else. Its **minimum position (1%) is
+a deliberate mute, not a quiet setting** — Protect's slider floors at 1 and never
+sends 0, so 1% is mapped to "muted": the codec capture gain is driven to zero and
+the bridge substitutes silent AAC/Opus frames (the audio track keeps flowing, just
+silenced). Move the slider up and audio returns. This is easy to mistake for a
+broken microphone — e.g. a camera left at 1% after a silence test looks dead. See
+the **Audio** note under [Features](#features).
+
 ## Credits & special thanks
 
 **A very special thank you to [roleoroleo](https://github.com/roleoroleo).** This
