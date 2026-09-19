@@ -292,7 +292,13 @@ if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI
 else
     cd /home/app
     sleep 2
-    ./rmm > /tmp/rmm.log 2>&1 &
+    # Load the SD-shipped patched libasound: it is the only one with the
+    # /tmp/audio_in_fifo listener that talkback_rx writes to (stock /lib's
+    # libasound has no audio-FIFO support, so rmm never opens the FIFO and
+    # talkback fails with ENXIO). Upstream yi-hack puts its lib dir FIRST for
+    # exactly this reason; our global LD_LIBRARY_PATH above lists /lib first,
+    # so prepend the project lib dir here rather than reordering everything.
+    LD_LIBRARY_PATH="$UNIFI_PREFIX/lib:$LD_LIBRARY_PATH" ./rmm > /tmp/rmm.log 2>&1 &
     RMM_PID=$!
     # Keep rmm off the OOM killer's list (60MB box; snapshots are the victims).
     echo -1000 > "/proc/$RMM_PID/oom_score_adj" 2>/dev/null
