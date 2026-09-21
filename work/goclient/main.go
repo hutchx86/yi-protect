@@ -211,10 +211,11 @@ type Client struct {
 	activeVideo2Host       string
 	activeVideo2StreamName string
 	// "video3" ("medium" on the FlvPush wire side) is requested by Protect's
-	// expanded/single-camera panel regardless of the quality dropdown, while
-	// video1/video2 only serve the grid view. Aliased to the same real LOW
-	// (640x360) frames as video2, matching video3's declared 640x360 schema --
-	// a second destination for the same frames, not a distinct resolution.
+	// expanded/single-camera panel for every quality dropdown setting, while
+	// video1/video2 serve the grid view. It therefore carries the SAME real
+	// HIGH frames as video1 (see main.cpp emitFrame and FlvPush's MED channel)
+	// and is declared at the high geometry/bitrate -- otherwise the expanded
+	// view is stuck at 640x360 and "HQ" changes nothing.
 	activeVideo3Host       string
 	activeVideo3StreamName string
 
@@ -1290,12 +1291,12 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			}
 			c.streams[key] = streamName
 			c.streamsMu.Unlock()
-			// video1 (HIGH) and video2 (LOW, real 640x360) feed real FlvPush
-			// sources. video3 ("medium" on the wire) is aliased to the same
-			// real LOW frames as video2: Protect's expanded/single-camera
-			// panel requests video3 for every quality option, while
-			// video1/video2 only serve the grid view. Not a distinct
-			// resolution, just a second destination for the same output.
+			// video1 (HIGH) and video2 (real 640x360 LOW) feed real FlvPush
+			// sources. video3 ("medium" on the wire) is requested by Protect's
+			// expanded/single-camera panel for every quality option, so it
+			// aliases the SAME real HIGH frames as video1 -- not LOW -- to make
+			// the quality dropdown meaningful. Not a distinct resolution, just
+			// a second destination for the high output.
 			//
 			// streamName is the controller-issued per-session token
 			// (avSerializer.parameters.streamName), used as the FLV onMetaData
@@ -1423,16 +1424,20 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					"parameters":   streamParams("video3"),
 					"type":         "extendedFlv",
 				},
-				"bitRateCbrAvg": 300000, "bitRateVbrMax": 200000, "bitRateVbrMin": 48000,
-				"currentVbrBitrate": 200000, "description": "Low quality video track",
-				"enabled": true, "fps": 15, "gopModel": 0, "height": 360,
+				// video3 carries the real HIGH stream (see the activeVideo3*
+				// comment): Protect's expanded panel requests video3 for every
+				// quality setting, so it must be the high geometry/bitrate for
+				// the dropdown to mean anything.
+				"bitRateCbrAvg": 1400000, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
+				"currentVbrBitrate": 1400000, "description": "Hi quality video track",
+				"enabled": true, "fps": 15, "gopModel": 0, "height": video1Height,
 				"horizontalFlip": false, "isCbr": false, "maxFps": 30,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
 				"name": "video3", "sourceId": 2, "streamId": 4, "streamOrdinal": 2, "type": "h264",
-				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
+				"validBitrateRangeMax": 2800000, "validBitrateRangeMin": 32000,
 				"validFpsValues": []int{1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 30},
 				"verticalFlip":   false,
-				"width":          640,
+				"width":          video1Width,
 			},
 		},
 	}

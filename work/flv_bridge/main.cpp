@@ -180,13 +180,16 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
     if (frameType == TYPE_HIGH) {
         if (ctx->resolution == RESOLUTION_HIGH || ctx->resolution == RESOLUTION_BOTH) {
             if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueue(FLV_CH_HIGH, of);
+            // MED (video3) carries the SAME real HIGH frames. Protect's
+            // expanded/single-camera panel requests video3 for every quality
+            // dropdown setting, so video3 must be the high stream for the
+            // dropdown to mean anything; video1 keeps serving the grid view.
+            if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_LOW) {
-        // MED (video3) aliases the same real LOW frames; both destinations are
-        // driven together, matching the pre-rewrite capture() behaviour.
+        // LOW (video2) is the real 640x360 encoder output; nothing aliases it.
         if (ctx->resolution != RESOLUTION_HIGH) {
             if (flvPushActive(FLV_CH_LOW)) flvPushEnqueue(FLV_CH_LOW, of);
-            if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_AAC) {
         if (ctx->audio == 2) {
