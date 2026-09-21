@@ -85,6 +85,14 @@ type Config struct {
 	// socket instead of being acknowledged and ignored. Set via unifi.cfg's
 	// IS_MEDIAD=yes or -mediad; see mediad_ctl.go.
 	IsMediad bool
+
+	// Mediad3DNR lets Protect's 3DNR control (enable3dnr) drive mediad's tdf
+	// (the 3D/temporal denoise filter). Default false: the client does not
+	// assert Protect's enable3dnr -- which the controller re-sends as 1 on
+	// every connect and which re-enables mediad's temporal filter, ghosting on
+	// low-light motion -- and pins tdf=0 instead. Set via unifi.cfg's
+	// MEDIAD_3DNR=yes; only meaningful with IsMediad. See mediad_ctl.go.
+	Mediad3DNR bool
 }
 
 // cfg.MAC/cfg.IP are last-resort fallbacks, used only when
@@ -2094,7 +2102,8 @@ const cameraConfigFilePath = unifiPrefix + "/etc/unifi_client_go.camera-config"
 // unifiConfigFilePath is the project's single human-edited config file: plain
 // KEY=value, '#' comments, blank lines ignored. The shell scripts
 // (init.sh/watchdog.sh/wifidhcp.sh/ethdhcp.sh) and this client both read it.
-// Keys this client recognizes: MODEL, SYSID, FWVERSION, CONTROLLER.
+// Keys this client recognizes: MODEL, SYSID, FWVERSION, CONTROLLER,
+// IS_MEDIAD, MEDIAD_3DNR.
 // Runtime-generated state lives in its own files.
 const unifiConfigFilePath = unifiPrefix + "/etc/unifi.cfg"
 
@@ -2274,6 +2283,10 @@ func main() {
 	if v := unifiCfg["IS_MEDIAD"]; v != "" {
 		cfg.IsMediad = isTruthy(v)
 		log.Printf("unifi.cfg: is_mediad %q -> %v", v, cfg.IsMediad)
+	}
+	if v := unifiCfg["MEDIAD_3DNR"]; v != "" {
+		cfg.Mediad3DNR = isTruthy(v)
+		log.Printf("unifi.cfg: mediad_3dnr %q -> %v", v, cfg.Mediad3DNR)
 	}
 	if v := unifiCfg["CONTROLLER"]; v != "" {
 		if h, p, err := net.SplitHostPort(v); err == nil {

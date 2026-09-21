@@ -521,9 +521,19 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	add("saturation", "saturation", func(v float64) int { return scaleLinear(v, 0, 100) })
 	add("sharpness", "sharpness", func(v float64) int { return scaleLinear(v, 0, 10) })
 	add("denoise", "denoise", func(v float64) int { return scaleLinear(v, 0, 100) })
-	// tdf is a 0/1 module enable, not a 0-100 level; 1 == vendor stock. Protect
-	// sends enable3dnr as 0/1, so the linear scale is the identity here.
-	add("enable3dnr", "tdf", func(v float64) int { return scaleLinear(v, 0, 100) })
+	// 3DNR (tdf) is the 3D/temporal denoise module, not a 0-100 level: 1 ==
+	// vendor stock. Protect sends enable3dnr as 0/1, so the linear scale is the
+	// identity here. It is pinned OFF by default (unifi.cfg MEDIAD_3DNR=no):
+	// the controller re-sends enable3dnr=1 on every connect, and the full apply
+	// that follows a mediad (re)appearance re-enabled mediad's temporal filter,
+	// whose low-light motion ghosting is the artefact this project avoids. With
+	// the knob off we assert tdf=0 instead (sent once per daemon appearance by
+	// the delta); MEDIAD_3DNR=yes restores Protect control of the toggle.
+	if cfg.Mediad3DNR {
+		add("enable3dnr", "tdf", func(v float64) int { return scaleLinear(v, 0, 100) })
+	} else {
+		out = append(out, mediadCtl{"tdf", 0})
+	}
 	// wdr wire values are 0..3. The camera's HDR is a PLTM module enable plus a
 	// strength: stock (Protect's exposed default wdr=1) is pltm=1 + wdr=0, i.e. the
 	// vendor tuning's own strength. Off (0) disables the module; 2/3 raise the

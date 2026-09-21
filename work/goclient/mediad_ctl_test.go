@@ -26,6 +26,28 @@ func TestIspControlMapEmitsMappedFields(t *testing.T) {
 	}
 }
 
+// 3DNR (temporal denoise) is pinned off by default: Protect re-sends
+// enable3dnr=1 on every connect, and forwarding it re-enables mediad's temporal
+// filter (low-light motion ghosting). MEDIAD_3DNR=yes opts back in to Protect
+// control of the toggle.
+func TestIspControlMap3DnrDefaultOff(t *testing.T) {
+	saved := cfg.Mediad3DNR
+	defer func() { cfg.Mediad3DNR = saved }()
+
+	on := ispSettingsDefaults()
+	on["enable3dnr"] = float64(1)
+
+	cfg.Mediad3DNR = false
+	if got, ok := findCtl(t, ispControlMap(on), "tdf"); !ok || got != 0 {
+		t.Fatalf("default must pin tdf=0 regardless of enable3dnr, got %d (ok=%v)", got, ok)
+	}
+
+	cfg.Mediad3DNR = true
+	if got, ok := findCtl(t, ispControlMap(on), "tdf"); !ok || got != 1 {
+		t.Fatalf("MEDIAD_3DNR=yes must forward enable3dnr=1 as tdf=1, got %d (ok=%v)", got, ok)
+	}
+}
+
 // The delta must suppress a whole changeset, not just compare to static
 // defaults: the first object after a connect is seeded (recorded, not sent),
 // then only genuine changes are forwarded.
@@ -134,8 +156,6 @@ func TestIspControlMapScaling(t *testing.T) {
 		{"sharpness", 100, "sharpness", 10},
 		{"sharpness", 0, "sharpness", 0},
 		{"denoise", 0, "denoise", 0},
-		{"enable3dnr", 0, "tdf", 0},
-		{"enable3dnr", 1, "tdf", 1},
 		{"wdr", 0, "wdr", 0},
 		{"wdr", 1, "wdr", 0},
 		{"wdr", 2, "wdr", 128},
