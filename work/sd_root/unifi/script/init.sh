@@ -114,6 +114,13 @@ net_monitor() {
             fi
             # Re-assert WiFi as metric 0 in case a prior Ethernet pass raised it.
             set_default_metric wlan0 "$(cat /tmp/gw1 2>/dev/null)" 0
+            # Disable 802.11 power-save. The driver default (on) makes the AP
+            # buffer unicast for a dozing station: measured 44 ms average /
+            # 516 ms peak RTT to the controller on a -67 dBm 2.4 GHz link, vs
+            # 13 ms / 232 ms with it off -- enough to make the Protect live view
+            # stutter/blink. Re-applied every pass because a reassociation resets
+            # it. iwconfig, not iw (this busybox has no iw).
+            iwconfig wlan0 power off 2>/dev/null
         fi
         sleep 5
     done
