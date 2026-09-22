@@ -2,10 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
  *
- * Shared types and constants for unifi_flv_bridge.
- *
- * The fshare shared-memory framing was reverse engineered; everything here
- * is our own code except that on-device format knowledge.
+ * Shared types and constants for unifi_flv_bridge. Everything here is our own
+ * code except the reverse-engineered on-device fshare framing.
  */
 #ifndef UNIFI_FLV_BRIDGE_BRIDGE_H
 #define UNIFI_FLV_BRIDGE_BRIDGE_H

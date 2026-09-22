@@ -2,18 +2,7 @@
 // Copyright (C) 2026 yi-protect contributors
 
 // Native POSIX-mqueue reader for rmm's motion broadcast, replacing an earlier
-// `ipc_read -n N` subprocess approach that had two bugs: a long-lived ipc_read
-// went silently deaf after a few read cycles, and a leaked orphan competed for
-// messages (a POSIX mqueue delivers each message to only one receiver).
-//
-// Wire format/byte patterns come from the real upstream source
-// (ipc_read.c/ipc_read.h). The /ipc_dispatch queue carries much more than
-// motion traffic (ISP/AE telemetry, etc.), so an exact 16-byte match against
-// IPC_MOTION_START/STOP is required; treating every message as motion gives
-// constant false positives.
-//
-// mq_open/mq_timedreceive are variadic C functions cgo cannot call directly,
-// so they are wrapped in the non-variadic shims below.
+// `ipc_read -n N` subprocess that went deaf and leaked orphan receivers.
 package main
 
 /*
@@ -80,8 +69,7 @@ func openMotionQueue(slot int) (C.mqd_t, error) {
 }
 
 // receiveMotionMessage waits up to motionMQReceiveTimeout for one message. A
-// timeout returns (nil, nil) so callers can distinguish "nothing new" from a
-// genuine queue failure.
+// timeout returns (nil, nil), distinguishing "nothing new" from a failure.
 func receiveMotionMessage(mq C.mqd_t) ([]byte, error) {
 	buf := make([]byte, motionMQMaxMsgSize)
 	n, err := C.motion_mq_timedreceive(mq, (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(len(buf)), C.int(motionMQReceiveTimeout/time.Second))
@@ -97,8 +85,7 @@ func receiveMotionMessage(mq C.mqd_t) ([]byte, error) {
 }
 
 // startMotionWatcher runs for one WSS connection, reading motionQueueSlot via
-// native POSIX mqueue calls and translating IPC_MOTION_START/STOP into
-// EventAnalytics pushes. The caller closes done on disconnect/reconnect.
+// native POSIX mqueue calls and translating IPC_MOTION_START/STOP to events.
 func (c *Client) startMotionWatcher(done <-chan struct{}) {
 	st := &motionState{}
 	go c.runMotionFailsafe(done, st)
@@ -148,9 +135,7 @@ func (c *Client) runMotionFailsafe(done <-chan struct{}, st *motionState) {
 }
 
 // runMotionWatcherOnce opens the queue once and reads until done fires or a
-// real error occurs. A failure returns an error so the caller retries with
-// backoff, covering the early-boot ENOENT window before dispatch's
-// ipc_multiplex.so preload has broadcast.
+// real error occurs; a failure returns so the caller retries with backoff.
 func (c *Client) runMotionWatcherOnce(done <-chan struct{}, st *motionState) error {
 	mq, err := openMotionQueue(motionQueueSlot)
 	if err != nil {
@@ -181,8 +166,7 @@ func (c *Client) runMotionWatcherOnce(done <-chan struct{}, st *motionState) err
 			c.handleMotionStop(st)
 		default:
 			// Ambient ISP/AE telemetry shares this queue; ignore anything
-			// that isn't one of the exact motion messages (matches
-			// ipc_read.c).
+			// that isn't one of the exact motion messages.
 		}
 	}
 }

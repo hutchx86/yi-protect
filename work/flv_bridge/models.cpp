@@ -3,9 +3,8 @@
  * Copyright (C) 2026 yi-protect contributors
  *
  * Per-model facts are data, not code: read from unifi/etc/model_table. This
- * file only knows how to find a model's row; it deliberately contains no model
- * names or per-model branches. The ring geometry itself (and how it was
- * reverse engineered per family) is documented in the table's header.
+ * file only knows how to find a model's row; it contains no model names or
+ * per-model branches.
  */
 #include "bridge.h"
 

@@ -2,11 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 
-# UniFi Protect emulation -- process watchdog.
-# Polls every $WATCHDOG_INTERVAL seconds and restarts any dead project process.
-# The encoder is watched too: stock rmm gets 5 strikes then a reboot (a dead rmm
-# can't be restarted); mediad is restarted, and reboots only if 3 restarts fail
-# (the box otherwise sits "online" with no video).
+# UniFi Protect emulation -- process watchdog: every $WATCHDOG_INTERVAL seconds
+# restart dead project processes; the encoder has its own strike/reboot logic below.
 
 UNIFI_PREFIX="/tmp/sd/unifi"
 MODEL_SUFFIX=$(cat "$UNIFI_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
@@ -59,12 +56,8 @@ MEDIAD_RESTARTS=0
 while true; do
     sleep "$INTERVAL"
 
-    # video encoder: mediad (drop-in) when opted in and installed, else stock
-    # rmm. mediad can be restarted; stock rmm cannot, so its path reboots. A
-    # missing mediad is restarted after 5 checks, and the box reboots if
-    # restarts don't bring it back (a running-but-wedged encoder shows no video).
-    # Match the daemon binary path, not "mediad": the transient mediad.sh
-    # launcher line contains "mediad" too.
+    # Encoder: mediad (drop-in) if opted in/installed, else stock rmm. Match the
+    # daemon binary path, not "mediad" (mediad.sh's launcher line also contains it).
     IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
     if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
         if alive "$UNIFI_PREFIX/bin/mediad"; then

@@ -2,18 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# detect-model: work out which camera we are running on, from the OS alone.
-# Prints the model and records it in $UNIFI_PREFIX/etc/model_suffix.
-#
-# The set of known models and the sensor each one uses come from model_table
-# (the single per-model definition file); no model or sensor name is hardcoded
-# here. Sources, in order:
-#   1. $1 / $SUFFIX -- /backup/init.sh sets this stock model token before
-#      sourcing us (it also names home_${SUFFIX}m updates).
-#   2. MIPI sensor driver -- only when exactly ONE model row names that sensor.
-#      A sensor shared by several models (gc2053) is ambiguous and is skipped.
-#   3. /backup/upgrade_conf OTA URL (.../familymonitor-<model>/).
-#   4. fallback default y623.
+# detect-model: resolve the camera model from the OS alone and record it in
+# $UNIFI_PREFIX/etc/model_suffix. Sources: $1/$SUFFIX, unique MIPI sensor, OTA URL, default y623.
 
 UNIFI_PREFIX="${UNIFI_PREFIX:-/tmp/sd/unifi}"
 OUT="$UNIFI_PREFIX/etc/model_suffix"
@@ -38,13 +28,11 @@ if [ -z "$model" ]; then
     done
 fi
 
-# 3. stock OTA config URL
 if [ -z "$model" ] && [ -f /backup/upgrade_conf ]; then
     model=$(grep -ao "familymonitor-[a-zA-Z0-9_]*" /backup/upgrade_conf 2>/dev/null \
             | sed 's/.*familymonitor-//' | sed -n 1p)
 fi
 
-# 4. project reference default
 [ -z "$model" ] && model=y623
 
 if [ -d "$UNIFI_PREFIX/etc" ]; then

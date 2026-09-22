@@ -5,9 +5,8 @@
  * FshareReader: reads the stock video encoder's ("rmm") POSIX shared-memory
  * frame ring at /dev/shm/fshare_frame_buf and emits each encoded frame.
  *
- * Reimplements the stock encoder's buffer-walking logic (LIVE555/RTSP removed).
  * The ring layout -- header fields, per-model offsets, frame tags -- was
- * reverse engineered.
+ * reverse engineered; there is no LIVE555/RTSP dependency.
  */
 #ifndef UNIFI_FLV_BRIDGE_HSHARE_READER_H
 #define UNIFI_FLV_BRIDGE_HSHARE_READER_H

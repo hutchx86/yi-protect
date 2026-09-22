@@ -1,22 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// Lux-threshold "Custom" IR mode. The Protect UI's night-vision control is
-// three-way: "Auto" (icrSwitchMode=="sensitivity", left to rmm's native
-// day/night logic), "Custom" at either extreme (irLedMode=="manual", already
-// wired in main.go), and "Custom" with a real 1-30 lux trigger threshold
-// (irLedMode stays "auto", icrSwitchMode=="lux", icrCustomValue carries the
-// slider -- this file).
-//
-// Brightness source: /dev/v4l-subdev0's Exposure/Gain V4L2 controls, which
-// track real scene brightness. Reads the SENSOR SUBDEV, not /dev/videoN (held
-// EBUSY by rmm); the control query is non-exclusive and coexists with rmm.
-//
-// No real lux calibration exists for this sensor, so this uses Gain as a
-// brightness signal (far more dynamic range than Exposure in testing) and
-// adapts to each camera's observed min/max over time, mapping the controller's
-// 1-30 slider onto that range as a fraction. A relative brightness proxy, not
-// calibrated lux.
+// Lux-threshold "Custom" IR mode: arrives as irLedMode=="auto" + icrSwitchMode
+// =="lux" + icrCustomValue. Reads /dev/v4l-subdev0 Gain as a brightness proxy.
 package main
 
 import (
@@ -50,9 +36,8 @@ type v4l2Control struct {
 	Value int32
 }
 
-// readGain opens aeSubdevPath fresh each call (cheap, avoids holding a
-// long-lived fd against a device other things may also want) and reads the
-// live Gain control.
+// readGain opens aeSubdevPath fresh each call (avoids holding a long-lived fd
+// against a device others may want) and reads the live Gain control.
 func readGain() (int32, error) {
 	fd, err := syscall.Open(aeSubdevPath, syscall.O_RDWR, 0)
 	if err != nil {
@@ -70,7 +55,6 @@ func readGain() (int32, error) {
 
 // icrLuxState is the live config for the lux-threshold mode, set from
 // handleIspSettings when a ChangeIspSettings carries icrSwitchMode=="lux".
-// Guarded by icrLuxMu (read by the poller, written by the WSS handler).
 var (
 	icrLuxMu       sync.Mutex
 	icrLuxEnabled  bool
@@ -80,17 +64,13 @@ var (
 	icrLuxPollOnce sync.Once
 )
 
-// setIcrLuxMode is called from handleIspSettings on every ChangeIspSettings
-// message. Safe to call repeatedly with the same values (e.g. the slider
-// firing a rapid sequence while being dragged, already observed live).
+// setIcrLuxMode is called from handleIspSettings on every ChangeIspSettings;
+// safe to call repeatedly with the same values (slider drags fire rapidly).
 func setIcrLuxMode(enabled bool, slider int, extOnly bool) {
 	icrLuxMu.Lock()
 	changed := icrLuxEnabled != enabled || icrLuxSlider != slider || icrLuxExtOnly != extOnly
-	// Force a resync on every disabled->enabled transition: the poller's own
-	// isNight tracking starts at false regardless of the hardware's actual
-	// state and only calls cpld_ctl on a CHANGE, so if its initial assumption
-	// matches what it would decide, it silently never asserts anything. The
-	// resync makes the next real decision assert to hardware once.
+	// Force a resync on a disabled->enabled transition: the poller's isNight starts
+	// false and only asserts on a CHANGE, so a matching start would stay silent.
 	if enabled && !icrLuxEnabled {
 		icrLuxNeedSync = true
 	}
@@ -107,10 +87,8 @@ func setIcrLuxMode(enabled bool, slider int, extOnly bool) {
 	icrLuxPollOnce.Do(func() { go runIcrLuxPoller() })
 }
 
-// runIcrLuxPoller polls Gain every 5s, adapts its observed min/max, and drives
-// cpld_ctl across the threshold with hysteresis + a debounce count, mirroring
-// rmm's own >5-frame day/night debounce rather than reacting to one noisy
-// reading.
+// runIcrLuxPoller polls Gain every 5s, adapts its observed min/max and drives
+// cpld_ctl with hysteresis + a debounce count (mirrors rmm's >5-frame debounce).
 func runIcrLuxPoller() {
 	const (
 		pollInterval   = 5 * time.Second
@@ -152,8 +130,7 @@ func runIcrLuxPoller() {
 			maxGain = gain
 		}
 		if maxGain-minGain < 10 {
-			// Not enough observed range yet to decide -- wait for more data
-			// rather than guess off a near-zero range.
+			// Not enough observed range yet -- wait rather than guess.
 			continue
 		}
 
@@ -179,9 +156,8 @@ func runIcrLuxPoller() {
 				continue
 			}
 		}
-		// A resync applies immediately, skipping the debounce wait -- the
-		// hardware may already disagree with our tracking (mode was just
-		// (re-)enabled).
+		// A resync applies immediately, skipping the debounce: the hardware
+		// may already disagree with our tracking (mode was just re-enabled).
 		crossCount = 0
 		isNight = wantNight
 		if needSync {

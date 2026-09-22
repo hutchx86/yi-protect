@@ -2,10 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 
-# UniFi Protect emulation -- app init, launched by lower_half_init.sh.
-# Starts the media encoder (mediad if installed, else stock rmm) plus this
-# project's stack (unifi_flv_bridge, unifi_avclient_go, talkback_rx, watchdog),
-# reading only unifi.cfg.
+# UniFi Protect emulation -- app init, launched by lower_half_init.sh. Starts the
+# encoder (mediad if installed, else stock rmm) plus our stack, reading unifi.cfg.
 
 UNIFI_PREFIX="/tmp/sd/unifi"
 CONF="$UNIFI_PREFIX/etc/unifi.cfg"
@@ -39,15 +37,8 @@ ulimit -s 1024
 [ -d /sys/class/net/eth0 ]  && echo 1500 > /sys/class/net/eth0/mtu
 [ -d /sys/class/net/wlan0 ] && echo 1500 > /sys/class/net/wlan0/mtu
 
-# ---- Ethernet/WiFi route preference ----
-# If eth0 has carrier and a DHCP lease it is the preferred default route;
-# otherwise WiFi. wlan0 is never taken down (the stock WiFi watchdog would just
-# re-up it), so preference is enforced with route metrics: eth0 at 0, wlan0 at
-# 100 -- WiFi stays associated as fallback. The stock app only runs DHCP on
-# wlan0, so we run our own eth0 client. default.script stores each gateway in
-# /tmp/gw0 (eth0) and /tmp/gw1 (wlan0); we re-assert the metrics when they
-# drift. avclient is restarted on a real state change so it re-detects its
-# identity. Logs to /tmp/network.log.
+# Route preference: eth0 (if carrier+lease) at metric 0, else wlan0 at 100;
+# wlan0 is never taken down. Gateways: /tmp/gw0 (eth0), /tmp/gw1 (wlan0).
 eth_dhcp() {
     DS=/backup/tools/default.script
     [ -f "$DS" ] || DS=/home/app/script/default.script
@@ -114,12 +105,8 @@ net_monitor() {
             fi
             # Re-assert WiFi as metric 0 in case a prior Ethernet pass raised it.
             set_default_metric wlan0 "$(cat /tmp/gw1 2>/dev/null)" 0
-            # Disable 802.11 power-save. The driver default (on) makes the AP
-            # buffer unicast for a dozing station: measured 44 ms average /
-            # 516 ms peak RTT to the controller on a -67 dBm 2.4 GHz link, vs
-            # 13 ms / 232 ms with it off -- enough to make the Protect live view
-            # stutter/blink. Re-applied every pass because a reassociation resets
-            # it. iwconfig, not iw (this busybox has no iw).
+            # Disable 802.11 power-save (driver default on buffers unicast ->
+            # live-view stutter). Re-applied each pass: reassociation resets it.
             iwconfig wlan0 power off 2>/dev/null
         fi
         sleep 5
@@ -133,22 +120,16 @@ fi
 # Make /etc writable (some stock bits write there)
 mkdir -p /tmp/etc && cp -R /etc/* /tmp/etc 2>/dev/null && mount --bind /tmp/etc /etc
 
-# ---- swap ----
-# Stock yi-hack system.sh created /tmp/sd/swapfile and enabled it; our init
-# replaced system.sh and dropped that, leaving zero swap on a 60MB board. A
-# snapshot (imggrabber/ffmpeg, ~9MB) could then OOM-kill rmm, and the stock
-# watch_process reboots when rmm dies. Restore the swapfile.
+# Swap: stock system.sh made /tmp/sd/swapfile; we replaced system.sh and dropped
+# it, leaving a 60MB board swapless (snapshot OOM could kill rmm). Restore it.
 if mount 2>/dev/null | grep -q "/tmp/sd "; then
     SWAPFILE=/tmp/sd/swapfile
     if [ ! -f "$SWAPFILE" ]; then
         dd if=/dev/zero of="$SWAPFILE" bs=1M count=64 2>/dev/null
     fi
     chmod 0600 "$SWAPFILE"
-    # No mkswap on this box (no util-linux; busybox applet not compiled in),
-    # so write the version-1 header by hand. Page size 4096, file 64 MiB ->
-    # last_page = 16383.
-    #   offset 1024: version=1; 1028: last_page=16383; 1032: nr_badpages=0
-    #   offset 4086: magic "SWAPSPACE2"
+    # No mkswap on this box, so write the version-1 header by hand. Page 4096, file
+    # 64 MiB: @1024 version=1, @1028 last_page=16383, @1032 nr_badpages=0, @4086 magic SWAPSPACE2.
     printf '\001\000\000\000\377\077\000\000\000\000\000\000' \
         | dd of="$SWAPFILE" bs=1 seek=1024 conv=notrunc 2>/dev/null
     printf 'SWAPSPACE2' \
@@ -158,13 +139,8 @@ if mount 2>/dev/null | grep -q "/tmp/sd "; then
     echo 15 > /proc/sys/vm/swappiness 2>/dev/null
 fi
 
-# ---- WiFi provisioning (SD config) ----
-# On an already-installed card, drop unifi/etc/configure_wifi.cfg (wifi_ssid=/
-# wifi_psk=) and reboot: this writes the credentials into the conf partition
-# (mtd7) and reboots once so the stock stack associates. First-boot
-# provisioning is done by Factory/config.sh, because init.sh does not run on the
-# install boot. The file is renamed to *.applied afterwards so it is one-shot;
-# edit + rename it back to re-provision.
+# WiFi provisioning (SD config): drop unifi/etc/configure_wifi.cfg (wifi_ssid=/
+# wifi_psk=) and reboot; init.sh writes mtd7 and reboots once, renaming to .applied.
 WCFG="$UNIFI_PREFIX/etc/configure_wifi.cfg"
 if [ -f "$WCFG" ] && [ -x "$UNIFI_PREFIX/script/configure-wifi.sh" ]; then
     "$UNIFI_PREFIX/script/configure-wifi.sh" "$WCFG"
@@ -176,11 +152,8 @@ if [ -f "$WCFG" ] && [ -x "$UNIFI_PREFIX/script/configure-wifi.sh" ]; then
     esac
 fi
 
-# ---- SSH (dropbear), started early ----
-# Kept before the video pipeline so a failure there can't lock us out. Generate
-# both ECDSA and ED25519 keys up front (stock clients prefer ed25519; missing
-# keys made dropbear's on-demand generation fail the handshake) and keep the
-# first login fast.
+# SSH (dropbear) started before the video pipeline so a failure there can't lock
+# us out. Generate ecdsa+ed25519 host keys up front (missing keys failed the KEX).
 DBDIR="$UNIFI_PREFIX/etc/dropbear"
 mkdir -p "$DBDIR"
 for kt in ecdsa ed25519; do
@@ -192,22 +165,8 @@ for kt in ecdsa ed25519; do
     [ -f "$DBDIR/dropbear_${kt}_host_key" ] && DBKEYS="$DBKEYS -r $DBDIR/dropbear_${kt}_host_key"
 done
 
-# ---- SSH passwords ----
-# Root: from unifi.cfg SSH_PASSWORD (shipped default "admin"). The stock
-# /etc/shadow gives root an empty password and dropbear runs with -B, so without
-# this anyone can log in. mkpasswd hashes it to the one scheme the camera's musl
-# crypt() implements ($1$ MD5-crypt); dropbear verifies through the same
-# getspnam()+crypt() path. Empty SSH_PASSWORD leaves stock behavior.
-#
-# ubnt: the second account native Protect cameras expose; on real hardware the
-# controller manages it. Kept separate from root so a controller credential
-# rotation cannot lock out the human root login. Password from
-# SSH_UBUNT_PASSWORD (default "ubnt", the native pre-adoption value). The
-# controller's UpdateUsernamePassword push will override it once wired
-# (todo.md item 26).
-#
-# Both fixes run after the /etc bind-mount above, so they land in the writable
-# tmpfs and are re-applied fresh from the read-only rootfs on every boot.
+# Root password from SSH_PASSWORD (stock shadow blank + dropbear -B = open login);
+# ubnt is separate so controller rotation can't lock root. Both hashed $1$ MD5-crypt.
 set_shadow() {
     # $1 = user, $2 = md5-crypt hash; replace the entry, else append.
     if grep -q "^$1:" /etc/shadow; then
@@ -238,9 +197,8 @@ if [ -x "$UNIFI_PREFIX/bin/mkpasswd" ]; then
 fi
 chmod 0600 /etc/shadow /etc/passwd 2>/dev/null
 
-# One dropbear on :22 serves both accounts -- several users per daemon is
-# normal; a second daemon cannot share the port. Each user has its own
-# /etc/shadow hash, so root's and ubnt's credentials are independent.
+# One dropbear on :22 serves both accounts (a second daemon cannot share the
+# port); each user has its own /etc/shadow hash.
 dropbearmulti dropbear -R $DBKEYS -B -p 0.0.0.0:22
 
 # Hide the stock Yi watermark: bind all-white blanks (the OSD's transparent
@@ -258,12 +216,8 @@ dropbearmulti dropbear -R $DBKEYS -B -p 0.0.0.0:22
 touch /tmp/audio_in_fifo.requested
 [ -p /tmp/audio_in_fifo ] || mknod /tmp/audio_in_fifo p
 
-# ---- Yi cloud daemons (optional, YI_CLOUD=yes) ----
-# The stock app's daemons live in /home/app: cloud (registration/control),
-# p2p_tnp (P2P tunnel the YI app streams over) and oss (cloud storage upload),
-# plus the stock cloudAPI which cloud spawns. We leave cloudAPI in place, so this
-# behaves like an unmodified camera. In the rmm path cloud already runs as the
-# ring kicker, so it is only started here when absent.
+# Yi cloud daemons (YI_CLOUD=yes): cloud/p2p_tnp/oss in /home/app. In the rmm
+# path cloud already runs as the ring kicker, so start it only when absent.
 start_yi_cloud() {
     cd /home/app
     if ! ps | grep -v grep | grep -q '[c]loud'; then
@@ -275,12 +229,71 @@ start_yi_cloud() {
     [ -f ./oss_lapse ] && ./oss_lapse >/dev/null 2>&1 &
 }
 
-# ---- media daemon: mediad if installed, else the stock rmm ----
-# Both publish /dev/shm/fshare_frame_buf, which unifi_flv_bridge reads below,
-# so nothing downstream changes. mediad is the sister project's drop-in
-# replacement for rmm; its installer sets unifi.cfg IS_MEDIAD=yes and drops in
-# bin/mediad + script/mediad.sh. Never run both at once: they share the ring
-# and its /dev/shm locks.
+# Fetch the vendor H.264 codec libs (libvenc_codec.so, libVE.so) from the pinned
+# lindenis SDK on first boot; the camera has no https client/CA store, so use -k.
+UNIFI_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+[ -n "$UNIFI_DIR" ] && [ -d "$UNIFI_DIR/script" ] || UNIFI_DIR="$UNIFI_PREFIX"
+FETCH_BIN="$UNIFI_DIR/bin/downloader"
+LIBFETCH_LOG=/tmp/libfetch.log
+SDK_URL="https://raw.githubusercontent.com/lindenis-org/lindenis-v833-softwinner/834a5afe83ec037a38ed0dbed522ff65439eabdf/eyesee-mpp/middleware/sun8iw19p1/media/LIBRARY/libcedarc/library"
+
+# Poll up to ~45s for network/DNS before fetching (cold-boot DHCP/DNS is often
+# late): ping proves DNS+ICMP, a tiny probe download proves downloader/TLS.
+PROBE_URL="$SDK_URL/tina.mk"
+net_ready() {
+    ping -c 1 -W 2 github.com >/dev/null 2>&1 && return 0
+    [ -x "$FETCH_BIN" ] || return 1
+    "$FETCH_BIN" -k "$PROBE_URL" /tmp/.netprobe >/dev/null 2>&1 \
+        && { rm -f /tmp/.netprobe; return 0; }
+    return 1
+}
+i=0
+while [ "$i" -lt 15 ]; do
+    if net_ready; then
+        echo "libfetch: network/DNS ready after $((i*3))s" >> "$LIBFETCH_LOG"
+        break
+    fi
+    i=$((i+1))
+    echo "libfetch: waiting for network/DNS (${i}/15)" >> "$LIBFETCH_LOG"
+    sleep 3
+done
+[ "$i" -ge 15 ] && echo "libfetch: network/DNS not ready after 45s; proceeding anyway" >> "$LIBFETCH_LOG"
+
+# ensure_lib: skip if md5 matches, else download to .tmp and verify. WiFi resets
+# mid-body, so the downloader resumes .tmp via Range; keep it across the 12 tries.
+ensure_lib() {
+    dst="$UNIFI_DIR/lib/$1"
+    [ "$(md5sum "$dst" 2>/dev/null | awk '{print $1}')" = "$2" ] && return 0
+    if [ ! -x "$FETCH_BIN" ]; then
+        echo "libfetch: $FETCH_BIN missing; cannot fetch $1" >> "$LIBFETCH_LOG"
+        return 1
+    fi
+    tmp="$dst.tmp"
+    rm -f "$tmp"
+    n=0
+    while [ "$n" -lt 12 ]; do
+        n=$((n+1))
+        if "$FETCH_BIN" -k "$SDK_URL/$1" "$tmp" >> "$LIBFETCH_LOG" 2>&1 \
+           && [ "$(md5sum "$tmp" 2>/dev/null | awk '{print $1}')" = "$2" ]; then
+            mv -f "$tmp" "$dst"
+            echo "libfetch: $1 fetched (md5 ok)" >> "$LIBFETCH_LOG"
+            return 0
+        fi
+        echo "libfetch: $1 fetch/verify failed (attempt $n)" >> "$LIBFETCH_LOG"
+        sleep 2
+    done
+    rm -f "$tmp"
+    return 1
+}
+
+ensure_lib libvenc_codec.so 8888f9a820021484e1cea01efd8142e6
+ensure_lib libVE.so          096259a6c6178dee25e9dda61b01b715
+for l in libvenc_codec.so libVE.so; do
+    [ -f "$UNIFI_DIR/lib/$l" ] || echo "libfetch: WARNING: $l still missing; mediad will fail to load the H.264 encoder" >> "$LIBFETCH_LOG"
+done
+
+# Media daemon: mediad (sister project's rmm replacement) if installed, else
+# stock rmm; both publish /dev/shm/fshare_frame_buf. Never run both at once.
 IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
 if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
     echo "init: starting mediad"
@@ -290,23 +303,16 @@ if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI
 else
     cd /home/app
     sleep 2
-    # Load the SD-shipped patched libasound: it is the only one with the
-    # /tmp/audio_in_fifo listener that talkback_rx writes to (stock /lib's
-    # libasound has no audio-FIFO support, so rmm never opens the FIFO and
-    # talkback fails with ENXIO). Upstream yi-hack puts its lib dir FIRST for
-    # exactly this reason; our global LD_LIBRARY_PATH above lists /lib first,
-    # so prepend the project lib dir here rather than reordering everything.
+    # Load the SD-shipped patched libasound (the only one with the /tmp/audio_in_fifo
+    # listener talkback needs, else talkback fails ENXIO); prepend its lib dir.
     LD_LIBRARY_PATH="$UNIFI_PREFIX/lib:$LD_LIBRARY_PATH" ./rmm > /tmp/rmm.log 2>&1 &
     RMM_PID=$!
     # Keep rmm off the OOM killer's list (60MB box; snapshots are the victims).
     echo -1000 > "/proc/$RMM_PID/oom_score_adj" 2>/dev/null
     sleep 4
 
-    # Kick the encoder ring so rmm actually starts producing (else the bridge
-    # sees an empty ring forever). Same trick as the stock system.sh: a brief
-    # `cloud` run fills the circular buffer, then `ipc_cmd -x` starts the
-    # stream. (mediad produces on its own.) When YI_CLOUD=yes this same `cloud`
-    # is left running as the Yi cloud daemon instead of being killed.
+    # Kick the encoder ring so rmm starts producing: a brief `cloud` run fills the
+    # buffer, then `ipc_cmd -x`. (mediad produces on its own.) YI_CLOUD keeps cloud.
     ./cloud >/dev/null 2>&1 &
     IDX=$(hexdump -n 16 /dev/shm/fshare_frame_buf | awk 'NR==1{print $8}')
     N=0
@@ -342,9 +348,8 @@ cd "$UNIFI_PREFIX/bin"
 AUDIO_OPT="-a $AUDIO"
 ./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -s $AUDIO_OPT > /tmp/unifi_flv_bridge.log 2>&1 &
 
-# Adoption/control client; cert/key are self-generated on first boot. PTZ and
-# per-model geometry are read by the client from model_table (the single
-# per-model definition file), so no per-model list lives here.
+# Adoption/control client; cert/key self-generated on first boot. PTZ and
+# per-model geometry come from model_table.
 ./unifi_avclient_go \
     -cert "$UNIFI_PREFIX/etc/unifi_client_go.crt" \
     -key  "$UNIFI_PREFIX/etc/unifi_client_go.key" \

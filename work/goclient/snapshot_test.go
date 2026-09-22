@@ -8,9 +8,8 @@ import (
 	"time"
 )
 
-// TestSnapshotTimeout pins the clamping of the controller's timeoutMs. The
-// bug this guards: a hardcoded 8s cap was shorter than the HIGH stream's ~9s
-// IDR wait, so imggrabber was SIGKILLed mid-capture.
+// TestSnapshotTimeout pins the clamping of the controller's timeoutMs: a
+// hardcoded 8s cap was shorter than the HIGH stream's ~9s IDR wait.
 func TestSnapshotTimeout(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -39,9 +38,8 @@ func TestSnapshotTimeout(t *testing.T) {
 	}
 }
 
-// TestSnapshotCache checks the last-good fallback: stored bytes are copied
-// (so later mutation can't corrupt the cache), the age is reported, and an
-// unknown resolution misses.
+// TestSnapshotCache checks the last-good fallback: stored bytes are copied,
+// the age is reported, and an unknown resolution misses.
 func TestSnapshotCache(t *testing.T) {
 	c := &Client{snapshotJPEG: map[string][]byte{}, snapshotAt: map[string]time.Time{}}
 

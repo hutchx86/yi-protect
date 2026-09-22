@@ -79,6 +79,7 @@ controller. It is still a moving target — expect rough edges.
 Allwinner **sun8iw19**, ~60 MB RAM, BusyBox userland. Developed against:
 
 - Yi **Pro 2k** (`y623`; PCB silkscreen may read `y621`)
+- Yi **Dome Camera U** (2K) (`h51ga`)
 - Yi **Dome Camera U** (Full HD) (`h52ga`)
 - Yi **Dome Guard** (`r35gb`)
 - Yi **1080p Home** (`y291ga`)
@@ -188,7 +189,7 @@ needed. The toolchain is **not** vendored — clone it to the expected path firs
 git submodule update --init --recursive
 
 git clone https://github.com/lindenis-org/lindenis-v536-prebuilt \
-  repos/lindenis-v536-prebuilt
+  repos/toolchain-sunxi-musl
 ```
 
 Then:
@@ -197,8 +198,9 @@ Then:
 # Host-only self-test of the FLV/fshare parser (no cross toolchain needed)
 make -C work/flv_bridge test
 
-# Full SD package: builds every binary from source into work/sd_root/ and
-# writes work/yi-protect-<rev>.tar.gz (+ SHA256SUMS)
+# Full SD package: builds the project binaries into work/sd_root/ and writes
+# work/yi-protect-<rev>.tar.gz (+ SHA256SUMS). Requires the prebuilt
+# work/downloader/downloader (static HTTPS downloader).
 work/release.sh
 ```
 

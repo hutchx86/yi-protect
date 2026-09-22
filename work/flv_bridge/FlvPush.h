@@ -2,14 +2,12 @@
 // Copyright (C) 2026 yi-protect contributors
 
 /*
- * FlvPush: the native, zero-extra-process extendedFlv pusher at the heart of
- * unifi_flv_bridge.
+ * FlvPush: the native extendedFlv pusher at the heart of unifi_flv_bridge.
  *
- * Rationale: ~60MB total RAM. A separate ffmpeg process per requested stream
- * OOM-thrashed the device at 2-3 concurrent viewers. FlvPush instead taps the
- * SAME raw H.264 frames FshareReader pulls out of the stock encoder's
+ * Taps the SAME raw H.264 frames FshareReader pulls out of the stock encoder's
  * shared-memory ring (no decode/demux/remux, no extra process) and muxes them
- * into FLV tags written straight to a TCP socket.
+ * into FLV tags written straight to a TCP socket. A separate ffmpeg process per
+ * requested stream OOM-thrashed the device at 2-3 concurrent viewers.
  *
  * Three channels: HIGH (video1, real high-res encoder), LOW (video2, real
  * 640x360 encoder), MED (video3). MED aliases the SAME real HIGH frames as
@@ -22,6 +20,7 @@
  * Control FIFO /tmp/unifi_flv_bridge_ctl, newline-terminated commands:
  *   CONNECT <host:port> <streamName> <high|low|medium>
  *   DISCONNECT <high|low|medium>
+ *   MUTE on|off
  * Channels are independent: a CONNECT on one does not affect the others.
  */
 #ifndef _FLV_PUSH_H

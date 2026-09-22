@@ -1,28 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// UBNT L2 discovery protocol responder (UDP port 10001).
-//
-// Separate from the avclient WSS control channel: this is what makes an
-// unadopted camera show up as discoverable/adoptable in Protect. Real cameras
-// run it continuously via `discover`/`ubntbox`.
-//
-// Wire format (reverse-engineered from a live UVC G3 Flex reply): 4-byte
-// header (version, command, big-endian body length) then TLVs (1-byte type,
-// big-endian length, value):
-//
-//	0x02  MAC (6) + IPv4 (4)
-//	0x01  MAC (6)
-//	0x0a  uptime seconds, 4 bytes big-endian
-//	0x0b  hostname
-//	0x0c  product/model
-//	0x03  firmware version
-//	0x10  sysid, 2 bytes LITTLE-ENDIAN on the wire (verified against board.info)
-//	0x17  is-managed flag, 4 bytes big-endian: 0 = adopted, nonzero = adoptable
-//	0x20  stable device-id UUID (same value as the `device-id` WSS header)
-//	0x26  controller/adoption UUID, 16 raw bytes, present only once adopted
-//	0x2b  device GUID, 16 raw bytes (same value as `x-guid`)
-//	0x2c  default-credentials flag, 1 byte (0x03 on real hardware)
+// UBNT L2 discovery responder (UDP :10001): makes an unadopted camera
+// discoverable. Wire: 4-byte header (version, command, BE body len) then TLVs.
 package main
 
 import (
@@ -37,18 +17,15 @@ import (
 	"time"
 )
 
-// isAdopted is set once the WSS control channel confirms adoption
-// (ubnt_avclient_paramAgreement); the discovery responder reads it from its
-// own goroutine. Persisted to disk (setAdopted/loadAdoptedState) so an
-// already-adopted camera reports correctly from the first reply after a
-// restart rather than looking adoptable until paramAgreement arrives.
+// isAdopted is set once the WSS control channel confirms adoption and is read
+// by the responder goroutine; persisted so a restart reports correctly at once.
 var isAdopted atomic.Bool
 
 // adoptedStateFilePath is where isAdopted is persisted. Set from the
 // -adopted-state-file flag.
 var adoptedStateFilePath = unifiPrefix + "/etc/unifi_client_go.adopted"
 
-// setAdopted updates isAdopted and persists it. loadAdoptedState sets the
+// setAdopted updates isAdopted and persists it; loadAdoptedState sets the
 // in-memory flag directly to avoid rewriting the file.
 func setAdopted(adopted bool) {
 	isAdopted.Store(adopted)
@@ -77,10 +54,8 @@ func loadAdoptedState(path string) {
 // sent as the 0x26 TLV once adopted. Nil until main() sets it.
 var adoptionUUID []byte
 
-// deviceName is the camera's display name -- sent in hello/ChangeDeviceSettings/
-// ChangeOsdSettings and as discovery's 0x0b hostname. Defaults to cfg.Model,
-// then to whatever the Protect app sets. An atomic.Value so the responder
-// reads renames immediately.
+// deviceName is the camera's display name, sent in hello/ChangeDeviceSettings/
+// ChangeOsdSettings; an atomic.Value so the responder reads renames immediately.
 var deviceName atomic.Value // holds string
 
 // deviceNameFilePath persists a controller-assigned name across restarts.
@@ -149,9 +124,8 @@ func buildDiscoveryResponse(mac [6]byte, ip net.IP, hostname, product, fwVersion
 	body = append(body, tlv(0x0b, []byte(hostname))...)
 	body = append(body, tlv(0x0c, []byte(product))...)
 
-	// 0x17 (is_managed): 0 = adopted, nonzero = adoptable. The controller's
-	// own parser treats it as a boolean; 4 big-endian bytes is this device's
-	// confirmed wire format.
+	// 0x17 (is_managed): 0 = adopted, nonzero = adoptable; 4 big-endian bytes
+	// is this device's confirmed wire format.
 	managed := make([]byte, 4)
 	if !isAdopted.Load() {
 		binary.BigEndian.PutUint32(managed, 1)
@@ -166,8 +140,7 @@ func buildDiscoveryResponse(mac [6]byte, ip net.IP, hostname, product, fwVersion
 		body = append(body, tlv(0x10, sid)...)
 	}
 
-	// 0x20 (DEVICE_ID): stable per-device UUID, same value as the `device-id`
-	// WSS header -- NOT the per-connection `x-guid` (that is 0x2b).
+	// 0x20 (DEVICE_ID): stable per-device UUID, NOT the per-connection x-guid.
 	if deviceIDStr != "" {
 		body = append(body, tlv(0x20, []byte(deviceIDStr))...)
 	}
@@ -182,8 +155,7 @@ func buildDiscoveryResponse(mac [6]byte, ip net.IP, hostname, product, fwVersion
 	// 0x2c (DEFAULT_CREDENTIALS): single byte, 0x03 on real hardware.
 	body = append(body, tlv(0x2c, []byte{0x03})...)
 
-	// 0x26 (adoption UUID): present only once adopted; an unadopted camera has
-	// never persisted one.
+	// 0x26 (adoption UUID): present only once adopted.
 	if isAdopted.Load() && len(adoptionUUID) == 16 {
 		body = append(body, tlv(0x26, adoptionUUID)...)
 	}
@@ -195,10 +167,8 @@ func buildDiscoveryResponse(mac [6]byte, ip net.IP, hostname, product, fwVersion
 	return append(header, body...)
 }
 
-// discoveryGroup is the multicast address real UniFi devices join. The
-// controller probes both the limited-broadcast address and this group;
-// broadcast is dropped by routers, so cross-subnet discovery only works for
-// group members. Binding 0.0.0.0:10001 alone does NOT receive multicast.
+// discoveryGroup is the multicast group real UniFi devices join; broadcast is
+// dropped by routers, so cross-subnet discovery only works for group members.
 var discoveryGroup = net.IPv4(233, 89, 188, 1)
 
 // lastProbeNanos records when we last accepted a discovery request, used to
@@ -254,9 +224,8 @@ func joinDiscoveryGroup(conn *net.UDPConn) {
 	}
 }
 
-// runDiscoveryResponder listens for UBNT discovery broadcast/unicast/multicast
-// queries on UDP 10001 and replies. Runs independently of the avclient WSS
-// connection state -- real cameras respond whether adopted or not.
+// runDiscoveryResponder listens for UBNT discovery queries on UDP 10001 and
+// replies, independently of WSS state -- real cameras respond adopted or not.
 func runDiscoveryResponder(mac [6]byte, ip net.IP, product, fwVersion string, sysid uint16, guid string) {
 	addr := &net.UDPAddr{Port: discoveryPort, IP: net.IPv4zero}
 	conn, err := net.ListenUDP("udp4", addr)
@@ -283,8 +252,8 @@ func runDiscoveryResponder(mac [6]byte, ip net.IP, product, fwVersion string, sy
 			log.Printf("discovery: first probe received from %s -- a controller can see us", src)
 		}
 		lastProbeNanos.Store(time.Now().UnixNano())
-		// Read the name fresh on each reply so a controller-pushed rename
-		// takes effect without restarting the responder.
+		// Read the name fresh each reply so a controller-pushed rename takes
+		// effect without restarting the responder.
 		resp := buildDiscoveryResponse(mac, ip, getDeviceName(), product, fwVersion, sysid, time.Since(start), guid)
 		if _, err := conn.WriteToUDP(resp, src); err != nil {
 			log.Printf("discovery: reply to %s failed: %v", src, err)

@@ -101,15 +101,14 @@ static void speaker_set(int *state, int on) {
 }
 
 /* (re)open the fifo for writing; rmm holds the read end open, so this should
- * return immediately rather than block. */
+ * return immediately rather than block. Clear O_NONBLOCK once a reader is
+ * confirmed present, so writes block normally under backpressure. */
 static int fifo_open(void) {
     int fd = open(FIFO_PATH, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
         fprintf(stderr, "talkback_rx: cannot open %s: %s\n", FIFO_PATH, strerror(errno));
         return -1;
     }
-    /* clear O_NONBLOCK now a reader is confirmed present, so writes block
-     * normally instead of returning EAGAIN under backpressure */
     int flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
     return fd;
@@ -280,7 +279,7 @@ int main(int argc, char **argv) {
             nsamps = (int)(info.samples / (unsigned int) ch);
             for (int i = 0; i < nsamps; i++) pcmbuf[i] = out[i * ch];
             if (!logged_rate) {
-                fprintf(stderr, "talkback_rx: aac rate=%lu ch=%d sbr=%d obj=%d samples=%d\n",
+                fprintf(stderr, "talkback_rx: rate=%lu ch=%d sbr=%d obj=%d samples=%d\n",
                         info.samplerate, info.channels, info.sbr, info.object_type, nsamps);
                 logged_rate = 1;
             }

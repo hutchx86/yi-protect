@@ -2,12 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# Dump every raw MTD partition to the SD card for emergency recovery, before
-# we modify the camera's boot. Idempotent: skips if a complete backup already
-# exists unless --force is given.
-#
-# Output: /tmp/sd/yi-protect-backup/<model>/{mtdN_<name>.bin,md5sums,mtd.txt,
-# RESTORE.md,restore.sh}
+# Dump every raw MTD partition to the SD card for emergency recovery before
+# modifying the boot; idempotent unless --force: /tmp/sd/yi-protect-backup/<model>/.
 
 UNIFI_PREFIX="${UNIFI_PREFIX:-/tmp/sd/unifi}"
 BKROOT="/tmp/sd/yi-protect-backup"

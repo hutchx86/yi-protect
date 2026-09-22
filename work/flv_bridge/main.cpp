@@ -5,8 +5,6 @@
  * unifi_flv_bridge: reads the stock video encoder's shared-memory frame ring
  * (/dev/shm/fshare_frame_buf) and pushes each video/audio stream as UniFi's
  * extendedFlv over TCP, on demand, to the Protect controller's ingest.
- *
- * FshareReader + FlvPush only; keeps the old binary's CLI for the init script.
  */
 #include <cstdio>
 #include <cstdlib>
@@ -29,8 +27,7 @@
 #define AAC_MAX_NCHANS 2
 
 // Set from -m / RRTSP_MODEL. Kept as the model *name*: all per-model facts are
-// looked up in unifi/etc/model_table (see modelParams), so the bridge carries
-// no model table of its own.
+// looked up in unifi/etc/model_table (see modelParams).
 static const char *modelName = "";
 
 namespace {
@@ -218,7 +215,7 @@ void printUsage(const char *prog) {
 }  // namespace
 
 int main(int argc, char **argv) {
-    // Defaults mirrored from the old daemon's CLI.
+    // Defaults mirrored from the legacy daemon's CLI.
     while (true) {
         static struct option longOptions[] = {
             {"model", required_argument, nullptr, 'm'},
@@ -270,7 +267,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Environment overrides, kept for parity with the old daemon.
+    // Environment overrides, for parity with the legacy daemon.
     const char *env = getenv("RRTSP_MODEL");
     if (env != nullptr) modelName = env;
     env = getenv("RRTSP_RES");
@@ -290,8 +287,7 @@ int main(int argc, char **argv) {
     if (env != nullptr) debug = (int)strtol(env, nullptr, 10);
 
     if (audio == 1) {
-        // Old PCM/WAV path read /tmp/audio_fifo through LIVE555 filters, which
-        // this rewrite dropped; UniFi deployments use AAC.
+        // The old PCM/WAV path was dropped in this rewrite; UniFi uses AAC.
         std::fprintf(stderr, "unifi_flv_bridge: PCM audio is no longer supported; "
                              "disabling audio (use -a aac)\n");
         audio = 0;
@@ -305,8 +301,8 @@ int main(int argc, char **argv) {
     }
 
     ModelParams mp = modelParams(modelName);
-    // Match the old daemon: run slightly above the stock encoder's own
-    // priority so a busy box still drains the ring in time.
+    // Run slightly above the stock encoder's own priority so a busy box still
+    // drains the ring in time.
     setpriority(PRIO_PROCESS, 0, -10);
     std::fprintf(stderr, "unifi_flv_bridge: model=%s resolution=%d audio=%d "
                          "ring=%lld offset=%u header=%d high=%ux%u ptz=%d\n",

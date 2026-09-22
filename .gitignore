@@ -1,22 +1,13 @@
 devices.md
-fw-download/
-fw_extract/
-fw_disassembly/
 *.bin
 *.img
 *.key
 
 # Built Go binaries — source lives in *.go
-work/goclient/avclient_local
-work/goclient/unifi-avclient
 work/goclient/unifi_avclient_*
-archive/goclient_binaries_2026-09-11/
 
 # Downloaded material (toolchains, caches, upstream archives, controller dumps) — never in git
 file_downloads/
-
-# Archived backups (tarballs)
-archive/yicam_yihack_pre_cleanup_2026-09-05/
 
 # SD-card build output (assembled by work/build_sd.sh)
 work/build/
@@ -37,9 +28,6 @@ work/SHA256SUMS
 *.so
 __pycache__/
 work/flv_bridge/unifi_flv_bridge
-work/talkback/rx/talkback_rx_opus_v1
-work/cpld_ctl/cpld_ctl
-archive/flvpush_pre_persistent_clock_2026-09-07/unifi_flv_bridge_last_known_good
 
 # local agent settings (may contain pasted credentials)
 .claude/settings.local.json
@@ -76,7 +64,6 @@ repos/unifi-cam-proxy/
 
 # Local certs/keys: never publish (private keys, runtime-generated identities).
 *.pem
-work/goclient/*.key
 
 # Secret-bearing controller dumps (must never be committed).
 archive/cameras.json
@@ -100,8 +87,6 @@ archive/cameras.json
 # Editor swap files
 *.swp
 *.swo
-*.key
-*.pem
 *.crt
 .env
 

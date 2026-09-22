@@ -1,27 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// mediad_ctl.go - optional client for the custom rmm replacement (mediad).
-//
-// When unifi.cfg sets IS_MEDIAD=yes AND the sister project's mediad is
-// actually installed and running, this enables the "advanced" picture-control
-// path: Protect's ChangeIspSettings picture fields are mapped onto mediad's
-// vendor ISP setters and forwarded over mediad's unix control socket. Stock
-// rmm cannot apply these controls, so without mediad the fields are simply
-// acknowledged and ignored (the historical behavior).
-//
-// Detection is deliberately runtime, not just config: a deployment can carry
-// IS_MEDIAD=yes against stock rmm (misconfiguration, or mediad crashed), so
-// mediadEnabled() requires a running mediad process AND a responsive control
-// socket before anything is forwarded. IR/night-vision remains on the
-// existing cpld_ctl/lux path (mediad exposes no IR controls); only the
-// picture controls and the HIGH encoder bitrate move to this socket.
-//
-// The wire protocol and the Protect-ui -> vendor-raw mappings were ported from
-// yi-rmm-protect's prototype on 2026-09-14. yi-rmm-protect is now daemon-only
-// (the rmm replacement itself); this client side is owned and extended here,
-// gated behind IS_MEDIAD, with the daemon's control socket as the sole
-// interface contract.
+// mediad_ctl.go - optional client for the custom rmm replacement (mediad): with
+// IS_MEDIAD=yes and a responsive mediad, picture controls go to its socket.
 package main
 
 import (
@@ -39,7 +20,7 @@ import (
 )
 
 // mediadSockPath is mediad's control socket (MEDIAD_CTL_SOCK overrides, matching
-// the daemon's own env handling).
+// the daemon: os.Getenv then /tmp/mediad_ctl.sock).
 func mediadSockPath() string {
 	if p := os.Getenv("MEDIAD_CTL_SOCK"); p != "" {
 		return p
@@ -47,10 +28,8 @@ func mediadSockPath() string {
 	return "/tmp/mediad_ctl.sock"
 }
 
-// mediadBinaryCandidates are the install locations a mediad build may land at.
-// Only used to distinguish "IS_MEDIAD set but nothing installed" from "installed
-// but not currently running" in the logs; a running mediad is detected from
-// /proc regardless of where its binary lives.
+// mediadBinaryCandidates are the install locations a mediad build may land at,
+// used only to classify "installed but not running" in the logs.
 var mediadBinaryCandidates = []string{
 	unifiPrefix + "/bin/mediad",
 	unifiPrefix + "/bin/mediad_2019",
@@ -62,10 +41,8 @@ var mediadBinaryCandidates = []string{
 	"/home/app/mediad_rtos",
 }
 
-// findMediadProcess scans /proc for a running mediad. It matches the process
-// name (comm, i.e. the executable's basename) against a "mediad" prefix,
-// excluding the "mediad_ctl" CLI tool. Returns the pid and the resolved exe
-// path (empty if unreadable).
+// findMediadProcess scans /proc for a running mediad (comm prefix "mediad",
+// excluding the "mediad_ctl" CLI) and returns pid and resolved exe path.
 func findMediadProcess() (pid int, exe string, ok bool) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -93,9 +70,8 @@ func findMediadProcess() (pid int, exe string, ok bool) {
 	return 0, "", false
 }
 
-// mediadInstalled reports whether a mediad binary is present, and its path.
-// A running mediad's own exe is authoritative; otherwise the known install
-// locations are checked.
+// mediadInstalled reports whether a mediad binary is present, and its path;
+// a running mediad's own exe is authoritative, else the known locations.
 func mediadInstalled() (string, bool) {
 	if _, exe, ok := findMediadProcess(); ok && exe != "" {
 		if fi, err := os.Stat(exe); err == nil && fi.Mode().IsRegular() {
@@ -135,9 +111,8 @@ func mediadPing() bool {
 	return err == nil && strings.HasPrefix(reply, "ok")
 }
 
-// mediad availability is cached briefly so a ChangeVideoSettings/bitrate burst
-// doesn't rescan /proc per message. A failed send clears the cache so a killed
-// mediad is noticed on the next call rather than after the TTL.
+// mediad availability is cached briefly so a settings burst doesn't rescan /proc
+// per message; a failed send clears the cache so a killed mediad is noticed.
 var (
 	mediadMu        sync.Mutex
 	mediadReady     bool
@@ -153,10 +128,8 @@ func mediadInvalidate() {
 	mediadMu.Unlock()
 }
 
-// mediadEnabled is the single gate for every advanced path. It is true only
-// when IS_MEDIAD is set in unifi.cfg AND a mediad install is running with a
-// responsive control socket. cfg.IsMediad is written once before run() starts
-// and never mutated, so reading it here is race-free.
+// mediadEnabled is the single gate for every advanced path: IS_MEDIAD set AND a
+// running mediad with a responsive control socket.
 func mediadEnabled() bool {
 	if !cfg.IsMediad {
 		return false
@@ -189,7 +162,7 @@ func mediadEnabled() bool {
 }
 
 // logMediadStatus logs the startup state once, so an IS_MEDIAD=yes deployment
-// against a missing/stopped mediad is visible in the log rather than silent.
+// against a missing/stopped mediad is visible rather than silent.
 func logMediadStatus() {
 	if !cfg.IsMediad {
 		return
@@ -202,12 +175,8 @@ func logMediadStatus() {
 	mediadEnabled()
 }
 
-// Some mediad controls are deliberately config/webui-only and are not settable
-// over the socket (e.g. wdr/hdr on the current build: `err wdr is
-// config/webui-only`). The daemon's advertised `list` is not reliable across
-// builds, so instead of hardcoding which keys are locked we learn from the
-// error and stop sending that key for the rest of the process lifetime. This
-// keeps the client correct whether or not the daemon later unlocks a control.
+// Some controls are config/webui-only; the daemon's `list` isn't reliable, so we
+// learn from the error and stop sending that key for the process lifetime.
 var (
 	mediadLockedMu sync.Mutex
 	mediadLocked   = map[string]bool{}
@@ -250,17 +219,8 @@ func scaleLinear(v float64, lo, hi int) int {
 	return int(r)
 }
 
-// mediadDelta tracks, per socket key, the value last seen in a controller
-// settings object, so a repeated object only re-issues the fields that actually
-// changed. The controller resends the WHOLE ChangeIspSettings/
-// ChangeVideoSettings object on every edit, so without this one slider move
-// re-sends every non-default field (observed: brightness/contrast/saturation/
-// nightvision/bitrate together) and the burst of IPC reconfigurations stalls
-// mediad's ISP/VENC pipeline. `seed` marks the first object after a connect: it
-// is recorded but not applied, so connecting doesn't burst either. `pending`
-// forces one full apply on the next complete object, used when the daemon
-// (re)appears -- a fresh mediad must receive the controller's settings, and
-// that must survive the connect reset that follows.
+// mediadDelta tracks the value last seen per key so repeated settings objects
+// only re-issue changes; seed records the first post-connect object unapplied.
 type mediadDelta struct {
 	last    map[string]int
 	seed    bool
@@ -288,9 +248,7 @@ func (d *mediadDelta) changed(c mediadCtl) bool {
 func (d *mediadDelta) record(c mediadCtl) { d.last[c.key] = c.value }
 
 // filter returns the subset of controls to forward, ending the seed once a
-// complete object has been seen. While `pending`, partial objects are only
-// recorded and an entire complete object is forwarded once. Caller holds
-// mediadDeltaMu when shared.
+// complete object has been seen. Caller holds mediadDeltaMu when shared.
 func (d *mediadDelta) filter(controls []mediadCtl, complete bool) []mediadCtl {
 	if d.pending {
 		if !complete {
@@ -316,10 +274,7 @@ func (d *mediadDelta) filter(controls []mediadCtl, complete bool) []mediadCtl {
 }
 
 // reset re-arms the delta. reset(true) is the connect reset (seed the next
-// object); it deliberately leaves any `pending` daemon-appearance full apply in
-// place. reset(false) is the re-arm after ResetIspSettings or a daemon
-// (re)appearance: it forces a full apply on the next complete object. Caller
-// holds mediadDeltaMu.
+// object); reset(false) forces a full apply on the next complete object.
 func (d *mediadDelta) reset(seed bool) {
 	d.last = map[string]int{}
 	d.seed = seed
@@ -338,9 +293,7 @@ var (
 )
 
 // resetMediadDelta drops the delta state and seeds the next object of each
-// category. Called on every WSS connect (run()) so the controller's full
-// resend is recorded but not re-applied. A pending daemon-appearance full apply
-// is preserved.
+// category; called on every WSS connect so the full resend is not re-applied.
 func resetMediadDelta() {
 	mediadDeltaMu.Lock()
 	mediadIspDelta.reset(true)
@@ -349,9 +302,8 @@ func resetMediadDelta() {
 	mediadDeltaMu.Unlock()
 }
 
-// mediadDeltaReapply forces a full apply on the next complete object. Used
-// after ResetIspSettings (mediad is back at its defaults) and when a mediad
-// daemon (re)appears.
+// mediadDeltaReapply forces a full apply on the next complete object, used
+// after ResetIspSettings and when a mediad daemon (re)appears.
 func mediadDeltaReapply() {
 	mediadDeltaMu.Lock()
 	mediadIspDelta.reset(false)
@@ -361,19 +313,13 @@ func mediadDeltaReapply() {
 }
 
 // mediadApplyControls forwards only the controls whose value changed since the
-// previous object of the same category. `complete` marks the canonical full
-// object; the seed is ended only then, so a partial object that arrives first
-// (e.g. the legacy ChangeBrightnessSettings) is recorded without ending the
-// seed -- otherwise the following full ChangeIspSettings would apply every
-// field the partial object didn't mention. No-op unless mediad is enabled and
-// responsive.
+// previous object of the same category; `complete` ends the seed.
 func mediadApplyControls(controls []mediadCtl, d *mediadDelta, complete bool) {
 	if len(controls) == 0 || !mediadEnabled() {
 		return
 	}
 	// Drop controls the daemon has reported as config/webui-only before the
-	// delta sees them, so a locked key isn't recorded as applied and won't be
-	// retried on the next object.
+	// delta sees them, so a locked key isn't recorded as applied.
 	controls = mediadDropLocked(controls)
 	mediadDeltaMu.Lock()
 	toSend := d.filter(controls, complete)
@@ -406,30 +352,16 @@ func mediadDropLocked(controls []mediadCtl) []mediadCtl {
 	return out
 }
 
-// mediadApplyIspSettings forwards the ChangeIspSettings subset: the picture
-// controls plus the night-vision controls. When mediad is the producer it also
-// owns the CPLD filter/LED and the day/night ISP tuning (via nightvision/
-// night_lux/ir_led), so handleIspSettings skips its own cpld_ctl/lux path in
-// that case; see calls.md in yi-rmm-protect. `complete` is false for the
-// partial legacy ChangeBrightnessSettings object (see mediadApplyControls).
+// mediadApplyIspSettings forwards the ChangeIspSettings subset: picture
+// controls plus night-vision. `complete` is false for legacy Brightness.
 func mediadApplyIspSettings(payload map[string]interface{}, complete bool) {
 	controls := ispControlMap(payload)
 	controls = append(controls, nightVisionControls(payload)...)
 	mediadApplyControls(controls, mediadIspDelta, complete)
 }
 
-// osdControlMap maps Protect's ChangeOsdSettings payload to mediad's OSD
-// controls (osd.h's OSD_NCTL enum, exposed as osd/osd_date/osd_logo/
-// osd_bitrate/osd_text_scale/osd_logo_scale/osd_color over the control
-// socket). Protect nests the per-stream OSD objects under numeric string keys
-// ("_1".."_4" in the response this client already builds); mediad has one OSD
-// config, not one per stream, so the first nested object found drives it
-// (falling back to the top level for a payload that isn't nested at all).
-//
-// The camera *name* text is deliberately not handled here: osd.c already
-// reads it independently from the device-name file ChangeDeviceSettings
-// writes (setDeviceName/getDeviceName, discovery.go) -- Protect's OSD "tag"
-// field is the same value by a different path, not a second source of truth.
+// osdControlMap maps ChangeOsdSettings to mediad's OSD controls; Protect nests
+// per-stream objects under "_1".."_4", so the first one drives mediad's config.
 func osdControlMap(payload map[string]interface{}) []mediadCtl {
 	var out []mediadCtl
 
@@ -504,21 +436,8 @@ func customValueToLux(v float64) int {
 	return lux
 }
 
-// nightVisionControls maps Protect's night-vision fields to mediad's day/night
-// controls. The controller sends these on every ChangeIspSettings:
-//
-//	irLedMode     "auto" | "manual"
-//	irLedLevel    >0 = illuminator on; 0 with auto = "IR Filter Only"
-//	icrSwitchMode "sensitivity" | "lux"
-//	icrCustomValue 0-10, only meaningful with icrSwitchMode=="lux"
-//	enableExternalIr 0/1, "IR Filter Only" (external illuminator)
-//
-// mediad exposes nightvision (0 always day / 1 always night / 2 auto),
-// night_lux (auto switch threshold, lux) and ir_led (0-100). Always-On/Off map
-// to nightvision; Auto/Custom map to nightvision=2 + night_lux. Filter-only
-// states keep the LED off with a best-effort ir_led=0 after nightvision (the
-// auto poller may re-assert it on a later switch -- a mediad gap, not handled
-// here).
+// nightVisionControls maps Protect's night-vision fields (irLedMode, icrSwitchMode,
+// icrCustomValue, enableExternalIr) to mediad's nightvision/night_lux/ir_led.
 func nightVisionControls(payload map[string]interface{}) []mediadCtl {
 	mode, ok := payload["irLedMode"].(string)
 	if !ok {
@@ -549,9 +468,8 @@ func nightVisionControls(payload map[string]interface{}) []mediadCtl {
 	return out
 }
 
-// shutterControls maps ChangeVideoSettings' videoMode to mediad's shutter enum
-// (VI_SHUTTIME_MODE_E): default=Auto, sport=Frame Capture, slowShutter=Best Low
-// Light (see calls.md). Unknown modes leave the current setting untouched.
+// shutterControls maps videoMode to mediad's shutter enum (VI_SHUTTIME_MODE_E):
+// default=Auto, sport=Frame Capture, slowShutter=Best Low Light.
 func shutterControls(video map[string]interface{}) []mediadCtl {
 	vm, ok := video["videoMode"].(string)
 	if !ok {
@@ -575,9 +493,8 @@ type mediadCtl struct {
 
 func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	var out []mediadCtl
-	// Every mapped field is emitted here; suppression of unchanged fields (and
-	// of the whole first object after a connect) is done by mediadApplyControls'
-	// per-key delta tracking, not by comparing to static defaults.
+	// Every mapped field is emitted here; suppression of unchanged fields is
+	// done by mediadApplyControls' per-key delta tracking.
 	add := func(field, key string, fn func(float64) int) {
 		var v float64
 		switch n := payload[field].(type) {
@@ -597,23 +514,15 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	add("saturation", "saturation", func(v float64) int { return scaleLinear(v, 0, 100) })
 	add("sharpness", "sharpness", func(v float64) int { return scaleLinear(v, 0, 10) })
 	add("denoise", "denoise", func(v float64) int { return scaleLinear(v, 0, 100) })
-	// 3DNR (tdf) is the 3D/temporal denoise module, not a 0-100 level: 1 ==
-	// vendor stock. Protect sends enable3dnr as 0/1, so the linear scale is the
-	// identity here. It is pinned OFF by default (unifi.cfg MEDIAD_3DNR=no):
-	// the controller re-sends enable3dnr=1 on every connect, and the full apply
-	// that follows a mediad (re)appearance re-enabled mediad's temporal filter,
-	// whose low-light motion ghosting is the artefact this project avoids. With
-	// the knob off we assert tdf=0 instead (sent once per daemon appearance by
-	// the delta); MEDIAD_3DNR=yes restores Protect control of the toggle.
+	// 3DNR (tdf) is a module enable, not a 0-100 level; pinned OFF by default
+	// (MEDIAD_3DNR=no) to avoid mediad's low-light temporal-filter ghosting.
 	if cfg.Mediad3DNR {
 		add("enable3dnr", "tdf", func(v float64) int { return scaleLinear(v, 0, 100) })
 	} else {
 		out = append(out, mediadCtl{"tdf", 0})
 	}
-	// wdr wire values are 0..3. The camera's HDR is a PLTM module enable plus a
-	// strength: stock (Protect's exposed default wdr=1) is pltm=1 + wdr=0, i.e. the
-	// vendor tuning's own strength. Off (0) disables the module; 2/3 raise the
-	// strength (values tentative, pending on-camera calibration).
+	// HDR is a PLTM module enable plus a strength: wdr 1 (Protect default) is
+	// stock pltm=1/wdr=0, 0 disables the module, 2/3 raise the strength.
 	add("wdr", "pltm", func(v float64) int {
 		if int(v) == 0 {
 			return 0
@@ -642,11 +551,8 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 		}
 		return 0
 	})
-	// Power-line frequency Auto/50/60 -> AW_MPI_ISP_SetFlicker, whose raw
-	// range is [0:disable, 1:50Hz, 2:60Hz, 3:auto]. Protect carries the
-	// power-line setting in `aeMode` ("auto"/"flick50"/"flick60"); the numeric
-	// `frequency` field (0=auto/1=50/2=60) is a fallback for a raw field if it
-	// ever appears. Only one source emits, so there is never a duplicate key.
+	// Power-line frequency -> AW_MPI_ISP_SetFlicker raw [0:disable, 1:50Hz, 2:60Hz,
+	// 3:auto]; Protect carries it in `aeMode`, the numeric `frequency` is fallback.
 	if mode, ok := payload["aeMode"].(string); ok {
 		out = append(out, mediadCtl{"flicker", aeModeToFlicker(mode)})
 	} else {
@@ -664,9 +570,8 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	return out
 }
 
-// aeModeToFlicker maps Protect's aeMode power-line setting onto
-// AW_MPI_ISP_SetFlicker's raw range [0:disable, 1:50Hz, 2:60Hz, 3:auto].
-// auto is the mediad/stock default.
+// aeModeToFlicker maps Protect's aeMode onto AW_MPI_ISP_SetFlicker's raw range
+// [0:disable, 1:50Hz, 2:60Hz, 3:auto]. auto is the mediad/stock default.
 func aeModeToFlicker(mode string) int {
 	switch mode {
 	case "flick50":
@@ -679,8 +584,7 @@ func aeModeToFlicker(mode string) int {
 }
 
 // videoStreamBitrate extracts the bitrate Protect asked for on one video
-// stream. ChangeVideoSettings carries it as bitRateCbrAvg (CBR) or
-// bitRateVbrMax (VBR); prefer the CBR average when present.
+// stream. ChangeVideoSettings carries bitRateCbrAvg (CBR) or bitRateVbrMax (VBR).
 func videoStreamBitrate(v map[string]interface{}) int {
 	for _, f := range []string{"bitRateCbrAvg", "bitRateVbrMax"} {
 		if n, ok := v[f].(float64); ok && n > 0 {

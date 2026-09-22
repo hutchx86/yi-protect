@@ -1,20 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
-//
-// Camera clock sync, matching real hardware.
-//
-// The camera has no RTC; without this it boots to its firmware build date
-// (2020 on this hardware) and stays there. Real hardware opens the control
-// channel and sends ubnt_avclient_timeSync before hello, trading timestamps
-// with the controller until its clock converges. This matters beyond logs:
-// FlvPush's onClockSync tags carry the camera's wall clock and the controller
-// maps every pushed frame through it -- a clock stuck years in the past gets
-// the whole stream rejected, so live view shows nothing.
-//
-// The controller answers with a two-key NTP-style reply:
-//
-//	camera ->  ubnt_avclient_timeSync {"timeDelta": <offset>}
-//	ctrl   <-  ubnt_avclient_timeSync {"t1": <ctrl wall ms>, "t2": <ctrl wall ms>}
+
+// Camera clock sync: no RTC, so without this the camera boots to its build
+// date and FlvPush's onClockSync tags get the whole stream rejected.
 package main
 
 import (
@@ -54,8 +42,7 @@ func (c *Client) sendTimeSync() error {
 }
 
 // handleTimeSync applies a controller timeSync message. A reply (inResponseTo
-// set) is applied and not answered; an unsolicited request is answered with
-// our current offset.
+// set) is applied and not answered; an unsolicited request is answered.
 func (c *Client) handleTimeSync(m Envelope) (bool, error) {
 	remote := int64(0)
 	if v, ok := m.Payload["t1"].(float64); ok && v > 0 {
@@ -68,9 +55,8 @@ func (c *Client) handleTimeSync(m Envelope) (bool, error) {
 		local := time.Now().UnixMilli()
 		offset := remote - local
 		currentTimeDeltaMs.Store(offset)
-		// Only step the clock on the first fix or a meaningful correction:
-		// FlvPush derives tag timestamps from it, and stepping backwards
-		// mid-connection would produce negative elapsed times.
+		// Only step on the first fix or a meaningful correction: FlvPush derives
+		// tag timestamps from the clock, so a backwards step yields negative times.
 		if !clockSynced.Load() || offset > 500 || offset < -500 {
 			if err := setSystemClock(remote); err != nil {
 				log.Printf("timeSync: settimeofday(%d) failed: %v", remote, err)
@@ -90,10 +76,8 @@ func (c *Client) handleTimeSync(m Envelope) (bool, error) {
 	return false, nil
 }
 
-// startTimeSyncLoop keeps asking the controller for its clock. On real
-// hardware timeSync is the most frequent message and doubles as the camera's
-// proof of life: a silent channel is eventually dropped, which makes Protect
-// show the camera offline. Every 30s keeps the session warm and bounds drift.
+// startTimeSyncLoop keeps asking the controller for its clock; on real hardware
+// timeSync is the most frequent message and doubles as proof of life.
 func (c *Client) startTimeSyncLoop(done <-chan struct{}) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()

@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-/*
- * FlvPush implementation. See FlvPush.h.
- */
+// FlvPush implementation. See FlvPush.h.
 #include "FlvPush.h"
-#include "bridge.h"
 
 #include <cstdio>
 #include <cstring>
@@ -102,8 +99,7 @@ bool nalIsIdr(unsigned char hdr) { return (hdr & 0x1f) == 5; }
 
 // -------- byte buffer / socket write helpers --------
 
-// Dumps raw bytes to a fixed per-channel file (plain open/write/close, like
-// writeAll()) to rule out formatting bugs as a crash source.
+// Dumps raw bytes to a fixed per-channel file, for diagnosing on-wire issues.
 const char *dumpPathFor(int channel, bool sync) {
     if (sync) {
         if (channel == FLV_CH_HIGH) return "/tmp/flvpush_sync_high.bin";
@@ -526,12 +522,6 @@ void flvPushEnqueue(int channel, const output_frame &f) {
     if (!flvPushActive(channel)) return;
     ChannelState &c = g_ch[channel];
     measureFps(c, channel);
-    static unsigned dbgCount[FLV_CH_COUNT] = {0};
-    dbgCount[channel]++;
-    if (dbgCount[channel] <= 5 || dbgCount[channel] % 50 == 0) {
-        fprintf(stderr, "FlvPush[%d]: enqueue #%u, frame.size=%zu, time=%u\n",
-                channel, dbgCount[channel], f.frame.size(), f.time);
-    }
     pthread_mutex_lock(&c.flvQueue.mutex);
     c.flvQueue.frame_queue.push(f); // copy (queue item is small: one frame's worth)
     while (c.flvQueue.frame_queue.size() > MAX_QUEUE_SIZE) c.flvQueue.frame_queue.pop();
@@ -683,11 +673,9 @@ static void *pushThreadMain(void *arg) {
     // far behind (a real source dropout).
     long opusPtsIndex = -1;
 
-    // FLV file header: "FLV", version 1, flags=0x07 (matches what real
-    // UniFi cameras send -- audio+video bits both set even though this
-    // stream is video-only; evostreamms's ILFL acceptor was captured live
-    // accepting exactly this from real hardware, see buildOnMetaData()
-    // comment), header size 9, then PreviousTagSize0=0.
+    // FLV file header: "FLV", version 1, flags=0x07 (real UniFi cameras set
+    // both bits even on a video-only stream; captured from live hardware),
+    // header size 9, then PreviousTagSize0=0.
     put_bytes(out, (const unsigned char *)"FLV", 3);
     put_u8(out, 1);
     put_u8(out, 0x07);
@@ -730,8 +718,7 @@ static void *pushThreadMain(void *arg) {
     writeTimestampTrailer(out, false, elapsed);
 
     // If SPS/PPS are cached from a prior connection, append the AVC sequence
-    // header here so it ships in the same write() as the FLV header/onMetaData
-    // (see ChannelState::cachedSps).
+    // header here so it ships in the same write() as the FLV header/onMetaData.
     pthread_mutex_lock(&c.stateMutex);
     bool haveCached = c.haveCachedSpsPps;
     if (haveCached) { sps = c.cachedSps; pps = c.cachedPps; }
@@ -807,9 +794,8 @@ static void *pushThreadMain(void *arg) {
                 sentAacSeqHeader = true;
             }
 
-            // Same write-time wall-clock basis as video. The old frame-
-            // duration-paced clock drifted ~10s behind video when frames
-            // dropped, tripping ms's 1000ms A/V threshold and stalling live view.
+            // Same write-time wall-clock basis as video; a frame-duration-paced
+            // clock drifted behind and tripped ms's 1000ms A/V threshold.
             double aTagElapsed = nowSeconds() - connectionStart;
             uint32_t aTagMs = (uint32_t)(aTagElapsed * 1000.0);
 
@@ -878,7 +864,7 @@ static void *pushThreadMain(void *arg) {
         if (!got) {
             static int emptyPolls[FLV_CH_COUNT] = {0};
             emptyPolls[channel]++;
-            if (emptyPolls[channel] % 400 == 0) { // ~every 2s
+            if (emptyPolls[channel] % 400 == 0) {
                 fprintf(stderr, "FlvPush[%d]: gen %u still waiting on empty queue (%d polls)\n",
                         channel, myGeneration, emptyPolls[channel]);
             }
@@ -920,8 +906,7 @@ static void *pushThreadMain(void *arg) {
             uint32_t tagMs = (uint32_t)(tagElapsed * 1000.0);
 
             // Every 5s, re-anchor streamClock->wallClock (own write() before
-            // the triggering frame) so the controller-derived clock doesn't
-            // drift with connection age.
+            // the triggering frame) so the controller's clock doesn't drift.
             if (nowSeconds() - lastSyncTime >= 5.0) {
                 lastSyncTime = nowSeconds();
                 double wallNow = epochMillis();
@@ -1107,7 +1092,6 @@ static void *ctlThreadMain(void *) {
                 }
             } else if (strncmp(line, "MUTE", 4) == 0 &&
                        (line[4] == 0 || line[4] == ' ')) {
-                // Mic mute, from the controller's ChangeVideoSettings volume.
                 const char *arg = line + 4;
                 while (*arg == ' ') arg++;
                 bool on = (strncasecmp(arg, "on", 2) == 0);
@@ -1159,7 +1143,7 @@ void flvPushInit() {
         low.generation = 0;
         low.haveCachedSpsPps = false;
         // Matches video2's declaration (streamId=2); 640x360 is the real
-        // low-res encoder output, not the old 1280x720 placeholder.
+        // low-res encoder output.
         low.channelId = 1; low.streamId = 2;
         low.videoBandwidth = 500000; low.videoFps = 15;
         low.videoWidth = 640; low.videoHeight = 360;

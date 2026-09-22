@@ -4,15 +4,12 @@
 #
 # UniFi Protect emulation -- boot entry (SD override).
 #
-# /backup/init.sh sources this when present. It detects the camera model, runs
-# the matching vendored bring-up (lower_half/<model>.sh), which starts
-# unifi/script/init.sh. The model is resolved at boot (detect-model.sh), so one
-# SD image boots any supported model.
+# /backup/init.sh sources this; it resolves the model (detect-model.sh) and runs
+# the matching vendored bring-up (lower_half/<model>.sh), starting script/init.sh.
 
 UNIFI_PREFIX=/tmp/sd/unifi
 
-# $SUFFIX is the stock ROM's model token (set by /backup/init.sh); detect-model
-# prefers it and falls back to hardware.
+# $SUFFIX is the stock ROM's model token; detect-model prefers it, else hardware.
 MODEL=$("$UNIFI_PREFIX/script/detect-model.sh" "$SUFFIX")
 SUFFIX="$MODEL"
 export SUFFIX

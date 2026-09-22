@@ -2,10 +2,7 @@
 // Copyright (C) 2026 yi-protect contributors
 
 // unifi-avclient: UniFi Protect "avclient" adoption/control client for
-// Yi-Hack-Allwinner-v2. Protocol/message shapes are ported from unifi-cam-proxy
-// (github.com/keshavdv/unifi-cam-proxy, unifi/cams/base.py) and validated
-// against this controller. Go (gorilla/websocket), cross-compiled for the
-// camera's armv7 target.
+// Yi-Hack-Allwinner-v2; protocol shapes ported from unifi-cam-proxy.
 package main
 
 import (
@@ -42,16 +39,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// unifiPrefix is the project-owned root on the SD card. Everything this
-// client persists or shells out to lives under here, not inside a yi-hack
-// install.
+// unifiPrefix is the project-owned root on the SD card; everything this client
+// persists or shells out to lives under here.
 const unifiPrefix = "/tmp/sd/unifi"
 
-// Codec ALSA capture-gain control driven by setMicLevel (via bin/mixer_set).
-// On sun8iw19 (sun8iw19codec, hw:0) the mic/ADC gain is "MIC1 gain volume",
-// range 0..31 with the stock 0 dB point at 30 -- the functional analog of the
-// UBNT_CVOLUME element a real camera writes. Setting it scales the mic before
-// the encoder, so both the AAC and Opus tracks follow the controller volume.
+// Codec ALSA capture-gain control applied by setMicLevel (via bin/mixer_set):
+// "MIC1 gain volume" on hw:0, range 0..31 (0 dB at 30), upstream of the encoder.
 const (
 	micGainCard    = "hw:0"
 	micGainControl = "MIC1 gain volume"
@@ -67,42 +60,25 @@ type Config struct {
 	FWVersion string
 	CertFile  string
 	KeyFile   string
-	// SysID is the real UBNT catalog hex system id for cfg.Model, e.g.
-	// 0xa590 for "UVC G3 Instant", taken from the controller's own model
-	// catalog (service.js) and cross-validated against a real G3 Flex's
-	// board.sysid. Sent as the `camera-model` WSS handshake header and as
-	// discovery's 0x10 TLV -- real cameras send the hex id there, not the
-	// model name (that only goes in the JSON hello's "model" field).
+	// SysID is the real UBNT catalog hex system id for cfg.Model (0xa590 for
+	// "UVC G3 Instant"), sent as `camera-model` and discovery's 0x10 TLV.
 	SysID uint16
 
 	// HasPTZ gates the "ptz" featureFlags key -> real hardware capability.
 	// Default false; set via -ptz.
 	HasPTZ bool
 
-	// IsMediad gates the advanced picture-control path: when true AND the
-	// sister project's custom rmm replacement (mediad) is detected installed
-	// and running, Protect's picture settings are forwarded to mediad's control
-	// socket instead of being acknowledged and ignored. Set via unifi.cfg's
-	// IS_MEDIAD=yes or -mediad; see mediad_ctl.go.
+	// IsMediad gates the advanced picture-control path: when true AND a running
+	// mediad is detected, picture settings go to its control socket (mediad_ctl.go).
 	IsMediad bool
 
-	// Mediad3DNR lets Protect's 3DNR control (enable3dnr) drive mediad's tdf
-	// (the 3D/temporal denoise filter). Default false: the client does not
-	// assert Protect's enable3dnr -- which the controller re-sends as 1 on
-	// every connect and which re-enables mediad's temporal filter, ghosting on
-	// low-light motion -- and pins tdf=0 instead. Set via unifi.cfg's
-	// MEDIAD_3DNR=yes; only meaningful with IsMediad. See mediad_ctl.go.
+	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false pins
+	// tdf=0 because enable3dnr=1 (re-sent on connect) causes low-light ghosting.
 	Mediad3DNR bool
 }
 
-// cfg.MAC/cfg.IP are last-resort fallbacks, used only when
-// detectNetworkIdentity() (called from main()) can't read wlan0/eth0 -- e.g.
-// running off-camera for local testing. On real hardware they're always
-// overwritten with the detected values.
-//
-// These are deliberately obviously-fake placeholders: a unit stuck on them is
-// instantly recognizable as broken, and no real device's identity can collide
-// with them. Do NOT put a real camera's identity here.
+// cfg.MAC/cfg.IP are last-resort fallbacks used only when detectNetworkIdentity
+// can't read wlan0/eth0; deliberately fake -- never put a real identity here.
 var cfg = Config{
 	Host:  "10.0.0.1",
 	Port:  7442,
@@ -110,22 +86,16 @@ var cfg = Config{
 	MAC:   "DEADDEADBEEF",
 	IP:    "0.0.0.0",
 	Model: "UVC G3 Instant",
-	// "UVC G3 Instant" (sysid 0xa590) maps to platform SAV532Q. Protect
-	// parses our reported version and compares it to the newest SAV532Q
-	// release in its `updates` table; a version newer than any known build
-	// makes Protect offer a "Click to Update" that downgrades us. The
-	// suffix below is not the real SAV532Q release, but Protect's comparison
-	// appears to look only at major.minor.patch.
+	// Model maps to platform SAV532Q; the suffix is not the real release, but a
+	// version newer than any known build would make Protect offer a downgrade.
 	FWVersion: "UVC.SAV532Q.v4.75.62.67.9cdac69.260331.1630",
 	CertFile:  unifiPrefix + "/etc/unifi_client_go.crt",
 	KeyFile:   unifiPrefix + "/etc/unifi_client_go.key",
 	SysID:     0xa590,
 }
 
-// cfgMu guards cfg against the one real concurrent access:
-// applyManagePush mutates cfg.Host/cfg.Token from main()'s goroutine while
-// runUpdatesConnection reads cfg from its own goroutine. run() is still only
-// called from main()'s goroutine, so its reads remain unguarded.
+// cfgMu guards cfg against the one real concurrent access: applyManagePush
+// mutates it from main()'s goroutine while runUpdatesConnection reads it.
 var cfgMu sync.Mutex
 
 // cfgSnapshot returns a copy of cfg safe to read from runUpdatesConnection's
@@ -144,10 +114,8 @@ var deviceIDStr string
 // deleteIdentity() can remove it.
 var deviceIDFilePath string
 
-// adoptionUUIDFilePath persists the controller's consoleId -- real hardware
-// advertises it as discovery TLV 0x26 once adopted. Persisted so a reboot
-// while adopted doesn't make the first discovery replies send the device-id
-// and appear "adopted to another console".
+// adoptionUUIDFilePath persists the controller's consoleId (discovery TLV
+// 0x26) so a restart while adopted doesn't look "adopted to another console".
 var adoptionUUIDFilePath = unifiPrefix + "/etc/unifi_client_go.adoption-uuid"
 
 // loadAdoptionUUID restores the persisted 0x26 TLV value, if any. Absence or a
@@ -191,31 +159,21 @@ type Client struct {
 	ws      *websocket.Conn
 	msgID   int
 	startTS time.Time
-	// sendMu guards msgID and every ws.WriteJSON call. startMotionWatcher
-	// pushes unsolicited EventAnalytics messages from its own goroutine
-	// concurrently with process()'s read loop, and gorilla/websocket requires
-	// all writes to be externally synchronized.
+	// sendMu guards msgID and every ws.WriteJSON call; gorilla/websocket
+	// requires all writes to be externally synchronized.
 	sendMu    sync.Mutex
 	streamsMu sync.Mutex
 	streams   map[string]string // stream key (video1/2/3) -> assigned streamName, once a real destination is set
 
-	// video1/video2's currently-active FlvPush destination/token, so repeated
-	// ChangeVideoSettings for an UNCHANGED assignment (the controller resends
-	// them while a tier is actively viewed) don't force a needless FlvPush
-	// reconnect -- an unconditional reconnect-per-message killed a healthy
-	// stream every ~10-15s during viewing. Guards the activeVideoN* fields,
-	// read from process() and the video handler.
+	// Active FlvPush destination/token per video stream; an unconditional
+	// reconnect-per-message killed a healthy stream every ~10-15s while viewing.
 	videoMu                sync.Mutex
 	activeVideo1Host       string
 	activeVideo1StreamName string
 	activeVideo2Host       string
 	activeVideo2StreamName string
-	// "video3" ("medium" on the FlvPush wire side) is requested by Protect's
-	// expanded/single-camera panel for every quality dropdown setting, while
-	// video1/video2 serve the grid view. It therefore carries the SAME real
-	// HIGH frames as video1 (see main.cpp emitFrame and FlvPush's MED channel)
-	// and is declared at the high geometry/bitrate -- otherwise the expanded
-	// view is stuck at 640x360 and "HQ" changes nothing.
+	// video3 ("medium") is requested by Protect's expanded panel for every
+	// quality setting, so it carries the SAME real HIGH frames as video1.
 	activeVideo3Host       string
 	activeVideo3StreamName string
 
@@ -223,9 +181,8 @@ type Client struct {
 	// snapshot uploads -- see handleGetRequest().
 	httpClient *http.Client
 
-	// snapshotGrabMu serializes imggrabber runs. Concurrent GetRequests would
-	// each fork a ~9MB imggrabber and race for the shared sensor/ISP; on this
-	// 60MB board that OOM-kills rmm.
+	// snapshotGrabMu serializes imggrabber runs; concurrent forks race for the
+	// shared sensor/ISP and OOM-kill rmm on this 60MB board.
 	snapshotGrabMu sync.Mutex
 	// snapshotMu guards the last-good JPEG cache below -- a slightly-stale
 	// frame is better than no thumbnail when a grab misses its keyframe.
@@ -233,12 +190,8 @@ type Client struct {
 	snapshotJPEG map[string][]byte
 	snapshotAt   map[string]time.Time
 
-	// Microphone state, driven by ChangeVideoSettings' `audio` block. The
-	// controller sends {bitRate, volume}; micVolume remembers the raw value so
-	// a later message with no audio block echoes the real state instead of
-	// resetting to 100. micLevel is the effective level after the Protect
-	// 1..100 -> mute/gain remap (micLevelFromVolume); micLevelSet suppresses
-	// repeat MUTE/gain writes.
+	// Microphone state from ChangeVideoSettings' `audio` block; micVolume keeps
+	// the raw value, micLevel the remapped effective level, suppressing repeats.
 	micMu       sync.Mutex
 	micVolume   int
 	micLevel    int
@@ -259,13 +212,11 @@ func newUUIDv4() (string, [16]byte, error) {
 }
 
 // deviceIDNamespace is an arbitrary fixed namespace UUID for the UUIDv5
-// derivation; it only needs to stay constant so the same serial derives the
-// same device-id.
+// derivation; constant so the same serial derives the same device-id.
 var deviceIDNamespace = [16]byte{0x8b, 0x1a, 0x9d, 0x53, 0x6c, 0x4a, 0x40, 0x8e, 0xb0, 0x3a, 0xd8, 0x4c, 0xf4, 0x0d, 0x1e, 0x6f}
 
-// newUUIDv5 derives a deterministic RFC-4122 v5 UUID from name, namespaced
-// under deviceIDNamespace, so the same physical camera always derives the same
-// device-id from its own hardware serial.
+// newUUIDv5 derives a deterministic v5 UUID from name, so the same physical
+// camera always derives the same device-id from its own hardware serial.
 func newUUIDv5(name string) (string, [16]byte) {
 	h := sha1.New()
 	h.Write(deviceIDNamespace[:])
@@ -279,19 +230,15 @@ func newUUIDv5(name string) (string, [16]byte) {
 	return s, b
 }
 
-// readHardwareSerial reads this camera's factory-programmed serial, the same
-// way yi-hack's service.sh does: find the "mfg@<partition>" token in the
-// kernel bootargs, then read 20 bytes at offset 36 from that raw partition
-// device. Genuinely unique per physical unit.
+// readHardwareSerial reads this camera's factory serial: the "mfg@<partition>"
+// token in the kernel bootargs, then 20 bytes at offset 36 of that device.
 func readHardwareSerial() (string, error) {
 	bootargs, err := os.ReadFile("/sys/firmware/devicetree/base/chosen/bootargs")
 	if err != nil {
 		return "", fmt.Errorf("read bootargs: %w", err)
 	}
-	// Stop at whitespace or ':' -- the kernel partitions= list is
-	// "name@dev:name@dev:...", so a greedy \S+ would swallow the entries
-	// that follow mfg@ (e.g. mfg@mtdblock6:conf@mtdblock7), yielding an
-	// unopenable "/dev/mtdblock6:conf@...".
+	// Stop at whitespace or ':' -- the partitions= list is "name@dev:name@dev",
+	// so a greedy \S+ would swallow the entries that follow mfg@.
 	m := regexp.MustCompile(`mfg@([^\s:]+)`).FindSubmatch(bootargs)
 	if m == nil {
 		return "", fmt.Errorf("no mfg@ partition token in bootargs")
@@ -320,15 +267,12 @@ func readHardwareSerial() (string, error) {
 	return serial, nil
 }
 
-// modelSuffixFilePath records the real physical camera model (e.g.
-// y623/h52ga/r35gb), distinct from the spoofed cfg.Model/cfg.SysID. Used to
-// pick the correct sensor resolution profile and imggrabber/unifi_flv_bridge
-// -m argument.
+// modelSuffixFilePath records the real physical camera model (y623/h52ga/...),
+// distinct from the spoofed cfg.Model/cfg.SysID.
 const modelSuffixFilePath = unifiPrefix + "/etc/model_suffix"
 
-// readHardwareModel returns this camera's physical model (from
-// modelSuffixFilePath), falling back to "y623" (the project's reference
-// sensor profile) if the file is missing or empty.
+// readHardwareModel returns this camera's physical model, falling back to "y623"
+// if the file is missing or empty.
 func readHardwareModel() string {
 	if b, err := os.ReadFile(modelSuffixFilePath); err == nil {
 		if s := strings.TrimSpace(string(b)); s != "" {
@@ -338,13 +282,8 @@ func readHardwareModel() string {
 	return "y623"
 }
 
-// modelTablePath is the single per-model definition file (see
-// work/sd_root/unifi/etc/model_table). Columns:
-//
-//	model sensor ring_offset ring_header high_w high_h ptz
-//
-// The client reads only its own row and never tests model names, so one
-// universal binary serves every model -- including ones added after the build.
+// modelTablePath is the single per-model definition file (model sensor
+// ring_offset ring_header high_w high_h ptz); one binary serves every model.
 const modelTablePath = unifiPrefix + "/etc/model_table"
 
 // modelDef is this client's slice of a model_table row.
@@ -392,9 +331,8 @@ func readHighResolution() (int, int) {
 	return def.highWidth, def.highHeight
 }
 
-// flagSet reports whether the named flag was given on the command line (as
-// opposed to being left at its default), so callers can layer an explicit flag
-// over config-file and model-table defaults.
+// flagSet reports whether the named flag was given on the command line, so an
+// explicit flag can be layered over config-file and model-table defaults.
 func flagSet(name string) bool {
 	set := false
 	flag.Visit(func(f *flag.Flag) {
@@ -406,9 +344,7 @@ func flagSet(name string) bool {
 }
 
 // loadOrCreateAdoptionUUID returns a stable per-device UUID (string and raw
-// bytes), persisted next to the client cert so it survives restarts and
-// reboots. Used as the `device-id` WSS header and, once adopted, discovery's
-// 0x26 TLV.
+// bytes), persisted so it survives restarts.
 func loadOrCreateAdoptionUUID(path string) (string, [16]byte, error) {
 	if data, err := os.ReadFile(path); err == nil {
 		s := strings.TrimSpace(string(data))
@@ -418,10 +354,8 @@ func loadOrCreateAdoptionUUID(path string) (string, [16]byte, error) {
 		log.Printf("device-id file %s unreadable (%v), regenerating", path, err)
 	}
 
-	// Prefer deriving from the camera's real hardware serial over a random
-	// UUID: unique by construction, reproducible from hardware if the file is
-	// ever lost, and traceable to a physical unit. Random UUIDv4 is the
-	// fallback when the serial can't be read (e.g. running off-camera).
+	// Prefer deriving from the hardware serial (unique, reproducible) over a
+	// random UUID; random is the fallback when the serial can't be read.
 	if serial, err := readHardwareSerial(); err == nil {
 		s, raw := newUUIDv5(serial)
 		if err := os.WriteFile(path, []byte(s+"\n"), 0600); err != nil {
@@ -443,17 +377,8 @@ func loadOrCreateAdoptionUUID(path string) (string, [16]byte, error) {
 	return s, raw, nil
 }
 
-// Identity lifecycle on factory reset (ResetToDefaults): performReset ->
-// deleteIdentity removes the cert/key AND the derived device-id, then reboots;
-// on next boot ensureCertKey mints a fresh pair and
-// loadOrCreateAdoptionUUID re-derives the device-id. A factory-reset device
-// comes back with no identity and re-provisions fresh.
-//
-// generateSelfSignedECDSACert makes a fresh self-signed ECDSA P-256 pair,
-// PEM-encoded in memory. It MUST stay ECDSA P-256: an earlier RSA-2048 keygen
-// hung for minutes on this device's single slow ARM core, freezing ping/pong
-// until the controller reaped the connection. Used by ensureCertKey and the
-// manage-API HTTPS listener.
+// generateSelfSignedECDSACert makes a fresh self-signed ECDSA P-256 pair, PEM-
+// encoded; MUST stay ECDSA (an RSA-2048 keygen hung for minutes on this SoC).
 func generateSelfSignedECDSACert(cn string, extUsage []x509.ExtKeyUsage) (certPEM, keyPEM []byte, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -486,9 +411,8 @@ func generateSelfSignedECDSACert(cn string, extUsage []x509.ExtKeyUsage) (certPE
 	return certPEM, keyPEM, nil
 }
 
-// deleteIdentity removes the persisted identity material -- the cert/key pair
-// AND the derived device-id -- so a factory-reset device comes back with no
-// identity and re-provisions fresh on next boot. Called from performReset.
+// deleteIdentity removes the cert/key pair and derived device-id so a
+// factory-reset device re-provisions fresh on next boot.
 func (c *Client) deleteIdentity() error {
 	for _, p := range []string{cfg.CertFile, cfg.KeyFile, deviceIDFilePath, adoptionUUIDFilePath} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
@@ -502,9 +426,8 @@ func (c *Client) deleteIdentity() error {
 	return nil
 }
 
-// ensureCertKey generates a fresh self-signed mTLS cert/key pair in place if
-// either file is missing (the first boot after a factory reset, or a first
-// install). Idempotent -- an existing pair is left untouched.
+// ensureCertKey generates a fresh self-signed mTLS cert/key pair if either file
+// is missing; idempotent -- an existing pair is left untouched.
 func ensureCertKey(certPath, keyPath string) error {
 	if _, certErr := os.Stat(certPath); certErr == nil {
 		if _, keyErr := os.Stat(keyPath); keyErr == nil {
@@ -525,20 +448,8 @@ func ensureCertKey(certPath, keyPath string) error {
 	return nil
 }
 
-// performReset runs deleteIdentity off the message-read loop's hot path,
-// switches the client into "awaiting controller-initiated adopt" mode (see
-// manage.go), then reboots -- matching real hardware on ResetToDefaults.
-// Identity is deleted before the reboot so no stale identity survives;
-// ensureCertKey/loadOrCreateAdoptionUUID re-provision on the next boot.
-//
-// Regenerating identity alone does NOT stop instant re-adoption: the
-// controller's acceptance is keyed on MAC and the client keeps dialing
-// regardless. Real hardware stops dialing :7442 on release/reset and waits for
-// a controller HTTPS adopt push on :443; entering awaiting-manage makes the
-// dial loop actually stop.
-//
-// Uses /sbin/reboot directly so it works even if the SD-card scripts are
-// mid-edit or broken.
+// performReset deletes identity off the read loop, switches to awaiting-manage
+// (manage.go) and reboots -- the gate that stops instant re-adoption by MAC.
 func (c *Client) performReset() {
 	if err := c.deleteIdentity(); err != nil {
 		log.Printf("ResetToDefaults: failed to delete identity: %v", err)
@@ -546,10 +457,8 @@ func (c *Client) performReset() {
 
 	enterAwaitingManage("ResetToDefaults")
 
-	// If the reboot command below fails, this process keeps running;
-	// awaitingManage (set by enterAwaitingManage) is what gates the dial
-	// loop in main(). Clearing cfg.Token here just keeps state consistent in
-	// that fallback case.
+	// If the reboot fails this process keeps running; awaitingManage gates the
+	// dial loop. Clearing cfg.Token just keeps state consistent in that case.
 	cfg.Token = ""
 
 	log.Printf("ResetToDefaults: rebooting device now")
@@ -622,10 +531,8 @@ var (
 	reWifiSignal  = regexp.MustCompile(`Signal level[:=](-?[0-9]+) dBm`)
 )
 
-// readWifiStatus shells out to iwconfig and parses live association state off
-// wlan0. Returns nil if wlan0 isn't associated (e.g. a wired build) rather
-// than fabricating values. Matches the controller's NetworkStatus field set
-// (linkSpeedMbps/channel/essid/frequency/signalLevel/bssid).
+// readWifiStatus parses live iwconfig association state off wlan0, or nil if
+// unassociated (a wired build) rather than fabricating values.
 func readWifiStatus() *wifiStatus {
 	out, err := exec.Command("/usr/sbin/iwconfig", "wlan0").Output()
 	if err != nil {
@@ -669,10 +576,8 @@ func readWifiStatus() *wifiStatus {
 	}
 }
 
-// featureFlags' keys are read by the controller's own service.js as
-// hasX:Boolean(t.<key>). "truedaynight" is the real IR/night-vision key (not
-// "infrared"/"ir"); "ledIR" is the IR illuminator, paired with cpld_ctl's
-// led/ircut; "ledStatus" is the separate status LED (ipc_cmd -l).
+// featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
+// "truedaynight" is the real IR key, "ledStatus" the separate status LED.
 func featureFlags() map[string]interface{} {
 	flags := map[string]interface{}{
 		"mic":          true,
@@ -682,8 +587,7 @@ func featureFlags() map[string]interface{} {
 		"ledStatus":    true, // hasLedStatus <- t.ledStatus; real hardware, ipc_cmd -l
 		"wifi":         true, // hasWifi <- t.wifi; real hardware capability (8189fs module)
 		// bluetooth/hdr/privacyMask/autoICROnly: real G3 Instant declares all
-		// four true; added here to match. None have behavior wired up yet --
-		// self-declared metadata only, like wifi/ledStatus above.
+		// four true; self-declared metadata only, no behavior wired up.
 		"bluetooth":    true,
 		"hdr":          true,
 		"privacyMask":  true,
@@ -692,12 +596,8 @@ func featureFlags() map[string]interface{} {
 		"videoMode":    []string{"default", "sport", "slowShutter"},
 		"motionDetect": []string{"enhanced"},
 
-		// Fields copied from a real G3 Instant's /usr/etc/features.json, which
-		// ubnt_avclient merges into its hello `features`. Their absence made
-		// Protect show empty codec lists; the empty `audioCodecs` also gated
-		// the Automatic-quality talkback button. Real G3 hardware sends only
-		// AAC, but advertising opus matches the shipped file and keeps
-		// talkback gating happy.
+		// Copied from a real G3 Instant's features.json; their absence made
+		// Protect show empty codec lists and gated the talkback button.
 		"audioCodecs":           []string{"aac", "opus"},
 		"videoCodecs":           []string{"h264", "mjpg"},
 		"opusSampleRates":       []int{16000},
@@ -728,9 +628,8 @@ func featureFlags() map[string]interface{} {
 	return flags
 }
 
-// talkbackSettingsDefaults mirrors a real camera's reported values.
-// samplingRate is this device's native PCM rate (16000), not the 22050 a real
-// camera reported, since /tmp/audio_in_fifo takes raw PCM with no resampling.
+// talkbackSettingsDefaults mirrors a real camera's values; samplingRate is this
+// device's native PCM rate (16000) -- audio_in_fifo takes raw PCM, no resampling.
 func talkbackSettingsDefaults() map[string]interface{} {
 	return map[string]interface{}{
 		"typeFmt": "aac", "typeIn": "serverudp",
@@ -798,9 +697,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 		if raw, err := json.Marshal(m.Payload); err == nil {
 			log.Printf("ubnt_avclient_hello raw payload: %s", raw)
 		}
-		// The hello reply carries the controller's own UUID as
-		// `controllerUuid`; real hardware advertises it as discovery TLV
-		// 0x26, so capture and persist it.
+		// The hello reply carries the controller's UUID as `controllerUuid`;
+		// real hardware advertises it as discovery TLV 0x26.
 		if u, ok := m.Payload["controllerUuid"].(string); ok && u != "" {
 			if raw, err := parseUUID(u); err != nil {
 				log.Printf("hello: controllerUuid %q is not a valid UUID, ignoring: %v", u, err)
@@ -831,9 +729,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	case "ubnt_avclient_timeSync":
 		return c.handleTimeSync(m)
 	case "ResetIspSettings":
-		// With mediad, restore the vendor defaults on its control socket too;
-		// the response is the static schema either way. Off the read loop so a
-		// slow socket can't delay the ack.
+		// With mediad, restore vendor defaults on its socket too; off the read
+		// loop so a slow socket can't delay the ack.
 		go func() {
 			if !mediadEnabled() {
 				return
@@ -853,9 +750,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	case "ChangeVideoSettings":
 		return false, c.handleVideoSettings(m)
 	case "ChangeDeviceSettings":
-		// A real name set/changed in the Protect app arrives here; persist it
-		// instead of echoing the old value. Falls back to the current name
-		// (model string on a fresh device) if this push carries no "name".
+		// A name set in the Protect app arrives here; persist it instead of
+		// echoing the old value, falling back to the current name.
 		if raw, err := json.Marshal(m.Payload); err == nil {
 			log.Printf("ChangeDeviceSettings raw payload: %s", raw)
 		}
@@ -871,10 +767,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 		if raw, err := json.Marshal(m.Payload); err == nil {
 			log.Printf("ChangeOsdSettings raw payload: %s", raw)
 		}
-		// Forward to mediad's burned-in overlay (osdControlMap, mediad_ctl.go);
-		// no-op unless mediad is enabled and responsive. Off the read loop for
-		// the same reason ChangeIspSettings is: a stalled mediad must never
-		// delay the controller's ack.
+		// Forward to mediad's burned-in overlay (osdControlMap); off the read
+		// loop so a stalled mediad can't delay the controller's ack.
 		go mediadApplyOsdSettings(m.Payload)
 
 		osd := map[string]interface{}{
@@ -921,8 +815,7 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 		}
 		return false, nil
 	case "PanTiltReset", "EnablePtzControl", "DisablePtzControl":
-		// PanTiltReset has no ipc_cmd equivalent beyond what
-		// GetCurrentPosition/Preset cover, and Enable/DisablePtzControl look
+		// PanTiltReset has no ipc_cmd equivalent; Enable/DisablePtzControl look
 		// like session-bracketing markers. Ack only.
 		ptzLogPayload(fn, m.Payload)
 		if m.ResponseExpected {
@@ -950,12 +843,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 			log.Printf("ChangeTalkbackSettings raw payload: %s", raw)
 		}
 		if m.ResponseExpected {
-			// Accept the controller's requested settings instead of
-			// overriding them with our defaults. The controller asks for
-			// opus/serverudp-rtp/24000 while talkbackSettingsDefaults answers
-			// aac/serverudp/16000; talkback_rx handles both transports, but
-			// answering with a different transport is a real negotiation
-			// mismatch and the leading suspect for talkback never activating.
+			// Accept the controller's requested settings instead of our
+			// defaults; answering a different transport was a negotiation mismatch.
 			resp := talkbackSettingsDefaults()
 			for k, v := range m.Payload {
 				resp[k] = v
@@ -964,10 +853,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 		}
 		return false, nil
 	case "ChangeBrightnessSettings":
-		// Legacy separate brightness message. Schema not captured; log the raw
-		// payload and run it through the same picture-control mapping so it
-		// reaches mediad when the advanced path is enabled. It is a PARTIAL
-		// object, so it must not end the delta seed (see mediadApplyControls).
+		// Legacy separate brightness message (schema uncaptured), run through
+		// the same mapping; it is PARTIAL, so it must not end the delta seed.
 		if raw, err := json.Marshal(m.Payload); err == nil {
 			log.Printf("ChangeBrightnessSettings raw payload: %s", raw)
 		}
@@ -985,14 +872,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 		}
 		return false, nil
 	case "UpdateFirmwareRequest":
-		// Not a real upgrade: fetch the version string out of the update image
-		// the controller points at and adopt it (matching unifi-cam-proxy's
-		// process_upgrade). Real update images for real models aren't
-		// encrypted, but every model+version pairing we have points at an
-		// encrypted image, so looksLikeVersionString never succeeds and the
-		// controller re-issues this on every reconnect. unifi-cam-proxy
-		// force-reconnects here; since we can never satisfy the check that
-		// would mean disconnecting forever, stay connected and ignore instead.
+		// Not a real upgrade: fetch the image's version string and adopt it. Every
+		// reachable image is encrypted, so ignore rather than reconnect forever.
 		if uri, ok := m.Payload["uri"].(string); ok {
 			if v, err := fetchFirmwareVersion(uri); err != nil {
 				log.Printf("UpdateFirmwareRequest: failed to read version from %s: %v", uri, err)
@@ -1007,28 +888,16 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	case "Reboot":
 		return true, nil
 	case "GetRequest":
-		// Must not block: process() runs inline in run()'s ReadMessage loop,
-		// and gorilla only handles ping/pong inside ReadMessage -- a hung
-		// handleGetRequest would freeze the whole connection and trip the
-		// controller's missed-pong timeout, not just delay the snapshot.
+		// Must not block: process() runs inline in ReadMessage, and gorilla only
+		// handles ping/pong there -- a hang would trip the missed-pong timeout.
 		go c.handleGetRequest(m)
 		if m.ResponseExpected {
 			return false, c.send(c.genResponse(fn, m.MessageID, nil))
 		}
 		return false, nil
 	case "ResetToDefaults":
-		// Sent by the controller when an admin removes this camera from
-		// Protect. Real hardware stops dialing :7442 on this message and waits
-		// for a controller HTTPS adopt push on :443; performReset puts us in
-		// that same awaiting-manage state (manage.go) and deletes identity, so
-		// the dial loop in main() actually stops instead of instantly
-		// reconnecting.
-		//
-		// Must run off this goroutine: performReset reboots the device and
-		// flips state, so it runs in the background. This case returns
-		// immediately (false, not forceReconnect) so ReadMessage keeps
-		// servicing pings; performReset closes the connection itself, which
-		// triggers the real reconnect.
+		// Sent when an admin removes this camera from Protect: performReset puts
+		// us in awaiting-manage and deletes identity; runs in the background.
 		go c.performReset()
 		return false, nil
 	default:
@@ -1044,18 +913,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	}
 }
 
-// handleVideoSettings responds to ChangeVideoSettings.
-//
-// The CLIENT is the authority on its own video capabilities: always send back
-// a complete, hardcoded video1/video2/video3/mjpg schema regardless of the
-// incoming request. The payload (when non-empty) only supplies destinations to
-// merge in. Echoing an empty request back as literal null video/audio made the
-// controller truncate adoption and close within ~1s.
-//
-// runCpldCtl shells out to cpld_ctl (work/cpld_ctl/cpld_ctl.c), which issues
-// the confirmed /dev/cpld_periph ioctls for the IR-cut filter and IR LED
-// array. Logs failures rather than returning an error -- callers fire these
-// best-effort alongside a ChangeIspSettings ack that must go out regardless.
+// runCpldCtl shells out to cpld_ctl for the confirmed /dev/cpld_periph IR-cut
+// filter and IR LED ioctls; failures are logged, not returned.
 func runCpldCtl(args ...string) {
 	if err := exec.Command(unifiPrefix+"/bin/cpld_ctl", args...).Run(); err != nil {
 		log.Printf("cpld_ctl %v failed: %v", args, err)
@@ -1092,26 +951,15 @@ func runStatusLedBlinker() {
 	}
 }
 
-// handleIspSettings wires ChangeIspSettings' irLedMode/irLedLevel fields to
-// real hardware via cpld_ctl (work/cpld_ctl/cpld_ctl.c), which issues
-// ioctl()s against /dev/cpld_periph: 0x7015/0x7016 for the mechanical IR-cut
-// filter and 0x7013 for the IR LED array. Real UniFi cameras couple filter and
-// LED under one manual-night-vision control (the Always On/Off extremes), so
-// manual mode drives both together.
-//
-// "auto" covers plain Auto (icrSwitchMode=="sensitivity", left to rmm's native
-// day/night switching) and Custom with a real 1-30 lux threshold
-// (icrSwitchMode=="lux", icrCustomValue=slider) -- see lux.go.
+// handleIspSettings wires irLedMode/irLedLevel to cpld_ctl: ioctls 0x7015/0x7016
+// for the IR-cut filter and 0x7013 for the LED array; "auto" may be lux (lux.go).
 func (c *Client) handleIspSettings(m Envelope) error {
 	if raw, err := json.Marshal(m.Payload); err == nil {
 		log.Printf("ChangeIspSettings raw payload: %s", raw)
 	}
 
-	// Night vision: when mediad is the producer it owns the applier (CPLD
-	// filter/LED + day/night ISP tuning) via the nightvision/night_lux/ir_led
-	// controls, so skip the local cpld_ctl/lux path and make sure the local lux
-	// poller is off -- otherwise the two would fight. With stock rmm, keep the
-	// historical local behavior (cpld_ctl + lux.go) unchanged.
+	// When mediad is the producer it owns night vision via nightvision/night_lux/
+	// ir_led, so skip the local cpld_ctl/lux path; with stock rmm keep it.
 	if mediadEnabled() {
 		setIcrLuxMode(false, 0, false)
 	} else if mode, ok := m.Payload["irLedMode"].(string); ok {
@@ -1145,9 +993,8 @@ func (c *Client) handleIspSettings(m Envelope) error {
 		}
 	}
 
-	// Forward the picture + night-vision controls to mediad when the advanced
-	// path is live. Off the read loop: the dial is local, but a stalled mediad
-	// must never delay the controller's ack. See mediad_ctl.go for the mapping.
+	// Forward picture + night-vision controls to mediad when the advanced path
+	// is live; off the read loop so a stalled mediad can't delay the ack.
 	go mediadApplyIspSettings(m.Payload, true)
 
 	// Echo the controller's real values back, layered under
@@ -1196,17 +1043,15 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 	}
 }
 
+// handleVideoSettings responds to ChangeVideoSettings. The client is the
+// authority: always return a complete hardcoded video1/2/3/mjpg schema.
 func (c *Client) handleVideoSettings(m Envelope) error {
 	if raw, err := json.Marshal(m.Payload); err == nil {
 		log.Printf("ChangeVideoSettings raw payload: %s", raw)
 	}
 
-	// Microphone: the controller pushes {audio:{bitRate,volume}} when the mic
-	// is muted/unmuted (volume==0 means disabled). Real hardware applies that
-	// as ADC capture gain 0, so the audio track keeps flowing but silent;
-	// FlvPush reproduces that (dropping tags would trip evostreamms's 1000 ms
-	// video-vs-last-audio threshold). An absent audio block leaves the last
-	// known value intact so the response below doesn't lie about it.
+	// {audio:{bitRate,volume}}: volume==0 mutes. Real hardware sets ADC gain 0
+	// so audio keeps flowing silently (FlvPush does MUTE); absent block keeps last.
 	audioVolume := 100
 	c.micMu.Lock()
 	audioVolume = c.micVolume
@@ -1232,16 +1077,13 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		"video3": "file:///dev/null",
 	}
 
-	// Real HIGH-channel (video1) resolution is a property of the physical
-	// encoder, so it comes from the shipped per-model profile (see
-	// readHighResolution), not a model table in this binary.
+	// The HIGH (video1) resolution comes from the shipped per-model table, not
+	// from this binary.
 	video1Width, video1Height := readHighResolution()
 
 	if video, ok := m.Payload["video"].(map[string]interface{}); ok {
-		// Shutter exposure (Video Mode) and the HIGH bitrate -> mediad, in one
-		// delta-gated batch so the controller's periodic resend of the whole
-		// video object doesn't re-issue them. No-op unless the advanced path is
-		// live.
+		// Shutter (Video Mode) and HIGH bitrate -> mediad, delta-gated so the
+		// controller's periodic resend doesn't re-issue them.
 		var vidControls []mediadCtl
 		vidControls = append(vidControls, shutterControls(video)...)
 		if v1, ok := video["video1"].(map[string]interface{}); ok {
@@ -1300,17 +1142,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			}
 			c.streams[key] = streamName
 			c.streamsMu.Unlock()
-			// video1 (HIGH) and video2 (real 640x360 LOW) feed real FlvPush
-			// sources. video3 ("medium" on the wire) is requested by Protect's
-			// expanded/single-camera panel for every quality option, so it
-			// aliases the SAME real HIGH frames as video1 -- not LOW -- to make
-			// the quality dropdown meaningful. Not a distinct resolution, just
-			// a second destination for the high output.
-			//
-			// streamName is the controller-issued per-session token
-			// (avSerializer.parameters.streamName), used as the FLV onMetaData
-			// streamName. Only reconnect FlvPush when the destination/token
-			// actually changed.
+			// video3 aliases the SAME real HIGH frames as video1; streamName is
+			// the controller-issued FLV onMetaData token (reconnect only if changed).
 			c.videoMu.Lock()
 			if key == "video1" {
 				if u.Host != c.activeVideo1Host || streamName != c.activeVideo1StreamName {
@@ -1433,10 +1266,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					"parameters":   streamParams("video3"),
 					"type":         "extendedFlv",
 				},
-				// video3 carries the real HIGH stream (see the activeVideo3*
-				// comment): Protect's expanded panel requests video3 for every
-				// quality setting, so it must be the high geometry/bitrate for
-				// the dropdown to mean anything.
+				// video3 carries the real HIGH stream (see activeVideo3*): the
+				// expanded panel requests it for every quality setting.
 				"bitRateCbrAvg": 1400000, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
 				"currentVbrBitrate": 1400000, "description": "Hi quality video track",
 				"enabled": true, "fps": 15, "gopModel": 0, "height": video1Height,
@@ -1453,19 +1284,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	return c.send(c.genResponse("ChangeVideoSettings", m.MessageID, payload))
 }
 
-// handleGetRequest answers "GetRequest" (observed live payload:
-// {"quality":"medium","timeoutMs":60000,"uri":"https://.../internal/
-// camera-upload/<token>","what":"snapshot"}). The content isn't returned over
-// the WS at all: the client grabs a JPEG and HTTP POSTs it (multipart/
-// form-data, field "payload") to the uri using the SAME mTLS client cert as
-// the WSS connection (matching unifi-cam-proxy). The WS response, sent by the
-// caller in process(), is a bare ack.
-//
-// The JPEG comes from the stock imggrabber binary, which blocks until the next
-// SPS/IDR lands, so its latency tracks the encoder's IDR interval: `-r low`
-// ~0.2s, `-r high` 2-9s (the HIGH GOP is ~9s). The controller grants
-// timeoutMs:60000; honor it (clamped) and keep the last good JPEG per
-// resolution as a fallback so a reconfigure-storm miss still yields a thumbnail.
+// handleGetRequest answers "GetRequest": grabs a JPEG via imggrabber and HTTP
+// POSTs it with the WSS mTLS cert; imggrabber blocks until the next IDR.
 func (c *Client) handleGetRequest(m Envelope) {
 	what, _ := m.Payload["what"].(string)
 	uri, _ := m.Payload["uri"].(string)
@@ -1563,9 +1383,8 @@ const (
 	snapshotCacheTTL = 5 * time.Minute
 )
 
-// snapshotTimeout returns the deadline to give imggrabber, honoring the
-// controller's own timeoutMs (60000 live) but clamping to a sane range. Waiting
-// for the next IDR is normal, not a hang, so this is deliberately generous.
+// snapshotTimeout honors the controller's timeoutMs (60000 live) clamped to a
+// sane range; waiting for the next IDR is normal, so it is deliberately generous.
 func snapshotTimeout(payload map[string]interface{}) time.Duration {
 	t := defaultSnapshotTimeout
 	if ms, ok := payload["timeoutMs"].(float64); ok && ms > 0 {
@@ -1607,16 +1426,14 @@ func (c *Client) cachedSnapshot(res string) ([]byte, time.Duration, bool) {
 	return jpeg, age, true
 }
 
-// looksLikeVersionString is a sanity check on bytes pulled from a firmware
-// image at a fixed offset -- real images may be encrypted and have no plain
-// version there.
+// looksLikeVersionString sanity-checks bytes pulled from a firmware image; real
+// images may be encrypted and have no plain version there.
 func looksLikeVersionString(v string) bool {
 	if len(v) < 3 || len(v) > 64 {
 		return false
 	}
-	// Real version strings (e.g. "UVC.S2L.v4.75.66.67.9cdac69.260331.1630")
-	// start with a letter and contain dots; garbage pulled from an encrypted
-	// image (e.g. a sha256-looking hex digest) won't match both.
+	// Real version strings start with a letter and contain dots; garbage from an
+	// encrypted image (a hex digest) won't match both.
 	first := v[0]
 	if !((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z')) {
 		return false
@@ -1632,10 +1449,8 @@ func looksLikeVersionString(v string) bool {
 	return true
 }
 
-// fetchFirmwareVersion reads the version string embedded near the start of a
-// real firmware image, matching unifi-cam-proxy's process_upgrade(): bytes
-// 4-53 (after a Range request for the first 100 bytes) hold the null-padded
-// version string.
+// fetchFirmwareVersion reads the null-padded version at bytes 4-53 (Range 0-100)
+// of a firmware image, matching unifi-cam-proxy's process_upgrade().
 func fetchFirmwareVersion(uri string) (string, error) {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
@@ -1664,26 +1479,17 @@ func fetchFirmwareVersion(uri string) (string, error) {
 	return version, nil
 }
 
-// FlvPush control FIFO: our native C++ module inside the deployed
-// unifi_flv_bridge binary (work/flv_bridge/ -- FshareReader.cpp reads the
-// stock encoder's shared-memory frame ring, FlvPush.cpp muxes frames into FLV
-// tags written to a TCP socket it dials itself; no ffmpeg, no RTSP round-trip).
-// An earlier ffmpeg-spawning relay exhausted this 60MB device's RAM. Writing
-// one line to the FIFO costs nothing.
+// FlvPush control FIFO of the deployed unifi_flv_bridge (work/flv_bridge/); an
+// earlier ffmpeg-spawning relay exhausted this 60MB device's RAM.
 const flvPushFifo = "/tmp/unifi_flv_bridge_ctl"
 
 var (
 	videoStreamMu sync.Mutex
-	// A FIFO reader (FlvPush.cpp's ctlThreadMain) only has the pipe open for a
-	// brief window between one writer's EOF and its next fopen(), so opening
-	// per command raced that window and failed with ENXIO under the
-	// controller's normal reassignment cadence. Holding one writer open for
-	// the client's lifetime sidesteps the race.
+	// The FIFO reader only holds the pipe open briefly between writers, so
+	// per-command opens raced it (ENXIO); hold one writer open for the lifetime.
 	flvPushFifoFile *os.File
-	// currentMicLevel mirrors the effective mic level applied to FlvPush and
-	// the codec gain so startVideoStream can re-assert both on a fresh CONNECT
-	// (guarded by videoStreamMu). Defaults to full so a CONNECT before the
-	// controller's first audio settings doesn't silence the mic.
+	// currentMicLevel mirrors the effective mic level so startVideoStream can
+	// re-assert it on a fresh CONNECT; defaults to full (unmuted).
 	currentMicLevel = 100
 )
 
@@ -1697,10 +1503,8 @@ func startVideoStream(dest, streamName, channel string) {
 		log.Printf("startVideoStream[%s]: failed to write FlvPush FIFO: %v", channel, err)
 		return
 	}
-	// Re-assert the mic state on every CONNECT: FlvPush's flag is
-	// process-global and resets if the bridge restarts (while setMicLevel only
-	// writes on change), and the codec gain is re-applied in case the encoder
-	// re-initialised the mixer.
+	// Re-assert the mic state on every CONNECT: FlvPush's flag resets if the
+	// bridge restarts, and the encoder may re-init the mixer.
 	arg := "off"
 	if currentMicLevel <= 0 {
 		arg = "on"
@@ -1720,10 +1524,8 @@ func stopVideoStream(channel string) {
 	}
 }
 
-// micLevelFromVolume maps the controller's microphone volume onto our
-// effective level (0..100, where 0 means mute). Protect's Microphone Level
-// slider is 1..100 and never offers 0, so its minimum is treated as mute --
-// otherwise the mic could not be silenced from the UI. The rest maps linearly.
+// micLevelFromVolume maps the controller's volume to 0..100 (0 = mute).
+// Protect's slider floors at 1, so its minimum is treated as mute.
 func micLevelFromVolume(volume int) int {
 	if volume <= 1 {
 		return 0
@@ -1734,12 +1536,8 @@ func micLevelFromVolume(volume int) int {
 	return volume
 }
 
-// setMicLevel applies an effective mic level (0..100). FlvPush substitutes
-// silent audio at level 0 (its `MUTE on|off` FIFO command), and the codec
-// capture gain is set proportionally via bin/mixer_set, mirroring a real
-// camera's linear mapping of audio.volume onto the hardware capture element
-// (upstream of the encoder, so both the AAC and Opus tracks follow). No-op
-// unless the level changes: ChangeVideoSettings resends the same audio block.
+// setMicLevel applies an effective level (0..100): FlvPush substitutes silent
+// audio at level 0 and mixer_set scales the codec gain; no-op if unchanged.
 func (c *Client) setMicLevel(level int) {
 	c.micMu.Lock()
 	defer c.micMu.Unlock()
@@ -1767,9 +1565,8 @@ func (c *Client) setMicLevel(level int) {
 	log.Printf("setMicLevel: mic %s, level %d (controller audio volume)", state, level)
 }
 
-// applyMicGain writes the level as a percentage of the codec capture-gain
-// element via bin/mixer_set (see micGainCard/micGainControl). Best-effort: a
-// failure is logged, not fatal. Caller must hold videoStreamMu.
+// applyMicGain writes the level to the codec gain element via bin/mixer_set;
+// best-effort (failure logged). Caller must hold videoStreamMu.
 func applyMicGain(level int) {
 	out, err := exec.Command(unifiPrefix+"/bin/mixer_set",
 		micGainCard, micGainControl, strconv.Itoa(level)).CombinedOutput()
@@ -1855,10 +1652,8 @@ func run(ctx context.Context) error {
 	headers.Set("camera-firmware", cfg.FWVersion)
 	headers.Set("device-id", deviceIDStr)
 	headers.Set("x-guid", connGUID)
-	// "adopted" must NOT be `cfg.Token == ""` (dialing with no token): a
-	// manage-API push populates cfg.Token and it never goes back to empty.
-	// Use the persisted isAdopted flag, set true exactly when a real
-	// ubnt_avclient_paramAgreement lands.
+	// Use the persisted isAdopted flag (set on paramAgreement), NOT cfg.Token:
+	// a manage-API push populates the token and it never goes back to empty.
 	headers.Set("adopted", fmt.Sprintf("%t", isAdopted.Load()))
 
 	log.Printf("connecting to %s", u)
@@ -1886,16 +1681,12 @@ func run(ctx context.Context) error {
 		micVolume: 100,
 	}
 
-	// Seed the mediad control delta on every fresh WSS connection: the
-	// controller's first ChangeIspSettings/ChangeVideoSettings after connect is
-	// the full object, and must be recorded rather than re-applied (it would
-	// otherwise burst mediad with every non-default field at once).
+	// Seed the mediad delta on every fresh WSS connection: the controller's first
+	// settings object is full and must be recorded, not re-applied (a burst risk).
 	resetMediadDelta()
 
-	// Real hardware asks the controller to correct its clock before it
-	// introduces itself (see timesync.go). Without this the camera's clock
-	// stays at its firmware build date and the controller rejects every
-	// pushed frame with a multi-year wc/now diff.
+	// Real hardware corrects its clock before introducing itself (timesync.go);
+	// without it the controller rejects every pushed frame on a multi-year diff.
 	if err := client.sendTimeSync(); err != nil {
 		log.Printf("initial timeSync send failed: %v", err)
 	}
@@ -1930,16 +1721,8 @@ func run(ctx context.Context) error {
 	}
 }
 
-// runUpdatesConnection is real hardware's second, independent WSS connection
-// -- owned there by /bin/ubnt_reportd, not ubnt_avclient. Same host/port/path
-// as the main connection (/camera/1.0/ws), but with no ?token=, a bare
-// `Camera-MAC` header, and subprotocol "logs1" instead of "secure_transfer".
-// `ds` labels a connection matching this shape "-updates" and treats it as a
-// companion rather than a session replacement for the main one.
-//
-// Runs for the process lifetime, independent of adoption state, and sends
-// nothing after connecting; real ubnt_reportd carries no application payload
-// either, just lws-level keepalive, which gorilla's ping/pong satisfies.
+// runUpdatesConnection is real hardware's second WSS connection (ubnt_reportd):
+// subprotocol "logs1", bare Camera-MAC, no payload after connecting.
 func runUpdatesConnection(ctx context.Context) {
 	backoff := time.Second
 	for {
@@ -1959,11 +1742,8 @@ func runUpdatesConnection(ctx context.Context) {
 }
 
 func dialUpdatesConnectionOnce(ctx context.Context, c Config) error {
-	// A client cert is REQUIRED here -- without one, TLS itself fails
-	// ("remote error: tls: certificate required") before any WS/header logic
-	// runs. Real hardware shares one cert between ubnt_avclient and
-	// ubnt_reportd, so the cert is not what lets ds treat the two connections
-	// as independent.
+	// A client cert is REQUIRED here -- TLS fails ("certificate required")
+	// without one; real hardware shares the cert with ubnt_reportd.
 	cert, err := tls.LoadX509KeyPair(c.CertFile, c.KeyFile)
 	if err != nil {
 		return fmt.Errorf("load client cert: %w", err)
@@ -1975,19 +1755,16 @@ func dialUpdatesConnectionOnce(ctx context.Context, c Config) error {
 			InsecureSkipVerify: true, // matches run()'s main connection -- controller uses a self-issued cert
 		},
 		HandshakeTimeout: 15 * time.Second,
-		// ubnt_reportd negotiates subprotocol "logs1" (found via a live heap
-		// read), not the main connection's "secure_transfer" -- the leading
-		// candidate for the signal ds uses to treat this as an independent
-		// companion rather than a session replacement.
+		// ubnt_reportd negotiates subprotocol "logs1" (live heap read), not the
+		// main connection's "secure_transfer".
 		Subprotocols: []string{"logs1"},
 	}
 
 	u := fmt.Sprintf("wss://%s:%d/camera/1.0/ws", c.Host, c.Port)
 	headers := http.Header{}
 	headers.Set("Camera-MAC", c.MAC)
-	// Real ubnt_reportd's Host header is bare (e.g. "Host: 10.0.0.1", no
-	// port); override gorilla's host:port default in case the backend's
-	// connection classification keys off it.
+	// Real ubnt_reportd's Host header is bare (no port); override gorilla's
+	// host:port default in case connection classification keys off it.
 	headers.Set("Host", c.Host)
 
 	log.Printf("updates connection: connecting to %s", u)
@@ -2001,9 +1778,8 @@ func dialUpdatesConnectionOnce(ctx context.Context, c Config) error {
 	defer conn.Close()
 	log.Printf("updates connection: connected")
 
-	// This connection carries no application-level payload (matching real
-	// ubnt_reportd), so without keepalive it idles out and the controller
-	// stops treating it as a live companion. Real hardware's lws layer pings.
+	// No application payload (matching ubnt_reportd), so keepalive is needed or
+	// the controller stops treating it as a live companion.
 	pingDone := make(chan struct{})
 	defer close(pingDone)
 	go func() {
@@ -2029,9 +1805,7 @@ func dialUpdatesConnectionOnce(ctx context.Context, c Config) error {
 	}
 }
 
-// detectInterfaceIdentity reads one named interface's real MAC and IPv4
-// address. Split out of detectNetworkIdentity() so that function can try
-// multiple interfaces in preference order.
+// detectInterfaceIdentity reads one named interface's real MAC and IPv4 address.
 func detectInterfaceIdentity(name string) (mac string, ip string, err error) {
 	iface, err := net.InterfaceByName(name)
 	if err != nil {
@@ -2058,10 +1832,8 @@ func detectInterfaceIdentity(name string) (mac string, ip string, err error) {
 	return "", "", fmt.Errorf("%s has no IPv4 address", name)
 }
 
-// detectNetworkIdentity reads the camera's real MAC and IPv4. Ethernet is
-// preferred: a unit with a plugged-in eth0 (usable IPv4) presents that; wlan0
-// is the fallback for WiFi-only setups. Placeholder cfg.MAC/cfg.IP is the last
-// resort if neither works.
+// detectNetworkIdentity reads the camera's real MAC and IPv4, preferring eth0
+// and falling back to wlan0 (then the cfg placeholders).
 func detectNetworkIdentity() (mac string, ip string, err error) {
 	if mac, ip, err := detectInterfaceIdentity("eth0"); err == nil {
 		return mac, ip, nil
@@ -2072,11 +1844,8 @@ func detectNetworkIdentity() (mac string, ip string, err error) {
 	return "", "", fmt.Errorf("neither wlan0 nor eth0 has a usable IPv4 address")
 }
 
-// controllerOnLink reports whether host shares a subnet with one of this
-// camera's interfaces. Discovery UDP :10001 is broadcast and can't cross
-// subnets, so an off-subnet controller can't discover a waiting camera -- it
-// must dial out tokenless instead. A hostname or unparseable host is treated
-// as on-link, preserving the gating default.
+// controllerOnLink reports whether host shares a subnet with this camera:
+// off-subnet controllers can't receive discovery broadcast and must be dialed.
 func controllerOnLink(host string) bool {
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -2107,23 +1876,16 @@ func controllerOnLink(host string) bool {
 	return false
 }
 
-// cameraConfigFilePath is the LEGACY, per-file home of the camera-identity
-// overrides (MODEL, SYSID hex, FWVERSION), superseded by unifi.cfg. Still read
-// as a migration fallback for a deployment that has one. Missing is not an
-// error.
+// cameraConfigFilePath is the legacy per-file home of MODEL/SYSID/FWVERSION,
+// still read as a migration fallback for unifi.cfg.
 const cameraConfigFilePath = unifiPrefix + "/etc/unifi_client_go.camera-config"
 
-// unifiConfigFilePath is the project's single human-edited config file: plain
-// KEY=value, '#' comments, blank lines ignored. The shell scripts
-// (init.sh/watchdog.sh/wifidhcp.sh/ethdhcp.sh) and this client both read it.
-// Keys this client recognizes: MODEL, SYSID, FWVERSION, CONTROLLER,
-// IS_MEDIAD, MEDIAD_3DNR.
-// Runtime-generated state lives in its own files.
+// unifiConfigFilePath is the project's single human-edited config file (plain
+// KEY=value); the shell scripts and this client both read it.
 const unifiConfigFilePath = unifiPrefix + "/etc/unifi.cfg"
 
 // readUnifiCfg parses unifi.cfg's flat KEY=value lines into a map (keys
-// upper-cased). Missing file or unparsable lines are non-fatal; unknown keys
-// are ignored. Later duplicate keys win.
+// upper-cased); missing/unparsable lines are non-fatal and later duplicates win.
 func readUnifiCfg(path string) map[string]string {
 	vals := map[string]string{}
 	data, err := os.ReadFile(path)
@@ -2147,9 +1909,8 @@ func readUnifiCfg(path string) map[string]string {
 	return vals
 }
 
-// isTruthy parses a human-edited config boolean. Accepts the yes/no form used
-// by the shell scripts (and this file's own PTZ key) plus the usual
-// true/false/1/0/on/off aliases; anything else is false.
+// isTruthy parses a human-edited config boolean (yes/no plus the usual
+// true/false/1/0/on/off aliases); anything else is false.
 func isTruthy(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "yes", "true", "1", "on":
@@ -2198,24 +1959,16 @@ func loadCameraConfigFile(path string) {
 	}
 }
 
-// defaultInformHostFilePath is runtime state, not admin config: written by
-// applyManagePush when the controller pushes an adopt that pins this camera, so
-// the pin survives restarts. A human-set pin belongs in unifi.cfg's CONTROLLER
-// key, which outranks this file.
+// defaultInformHostFilePath is runtime state written by applyManagePush so a
+// controller adopt-push pin survives restarts; unifi.cfg CONTROLLER outranks it.
 const defaultInformHostFilePath = unifiPrefix + "/etc/unifi_client_go.inform-host"
 
-// dhcpInformHostFilePath is the lowest-priority controller source, written
-// automatically by default.script's DHCP-option-43 handling. Kept apart from
-// defaultInformHostFilePath so a lease renewal can never clobber the adopt-push
-// pin. Consulted only when neither unifi.cfg CONTROLLER nor
-// defaultInformHostFilePath is present.
+// dhcpInformHostFilePath is the lowest-priority controller source (DHCP option
+// 43), kept apart so a lease renewal can't clobber the adopt-push pin.
 const dhcpInformHostFilePath = unifiPrefix + "/etc/unifi_client_go.inform-host-dhcp"
 
-// loadInformHostOverride reads a plain-text "host" or "host:port" line from
-// path (blank/missing: ok=false, caller keeps the compiled-in default).
-// Comment lines (leading '#') and blank lines are skipped, so the file can
-// carry a short header. A missing file is tolerated, but other errors are
-// logged as likely mistakes.
+// loadInformHostOverride reads a "host" or "host:port" line from path ('#'
+// comments and blanks skipped); a missing file gives ok=false.
 func loadInformHostOverride(path string) (host string, port int, ok bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -2245,10 +1998,8 @@ func loadInformHostOverride(path string) (host string, port int, ok bool) {
 }
 
 func main() {
-	// Wait for an interface to actually have an address before latching the
-	// identity. At boot the app can start before DHCP completes; a one-shot
-	// check would fall through to the placeholder default for the whole
-	// process lifetime, so the controller saw a bogus device.
+	// Wait for an interface to have an address before latching identity: at boot
+	// DHCP may not be done, and a one-shot check would latch the bogus placeholder.
 	detectedMAC, detectedIP, derr := detectNetworkIdentity()
 	if derr != nil {
 		log.Printf("network not ready yet (%v); waiting up to 45s for wlan0/eth0 to get an address", derr)
@@ -2269,13 +2020,8 @@ func main() {
 		log.Printf("detected network identity: mac=%s ip=%s", cfg.MAC, cfg.IP)
 	}
 
-	// Read project config BEFORE computing flag defaults so an explicit
-	// -host/-model still wins. Identity precedence: unifi.cfg > legacy
-	// camera-config > compiled-in default. Controller precedence, most
-	// specific wins: unifi.cfg CONTROLLER (manual pin) > inform-host
-	// (runtime adopt-push pin) > inform-host-dhcp (DHCP option 43). The two
-	// inform-host files stay separate because they're runtime state, not
-	// human config.
+	// Read project config BEFORE computing flag defaults so explicit flags still
+	// win. Controller precedence: unifi.cfg CONTROLLER > inform-host > DHCP.
 	loadCameraConfigFile(cameraConfigFilePath)
 	unifiCfg := readUnifiCfg(unifiConfigFilePath)
 	if v := unifiCfg["MODEL"]; v != "" {
@@ -2349,9 +2095,8 @@ func main() {
 	cfg.Model = *model
 	cfg.CertFile = *certFile
 	cfg.KeyFile = *keyFile
-	// PTZ capability precedence: an explicit -ptz flag wins, then unifi.cfg
-	// PTZ=, else the model table. The boot scripts no longer carry a per-model
-	// PTZ list; this is the single place the capability is decided.
+	// PTZ precedence: explicit -ptz flag, then unifi.cfg PTZ=, else the model
+	// table -- the single place the capability is decided.
 	if flagSet("ptz") {
 		cfg.HasPTZ = *ptz
 	} else if v := unifiCfg["PTZ"]; v != "" {
@@ -2387,9 +2132,8 @@ func main() {
 	loadAdoptedState(adoptedStateFilePath)
 	log.Printf("adopted state loaded: %v", isAdopted.Load())
 
-	// Device name defaults to the model string until the controller (Protect)
-	// pushes a real name via ChangeDeviceSettings, which is persisted from
-	// then on.
+	// Device name defaults to the model string until Protect pushes a real name
+	// via ChangeDeviceSettings, which is then persisted.
 	loadDeviceName(deviceNameFilePath, cfg.Model)
 	log.Printf("device name: %s", getDeviceName())
 
@@ -2409,30 +2153,15 @@ func main() {
 	// subprotocol "logs1" (found via a live heap capture). Keep it.
 	go runUpdatesConnection(context.Background())
 
-	// Real hardware does not open the main :7442 control connection until the
-	// controller has provisioned it. A factory-fresh (or removed/reset) camera
-	// answers UDP :10001 discovery and waits for the controller's HTTPS adopt
-	// push on :443, then dials. Dialing tokenless pre-adoption instead makes
-	// Protect build the pending device row from that inbound WSS attempt --
-	// which ds rejects 403 until an admin clicks Adopt -- and the row ends up
-	// with an empty type/name and host 127.0.0.1 (the internal ds->ms hop)
-	// instead of the real model/IP Protect learned from discovery. A
-	// discovery-sourced row is what real hardware gets, and why the first
-	// Adopt click succeeds.
-	//
-	// EXCEPTION: an off-subnet controller's discovery broadcast can't reach
-	// this camera, so waiting would leave it permanently invisible -- dial
-	// tokenless pre-adoption so the remote controller learns the device exists.
+	// Real hardware waits for the controller's HTTPS adopt push before dialing
+	// :7442; off-subnet controllers can't get discovery, so dial tokenless.
 	if !isAdopted.Load() {
 		if controllerOnLink(cfg.Host) {
 			awaitingManage.Store(true)
 			log.Printf("camera not yet adopted: answering discovery and waiting for a controller adopt push on :443 (matches real hardware)")
 		} else {
-			// Off-subnet: limited broadcast can't reach the controller and
-			// multicast routing isn't guaranteed, so dial :7442 tokenless
-			// pre-adoption -- that inbound attempt is how the remote
-			// controller learns the device exists. The discovery responder
-			// still runs in case multicast is routed.
+			// Broadcast can't reach it and multicast routing isn't guaranteed, so
+			// dial :7442 tokenless; the discovery responder still runs.
 			log.Printf("controller %s is off-subnet: dialing :7442 tokenless pre-adoption so it can see/adopt this camera", cfg.Host)
 		}
 	} else if _, err := os.Stat(manageAwaitFilePath); err == nil {
@@ -2475,10 +2204,8 @@ func main() {
 	}
 }
 
-// applyManagePush updates cfg from a controller-initiated adopt push
-// (manage.go). An empty Host leaves cfg.Host as-is -- both manage API shapes
-// always send a host, but this guards against a malformed push pointing the
-// client at an empty address.
+// applyManagePush updates cfg from a controller-initiated adopt push; an empty
+// Host leaves cfg.Host as-is (guards against a malformed push).
 func applyManagePush(res manageResult) {
 	cfgMu.Lock()
 	cfg.Token = res.Token
@@ -2495,13 +2222,8 @@ func applyManagePush(res manageResult) {
 		if raw, err := parseUUID(res.ConsoleID); err != nil {
 			log.Printf("applyManagePush: mgmt.consoleId %q is not a valid UUID, ignoring: %v", res.ConsoleID, err)
 		} else {
-			// Only adoptionUUID (the 0x26 TLV's raw bytes) may track
-			// consoleId. deviceIDStr must NOT be overwritten with it: that is
-			// the WSS `device-id` header identifying this camera. Since
-			// consoleId is the CONTROLLER's identity, overwriting it made
-			// every camera adopted by the same controller send an identical
-			// device-id, and the controller closed them with "1008 policy
-			// violation: superseded by newer connection for same device".
+			// Only adoptionUUID (0x26 TLV) may track consoleId; deviceIDStr is
+			// this camera's WSS device-id and must NOT become the controller's.
 			adoptionUUID = raw[:]
 			saveAdoptionUUID(adoptionUUIDFilePath, res.ConsoleID)
 			log.Printf("applyManagePush: adopted controller's consoleId %s as 0x26 TLV (device-id header stays %s)", res.ConsoleID, deviceIDStr)

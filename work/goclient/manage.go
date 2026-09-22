@@ -1,24 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// manage.go implements the camera-side HTTPS management API real UniFi
-// hardware exposes on :443 (a lighttpd instance) -- the controller-initiated
-// adopt push:
-//
-//	POST /api/1.0/login    {"username":..,"password":..}      -> session cookie
-//	PUT  /api/1.1/settings {"controller":{"addr":..,"token":..}}
-//	GET  /api/1.1/status                                       -> {"controller":{...}}
-//
-//	POST /api/1.2/login    {"username":..,"password":..}      -> 200, Set-Cookie: TOKEN=<hex>
-//	POST /api/1.2/manage   {"mgmt":{"token":..,"hosts":[..],"protocol":"wss"}}
-//
-// Which flow our controller uses isn't confirmed live, so both are
-// implemented. Needed for adoption fidelity: a client that always dials :7442
-// regardless of adoption state makes a removed/reset camera "instantly
-// readopt" instead of sitting pending-adopt like real hardware.
-//
-// Deliberately no session/credential enforcement -- login accepts anything.
-// The only caller is the controller on a private LAN.
+// manage.go implements the camera-side HTTPS management API on :443, the
+// controller-initiated adopt push (both the 1.2 and older 1.1 flows).
 package main
 
 import (
@@ -41,19 +25,16 @@ type manageResult struct {
 	Token string
 	Host  string
 	// ConsoleID is the adopting controller's own stable identity
-	// (mgmt.consoleId in the /api/1.2/manage flow). Empty for the older
-	// /api/1.1/settings flow, which carries no such field.
+	// (mgmt.consoleId in the /api/1.2/manage flow); empty for 1.1.
 	ConsoleID string
 }
 
 // manageCh delivers a manageResult from the HTTP handlers to main()'s dial
-// loop. Buffered by 1: only the most recent push matters and a handler must
-// never block.
+// loop. Buffered by 1: only the most recent push matters.
 var manageCh = make(chan manageResult, 1)
 
 // awaitingManage mirrors the dial-loop state: true means "do not dial :7442 --
-// wait passively for a manage push", matching real hardware after a
-// release/reset. Set from performReset() on its own goroutine.
+// wait passively for a manage push", matching real hardware after a reset.
 var awaitingManage atomic.Bool
 
 // manageAwaitFilePath persists awaitingManage across the ResetToDefaults
@@ -77,11 +58,8 @@ func leaveAwaitingManage() {
 	}
 }
 
-// runManageServer runs the HTTPS listener forever. Started unconditionally:
-// real hardware's lighttpd is always up, so a controller can re-push settings
-// even to an already-adopted camera. Errors are logged, not fatal -- worst
-// case controller-initiated re-adopt is unavailable, but adoption/video, which
-// don't depend on this listener, keep working.
+// runManageServer runs the HTTPS listener forever. Started unconditionally
+// (real hardware's lighttpd is always up); errors are logged, not fatal.
 func runManageServer() {
 	certPEM, keyPEM, err := generateSelfSignedECDSACert("yi-hack-cam-mgmt", []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth})
 	if err != nil {
@@ -115,6 +93,8 @@ func manageHTTPHandler() http.Handler {
 	return mux
 }
 
+// handleLogin deliberately accepts anything: the only caller is the controller
+// on a private LAN.
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -211,9 +191,8 @@ func handleManageV2(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// deliverManagePush hands a freshly-received controller push to main()'s
-// dial loop and immediately clears awaitingManage -- real hardware dials right
-// after this API call succeeds, not on its next backoff tick.
+// deliverManagePush hands a freshly-received controller push to main()'s dial
+// loop and immediately clears awaitingManage -- real hardware dials right away.
 func deliverManagePush(res manageResult) {
 	leaveAwaitingManage()
 	// Only the newest push matters: drop a stale buffered one, don't block.

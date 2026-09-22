@@ -3,17 +3,8 @@
 
 package main
 
-// PTZ (pan/tilt/zoom) support for units with a real motorized pan/tilt base
-// (see cfg.HasPTZ in main.go).
-//
-// The wire functionNames and the GetCurrentPosition response shape were
-// extracted from the controller's own service.js, not guessed. The
-// ContinuousMove and RelativePosition payloads were never confirmed live, so
-// they're implemented as best-effort discrete direction moves (matching this
-// hardware's ipc_cmd -m RIGHT/LEFT/UP/DOWN/STOP interface, which has no
-// continuous-speed or absolute-coordinate concept). Raw payloads for every PTZ
-// message are logged either way.
-
+// PTZ for units with a real motorized pan/tilt base (cfg.HasPTZ). Wire
+// functionNames are from service.js; ContinuousMove/RelativePosition are best-effort.
 import (
 	"encoding/json"
 	"log"
@@ -34,19 +25,15 @@ func ptzLogPayload(fn string, payload map[string]interface{}) {
 	}
 }
 
-// ptzGetPositionRegex matches ipc_cmd -g's own stdout, e.g.:
-//
-//	Current x  = 1563, y  = 809
-//	Degrees x  = 137.2, y  = 63.5
-//	137.2,63.5
+// ptzGetPositionRegexes match ipc_cmd -g's stdout ("Current x  = 1563, y  = 809"
+// and "Degrees x  = 137.2, y  = 63.5").
 var (
 	ptzCurrentRegex = regexp.MustCompile(`Current x\s*=\s*(-?\d+),\s*y\s*=\s*(-?\d+)`)
 	ptzDegreeRegex  = regexp.MustCompile(`Degrees x\s*=\s*(-?[\d.]+),\s*y\s*=\s*(-?[\d.]+)`)
 )
 
 // ptzGetPosition shells out to ipc_cmd -g and parses both raw step coordinates
-// and degree-converted ones -- the firmware prints both, matching exactly what
-// GetCurrentPosition's {inDegree:true,inSteps:true} request asks for.
+// and degree-converted ones -- the firmware prints both.
 func ptzGetPosition() (panSteps, tiltSteps int, panDeg, tiltDeg float64, err error) {
 	out, err := exec.Command(ipcCmdPath, "-g").CombinedOutput()
 	if err != nil {
@@ -93,8 +80,7 @@ func ptzCruise(mode string) {
 }
 
 // axisDirection turns a signed float (from an unverified controller-side
-// coordinate scale) into one of this hardware's discrete directions, or ""
-// for values close enough to zero to mean "no movement on this axis".
+// coordinate scale) into a discrete direction, or "" near zero.
 func axisDirection(v float64, positive, negative string) string {
 	const deadband = 0.05
 	switch {
@@ -108,9 +94,7 @@ func axisDirection(v float64, positive, negative string) string {
 }
 
 // handleContinuousMove implements CONTINUOUS_MOVE. Payload is the controller's
-// {x,y,z} vector (field names from service.js; exact scale/sign not
-// live-verified). x/y drive direction only (this hardware has no continuous
-// speed); z (zoom) is ignored.
+// {x,y,z} vector; x/y drive direction only (no continuous speed), z is ignored.
 func (c *Client) handleContinuousMove(m Envelope) error {
 	ptzLogPayload("ContinuousMove", m.Payload)
 	x, _ := m.Payload["x"].(float64)
@@ -135,10 +119,8 @@ func (c *Client) handleContinuousMove(m Envelope) error {
 	return nil
 }
 
-// handleRelativePosition implements RELATIVE_POSITION. Payload names
-// (panPos/tiltPos/panSpeed/tiltSpeed) are from service.js, but the coordinate
-// scale was never confirmed against this hardware, so it is treated
-// direction-only, like ContinuousMove, until live-tested.
+// handleRelativePosition implements RELATIVE_POSITION. Payload names are from
+// service.js but the coordinate scale is unconfirmed, so direction-only.
 func (c *Client) handleRelativePosition(m Envelope) error {
 	ptzLogPayload("RelativePosition", m.Payload)
 	panPos, _ := m.Payload["panPos"].(float64)
@@ -163,10 +145,8 @@ func (c *Client) handleRelativePosition(m Envelope) error {
 	return nil
 }
 
-// ptzPresetsConfPath is the file the stock ptz_presets.sh bookkeeps
-// ("N=name,x,y" per line, N 0-7). ipc_cmd -P itself can't report which slot it
-// picked, so we reuse the script's own "first empty slot" prediction
-// (edit_preset()) to report a real slot number to the controller.
+// ptzPresetsConfPath is the file ptz_presets.sh bookkeeps ("N=name,x,y" per
+// line, N 0-7); ipc_cmd -P can't report which slot it picked, so we mirror it.
 const ptzPresetsConfPath = unifiPrefix + "/etc/ptz_presets.conf"
 
 var ptzPresetLineRegex = regexp.MustCompile(`^(\d)=(.*)$`)
@@ -218,17 +198,8 @@ func ptzWritePresetSlot(slots [8]string, slot int, value string) {
 	}
 }
 
-// handlePtzPreset implements PRESET ("set"/"goto"/"delete"). Confirmed live
-// shape for "set":
-//
-//	{"action":"set","item":{"focus":0,"index":-1,"name":"HomeView","pan":1563,"tilt":809,"zoom":0}}
-//
-// pan/tilt are raw step units (same as GetCurrentPosition's "steps"), not
-// degrees. "goto"/"delete" were never observed live but are handled with
-// best-fit field names. ipc_cmd -P can only save the camera's CURRENT position
-// under a name, so "set" is only correct when the requested position is
-// (approximately) where the camera already is -- true for the observed flow,
-// which always calls GetCurrentPosition first.
+// handlePtzPreset implements PRESET. ipc_cmd -P saves the CURRENT position, so
+// "set" is correct only when the camera is already there.
 func (c *Client) handlePtzPreset(m Envelope) error {
 	ptzLogPayload("Preset", m.Payload)
 	action, _ := m.Payload["action"].(string)
@@ -315,8 +286,7 @@ func (c *Client) handlePtzCenter(m Envelope) error {
 }
 
 // handlePtzPatrol implements PATROL, mapped to this hardware's native cruise
-// mode (ipc_cmd -C). Payload not live-captured -- looks for a boolean
-// "enabled", defaulting to starting patrol.
+// mode (ipc_cmd -C). Payload not live-captured -- looks for boolean "enabled".
 func (c *Client) handlePtzPatrol(m Envelope) error {
 	ptzLogPayload("Patrol", m.Payload)
 	enabled := true
@@ -334,10 +304,8 @@ func (c *Client) handlePtzPatrol(m Envelope) error {
 	return nil
 }
 
-// handleGetCurrentPosition implements GET_CURRENT_POSITION. The controller
-// sends it unprompted right after hello with {"inDegree":true,"inSteps":true}.
-// The response shape ({degree:{pan,tilt,zoom},steps:{pan,tilt,zoom,focus}}) is
-// the controller's own default. zoom/focus are always 0 -- no optical zoom.
+// handleGetCurrentPosition implements GET_CURRENT_POSITION. zoom/focus are
+// always 0 -- no optical zoom.
 func (c *Client) handleGetCurrentPosition(m Envelope) error {
 	ptzLogPayload("GetCurrentPosition", m.Payload)
 	panSteps, tiltSteps, panDeg, tiltDeg, err := ptzGetPosition()

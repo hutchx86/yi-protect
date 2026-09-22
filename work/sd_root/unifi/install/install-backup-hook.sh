@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# One-time install on a stock camera: patch /backup/init.sh to source
-# /tmp/sd/lower_half_init.sh, then reboot:
-#     sh /tmp/sd/unifi/install/install-backup-hook.sh
-# No-op if the hook is already present. /backup is jffs2 (writable) and survives
-# firmware updates. The appended block matches yi-hack's sdhack hook.
+# One-time install: patch /backup/init.sh to source /tmp/sd/lower_half_init.sh,
+# then reboot; /backup is jffs2 (writable) and survives firmware updates.
+#
+#   sh /tmp/sd/unifi/install/install-backup-hook.sh   (no-op if already installed)
 
 set -e
 

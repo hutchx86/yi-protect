@@ -1,8 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
- *
- * See FshareReader.h.
  */
 #include "FshareReader.h"
 
@@ -236,9 +234,7 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             if (plen <= 0) continue;
 
             // Copy out of the ring in one go so the consumer never sees a
-            // torn write when the payload straddles the wrap point. The
-            // vector is moved into the callback so ownership transfers
-            // without another allocation/copy.
+            // torn write when the payload straddles the wrap point.
             std::vector<unsigned char> linear((size_t)plen);
             copyFromRing(linear.data(), payload, (size_t)plen);
 

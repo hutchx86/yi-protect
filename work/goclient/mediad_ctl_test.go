@@ -15,7 +15,7 @@ func findCtl(t *testing.T, out []mediadCtl, key string) (int, bool) {
 	return 0, false
 }
 
-// ispControlMap emits every mapped field (including defaults); suppression of
+// ispControlMap emits every mapped field including defaults; suppression of
 // unchanged fields is the delta layer's job, so the mapper must not drop them.
 func TestIspControlMapEmitsMappedFields(t *testing.T) {
 	out := ispControlMap(ispSettingsDefaults())
@@ -26,10 +26,8 @@ func TestIspControlMapEmitsMappedFields(t *testing.T) {
 	}
 }
 
-// 3DNR (temporal denoise) is pinned off by default: Protect re-sends
-// enable3dnr=1 on every connect, and forwarding it re-enables mediad's temporal
-// filter (low-light motion ghosting). MEDIAD_3DNR=yes opts back in to Protect
-// control of the toggle.
+// TestIspControlMap3DnrDefaultOff: 3DNR is pinned off because re-sending
+// enable3dnr re-enables mediad's temporal filter (low-light motion ghosting).
 func TestIspControlMap3DnrDefaultOff(t *testing.T) {
 	saved := cfg.Mediad3DNR
 	defer func() { cfg.Mediad3DNR = saved }()
@@ -49,8 +47,7 @@ func TestIspControlMap3DnrDefaultOff(t *testing.T) {
 }
 
 // The delta must suppress a whole changeset, not just compare to static
-// defaults: the first object after a connect is seeded (recorded, not sent),
-// then only genuine changes are forwarded.
+// defaults: the first object after a connect is seeded (recorded, not sent).
 func TestMediadDeltaSeedsFirstObject(t *testing.T) {
 	d := newMediadDelta(true)
 	if d.changed(mediadCtl{"brightness", 36}) {
@@ -68,9 +65,8 @@ func TestMediadDeltaSeedsFirstObject(t *testing.T) {
 	}
 }
 
-// A partial object first (the legacy ChangeBrightnessSettings) must not end the
-// seed, or the following full ChangeIspSettings would apply every field the
-// partial object omitted.
+// A partial object first (legacy ChangeBrightnessSettings) must not end the
+// seed, or the following full ChangeIspSettings would apply every omitted field.
 func TestMediadDeltaPartialThenFullSeed(t *testing.T) {
 	d := newMediadDelta(true)
 	if got := d.filter([]mediadCtl{{"brightness", 36}}, false); len(got) != 0 {

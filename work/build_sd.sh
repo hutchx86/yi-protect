@@ -2,32 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# Build the self-contained SD-card layout for the UniFi Protect emulation.
-# Everything is built from source; nothing comes from a yi-hack install or a
-# firmware dump.
-#
-# Output: work/sd_root/. Copy its CONTENTS to the root of a FAT32 SD card.
-# The camera's patched /backup/init.sh sources /tmp/sd/lower_half_init.sh,
-# which hands off to unifi/script/init.sh.
-#
-#   /tmp/sd/lower_half_init.sh        boot entry
-#   /tmp/sd/unifi/bin/*               our binaries
-#   /tmp/sd/unifi/lib/*               libasound.so.2, ipc_multiplex.so
-#   /tmp/sd/unifi/etc/*               config + watermark assets
-#   /tmp/sd/unifi/script/*            init, watchdog, detect-model, DHCP
-#
-# Prerequisites (checked below):
-#   - git submodule: repos/yi-hack-Allwinner-v2
-#   - generic armv7-a hard-float musl cross-toolchain (lindenis prebuilt),
-#     cloned to repos/toolchain-sunxi-musl or pointed at by TOOLCHAIN_DIR
-#   - cmake on PATH (libjpeg-turbo inside imggrabber):
-#       python3 -m pip install --user cmake
-#   - wget + network access to the upstream archives
-#
-# yi-hack is a pinned upstream build source. It is copied into work/build/ and
-# its hardcoded /opt/yi/toolchain-sunxi-musl path rewritten to the toolchain
-# submodule before the per-module init/compile scripts run. The AAC decoder is
-# FAAD2 (GPL-2.0-or-later), fetched and built from source like libopus.
+# Build the self-contained SD-card layout (work/sd_root/) from source and
+# package it as work/yi-protect-<rev>.tar.gz. Prerequisites are checked below.
 
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,9 +13,8 @@ BIN="$UNIFI/bin"
 LIB="$UNIFI/lib"
 ETC="$UNIFI/etc"
 YH="$ROOT/repos/yi-hack-Allwinner-v2"
-# Generic armv7-a hard-float musl cross-toolchain. The same compiler ships in
-# the lindenis v536 and v833 prebuilt repos (byte-identical cc1/libc); point
-# TOOLCHAIN_DIR at a clone of either.
+# Generic armv7-a hard-float musl cross-toolchain; the lindenis v536 and v833
+# prebuilts ship the same compiler. Point TOOLCHAIN_DIR at a clone of either.
 TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$ROOT/repos/toolchain-sunxi-musl}"
 TCDIR="$TOOLCHAIN_DIR/gcc/linux-x86/arm/toolchain-sunxi-musl"
 TCBIN="$TCDIR/toolchain/bin"
@@ -61,10 +36,8 @@ CC="${XP}gcc"; CXX="${XP}g++"; AR="${XP}ar"; STRIP="${XP}strip"
 
 fetch() { [ -f "$2" ] || wget -q -O "$2" "$1"; }
 
-# ---------------------------------------------------------------------------
-# 1. Pristine yi-hack tree + patches. `git archive HEAD` (not the working
-#    tree) keeps builds reproducible from the pinned commit + work/patches/*.
-# ---------------------------------------------------------------------------
+# 1. Pristine yi-hack tree + patches; `git archive HEAD` (not the working tree)
+#    keeps builds reproducible from the pinned commit + work/patches/*.
 echo "== 1/6 preparing yi-hack build tree =="
 rm -rf "$YHB"
 mkdir -p "$YHB"
@@ -81,8 +54,7 @@ grep -rl "/opt/yi/toolchain-sunxi-musl" "$YHB" 2>/dev/null | while read -r f; do
 done
 
 # Repath compiled-in yi-hack paths so the shipped binaries never read
-# /tmp/sd/yi-hack at runtime: ipc_cmd (model_suffix) and dropbear's host-key
-# paths (a missing key path broke the SSH KEX).
+# /tmp/sd/yi-hack: ipc_cmd (model_suffix) and dropbear's host-key paths.
 sed -i \
     -e 's|"/home/yi-hack/model_suffix"|"/tmp/sd/unifi/etc/model_suffix"|' \
     -e 's|"/tmp/sd/yi-hack/model_suffix"|"/tmp/sd/unifi/etc/model_suffix"|' \
@@ -100,9 +72,7 @@ build_module() {
       true )
 }
 
-# ---------------------------------------------------------------------------
 # 2. yi-hack-sourced components (each downloads + builds its own deps).
-# ---------------------------------------------------------------------------
 echo "== 2/6 yi-hack modules (ipc_cmd, set_tz_offset, dropbear, alsa-lib, snapshot) =="
 build_module ipc_cmd
 build_module set_tz_offset
@@ -110,8 +80,8 @@ build_module dropbear
 build_module alsa-lib
 build_module snapshot        # imggrabber: builds ffmpeg + libjpeg-turbo (slow)
 
-# AAC decoder (FAAD2, GPL-2.0-or-later), static lib for unifi_flv_bridge's
-# AAC->Opus transcode and talkback_rx's ADTS decode.
+# FAAD2 (GPL-2.0-or-later) static lib for the bridge's AAC->Opus transcode
+# and talkback_rx's ADTS decode.
 FAAD2_VER=2.11.3
 build_faad2() {
     d="$BUILD/faad2-$FAAD2_VER"
@@ -134,9 +104,7 @@ build_faad2() {
 }
 build_faad2
 
-# ---------------------------------------------------------------------------
 # 3. libopus from source (talkback_rx's RTP/Opus decoder).
-# ---------------------------------------------------------------------------
 echo "== 3/6 libopus =="
 OPUS_VER=1.5.2
 OPUS_DIR="$BUILD/opus-$OPUS_VER"
@@ -150,10 +118,8 @@ if [ ! -f "$OPUS_DIR/.libs/libopus.a" ]; then
       make -j4 >/dev/null )
 fi
 
-# ---------------------------------------------------------------------------
 # 4. This project's own code.
-# ---------------------------------------------------------------------------
-echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv_bridge) =="
+echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv_bridge, downloader) =="
 ( cd "$ROOT/work/goclient"
   CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 CC="$CC" \
       go build -ldflags="-s -w" -o "$BIN/unifi_avclient_go" . )
@@ -161,14 +127,19 @@ echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv
 "$CC" -O2 -o "$BIN/cpld_ctl" "$ROOT/work/cpld_ctl/cpld_ctl.c"
 "$STRIP" "$BIN/cpld_ctl"
 
-# MD5-crypt hashing helper for unifi.cfg SSH_PASSWORD: the camera libc has no
-# mkpasswd/cryptpw applet and no openssl, so init.sh needs our own crypt() call.
+# mkpasswd: MD5-crypt helper for unifi.cfg SSH_PASSWORD; the camera libc has
+# no cryptpw applet/openssl, so init.sh needs our own crypt() call.
 "$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/work/mkpasswd/mkpasswd.c"
 "$STRIP" "$BIN/mkpasswd"
 
-# ALSA capture-gain setter: maps the controller's mic volume onto the codec
-# capture element (see mixer_set.c), the analog of a real camera's UBNT_CVOLUME
-# write. Built against the alsa-lib from step 2; loads the shipped libasound.so.2.
+# Static HTTPS downloader (prebuilt by work/downloader/build.sh): the camera has
+# no https client/CA store, so init.sh uses it with -k to fetch the H.264 libs.
+[ -x "$ROOT/work/downloader/downloader" ] || \
+    { echo "ERROR: work/downloader/downloader missing (run work/downloader/build.sh)"; exit 1; }
+cp "$ROOT/work/downloader/downloader" "$BIN/downloader"
+
+# mixer_set: maps the controller's mic volume onto the codec capture element
+# (analog of a real camera's UBNT_CVOLUME write); links the step-2 alsa-lib.
 ALSASRC=$(printf '%s\n' "$YHB"/src/alsa-lib/alsa-lib-* | sed -n '1p')
 "$CC" -O2 -Wall -o "$BIN/mixer_set" "$ROOT/work/mixer_set/mixer_set.c" \
     -I"$ALSASRC/include" "$YHB/src/alsa-lib/_install/lib/libasound.so.2" -lpthread
@@ -190,9 +161,7 @@ FAAD2="$BUILD/faad2-$FAAD2_VER"
       "$FAAD2/libfaad.a" "$OPUS_DIR/.libs/libopus.a" -lm )
 "$STRIP" "$BIN/talkback_rx"
 
-# ---------------------------------------------------------------------------
 # 5. Collect yi-hack-built artifacts into the SD layout (from _install/).
-# ---------------------------------------------------------------------------
 echo "== 5/6 installing built artifacts =="
 I="$YHB/src"
 cp "$I/ipc_cmd/_install/bin/ipc_cmd"              "$BIN/"
@@ -204,26 +173,18 @@ cp "$I/alsa-lib/_install/lib/libasound.so.2.0.0"  "$LIB/libasound.so.2"
 cp "$I/snapshot/_install/bin/imggrabber"          "$BIN/"
 "$STRIP" "$BIN/dropbearmulti" "$LIB/libasound.so.2" 2>/dev/null || true
 
-# ---------------------------------------------------------------------------
-# 6. Static assets.
-# ---------------------------------------------------------------------------
+# 6. Static assets: all-white blanks of the stock watermark size are bind-mounted
+#    over the stock bitmaps in init.sh; no vendor watermark bitmap is shipped.
 echo "== 6/6 assets =="
-# The stock Yi watermark is hidden by bind-mounting all-white blanks of the
-# same size (unifi/etc/{main,sub}_blank.bmp, tracked) over the stock bitmaps in
-# init.sh. No vendor-derived watermark bitmap is shipped.
 for b in main_blank.bmp sub_blank.bmp; do
     [ -f "$ETC/$b" ] || echo "   WARN: $b missing (watermark not hidden)"
 done
 
-# ---------------------------------------------------------------------------
-# 6b. Vendor the per-model bring-up scripts: stock/yi-hack lower_half_init.sh
-#     with /tmp/sd/yi-hack repathed to /tmp/sd/unifi. lower_half_init.sh picks
-#     one by the auto-detected model, so one image boots any supported model.
-# ---------------------------------------------------------------------------
+# 6b. Vendor per-model bring-up: stock/yi-hack lower_half_init.sh with /tmp/sd/
+#     yi-hack repathed to /tmp/sd/unifi, one per model row in model_table.
 echo "== 6b/7 vendoring per-model bring-up =="
-# Supported models come from the single per-model definition file (one row per
-# model); a row here means "we own this hardware and can bring it up". The
-# vendoring loop needs a sysroot/<model>/lower_half_init.sh for each row.
+# Supported models come from model_table (one row = we own and can bring up that
+# hardware); each row needs a sysroot/<model>/lower_half_init.sh.
 MODEL_TABLE="$ETC/model_table"
 if [ ! -f "$MODEL_TABLE" ]; then
     echo "ERROR: $MODEL_TABLE missing (it defines the supported models)"; exit 1
@@ -246,11 +207,8 @@ done
 cp "$LHDIR/y623.sh" "$LHDIR/default.sh" 2>/dev/null || true
 echo "   lower_half models: $(ls "$LHDIR" | tr '\n' ' ')"
 
-# ---------------------------------------------------------------------------
-# 6c. License texts + source offer: the image contains this project's own AGPL
-#     code plus compiled GPL/LGPL third-party components, so ship the texts and
-#     a pointer to their source.
-# ---------------------------------------------------------------------------
+# 6c. License texts + source offer for our AGPL code and the compiled
+#     GPL/LGPL third-party components.
 cp "$ROOT/LICENSE" "$SD/LICENSE"
 cp "$ROOT/NOTICE"  "$SD/NOTICE"
 rm -rf "$SD/licenses"
@@ -283,10 +241,7 @@ this image, on physical media or by download, to anyone who requests it. This
 offer is valid for at least three years from the date of distribution.
 SOURCES_EOF
 
-# ---------------------------------------------------------------------------
-# 7. Single downloadable package: the whole SD layout in one tarball. Extract
-#    its contents to the SD card root and boot.
-# ---------------------------------------------------------------------------
+# 7. Package the whole SD layout as one tarball; extract to the card root.
 echo "== 7/7 packaging =="
 REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
 PKG="$ROOT/work/yi-protect-$REV.tar.gz"

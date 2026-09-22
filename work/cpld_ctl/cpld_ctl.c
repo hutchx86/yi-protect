@@ -11,8 +11,7 @@
  * Commands:
  *   cpld_ctl ircut out      -- filter out (night/IR-passing)
  *   cpld_ctl ircut in       -- filter in (day)
- *   cpld_ctl led <0-100>    -- IR LED level (only 0 and 100 are verified;
- *                              other values may not produce a real ramp)
+ *   cpld_ctl led <0-100>    -- IR LED level (only 0 and 100 are verified)
  */
 #include <fcntl.h>
 #include <stdio.h>

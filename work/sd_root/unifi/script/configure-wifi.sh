@@ -2,26 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# configure-wifi -- write WiFi station credentials into the camera's conf
-# partition (/dev/mtdblock7), standing in for the Yi app's pairing step.
+# configure-wifi -- write WiFi station credentials into the conf partition
+# (/dev/mtdblock7), standing in for the Yi app's pairing step; no cloud needed.
 #
-# Layout (matches stock firmware and yi-hack):
-#   off  24   4 B   association flag  (00000000 = associated/current)
-#   off  28  64 B   SSID  (NUL-padded)
-#   off  92  64 B   PSK   (NUL-padded)
+# Layout: off 24 4B flag (0 = associated), off 28 64B SSID, off 92 64B PSK (NUL-padded).
 #
-# The stock boot path reads this partition through dispatch -> /tmp/mmap.info ->
-# localbin/wifi_conf, which writes /tmp/wpa_supplicant.conf and runs
-# wificonnect.sh. No Yi app or cloud is involved, so this works on a
-# local-only (mediad / YI_CLOUD=no) camera.
-#
-# Usage: configure-wifi.sh [cfgfile]
-#
-#   cfgfile  KEY=value file with wifi_ssid= and wifi_psk= lines (no quotes;
-#            spaces allowed). Defaults to unifi/etc/configure_wifi.cfg.
-#
-# Exit codes: 0 = credentials written (reboot to associate),
-#             2 = already current (no write), 1 = error.
+# Usage: configure-wifi.sh [cfgfile] (KEY=value wifi_ssid=/wifi_psk=, no quotes).
+# Exit: 0=written (reboot), 2=already current, 1=error.
 
 MTD="${MTD:-/dev/mtdblock7}"
 CFG="${1:-/tmp/sd/unifi/etc/configure_wifi.cfg}"
