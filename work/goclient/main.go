@@ -868,6 +868,15 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 			"timezone": "GMT0",
 		}))
 	case "ChangeOsdSettings":
+		if raw, err := json.Marshal(m.Payload); err == nil {
+			log.Printf("ChangeOsdSettings raw payload: %s", raw)
+		}
+		// Forward to mediad's burned-in overlay (osdControlMap, mediad_ctl.go);
+		// no-op unless mediad is enabled and responsive. Off the read loop for
+		// the same reason ChangeIspSettings is: a stalled mediad must never
+		// delay the controller's ack.
+		go mediadApplyOsdSettings(m.Payload)
+
 		osd := map[string]interface{}{
 			"enableDate": 1, "enableLogo": 1, "enableReportdStatsLevel": 0,
 			"enableStreamerStatsLevel": 0, "tag": getDeviceName(),

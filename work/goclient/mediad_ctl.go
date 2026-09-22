@@ -330,10 +330,11 @@ func (d *mediadDelta) reset(seed bool) {
 
 var (
 	mediadDeltaMu sync.Mutex
-	// Separate deltas for the two message categories: the controller seeds each
-	// independently on connect, so one must not clear the other's baseline.
+	// Separate deltas for the three message categories: the controller seeds
+	// each independently on connect, so one must not clear another's baseline.
 	mediadIspDelta = newMediadDelta(true) // ChangeIspSettings (picture + night vision)
 	mediadVidDelta = newMediadDelta(true) // ChangeVideoSettings (shutter + bitrate)
+	mediadOsdDelta = newMediadDelta(true) // ChangeOsdSettings (burned-in overlay)
 )
 
 // resetMediadDelta drops the delta state and seeds the next object of each
@@ -344,6 +345,7 @@ func resetMediadDelta() {
 	mediadDeltaMu.Lock()
 	mediadIspDelta.reset(true)
 	mediadVidDelta.reset(true)
+	mediadOsdDelta.reset(true)
 	mediadDeltaMu.Unlock()
 }
 
@@ -354,6 +356,7 @@ func mediadDeltaReapply() {
 	mediadDeltaMu.Lock()
 	mediadIspDelta.reset(false)
 	mediadVidDelta.reset(false)
+	mediadOsdDelta.reset(false)
 	mediadDeltaMu.Unlock()
 }
 
@@ -413,6 +416,79 @@ func mediadApplyIspSettings(payload map[string]interface{}, complete bool) {
 	controls := ispControlMap(payload)
 	controls = append(controls, nightVisionControls(payload)...)
 	mediadApplyControls(controls, mediadIspDelta, complete)
+}
+
+// osdControlMap maps Protect's ChangeOsdSettings payload to mediad's OSD
+// controls (osd.h's OSD_NCTL enum, exposed as osd/osd_date/osd_logo/
+// osd_bitrate/osd_text_scale/osd_logo_scale/osd_color over the control
+// socket). Protect nests the per-stream OSD objects under numeric string keys
+// ("_1".."_4" in the response this client already builds); mediad has one OSD
+// config, not one per stream, so the first nested object found drives it
+// (falling back to the top level for a payload that isn't nested at all).
+//
+// The camera *name* text is deliberately not handled here: osd.c already
+// reads it independently from the device-name file ChangeDeviceSettings
+// writes (setDeviceName/getDeviceName, discovery.go) -- Protect's OSD "tag"
+// field is the same value by a different path, not a second source of truth.
+func osdControlMap(payload map[string]interface{}) []mediadCtl {
+	var out []mediadCtl
+
+	src := payload
+	for _, k := range []string{"_1", "_2", "_3", "_4"} {
+		if sub, ok := payload[k].(map[string]interface{}); ok {
+			src = sub
+			break
+		}
+	}
+
+	addBool := func(field, key string) {
+		switch v := src[field].(type) {
+		case bool:
+			iv := 0
+			if v {
+				iv = 1
+			}
+			out = append(out, mediadCtl{key, iv})
+		case float64:
+			iv := 0
+			if v != 0 {
+				iv = 1
+			}
+			out = append(out, mediadCtl{key, iv})
+		}
+	}
+	addScale := func(field, key string) {
+		v, ok := payload[field].(float64)
+		if !ok {
+			return
+		}
+		iv := int(v)
+		if iv < 0 {
+			iv = 0
+		}
+		if iv > 100 {
+			iv = 100
+		}
+		out = append(out, mediadCtl{key, iv})
+	}
+
+	// enableOverlay is the top-level master switch (mirrors this client's own
+	// ChangeOsdSettings response shape); the rest are per-stream fields.
+	addBool("enableOverlay", "osd")
+	addBool("enableDate", "osd_date")
+	addBool("enableLogo", "osd_logo")
+	addBool("enableStreamerStatsLevel", "osd_bitrate")
+	addScale("textScale", "osd_text_scale")
+	addScale("logoScale", "osd_logo_scale")
+	if v, ok := payload["overlayColorId"].(float64); ok {
+		out = append(out, mediadCtl{"osd_color", int(v)})
+	}
+
+	return out
+}
+
+func mediadApplyOsdSettings(payload map[string]interface{}) {
+	mediadApplyControls(osdControlMap(payload), mediadOsdDelta, true)
 }
 
 // customValueToLux maps Protect's icrCustomValue (0-10, the "Custom" night
