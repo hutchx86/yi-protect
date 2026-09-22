@@ -27,6 +27,7 @@
 # and a warning; never a silent guess. Keep this list to models we actually
 # support -- a row is a claim about real hardware.
 y623     gc3003  368  28  2304  1296  no
+h51ga    gc2053  368  28  2304  1296  yes
 h52ga    gc2053  368  28  1920  1080  yes
 r35gb    gc2053  0    0   1920  1080  yes
 y291ga   gc2053  368  28  1920  1080  no
