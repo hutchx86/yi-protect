@@ -191,9 +191,12 @@ type Client struct {
 	snapshotAt   map[string]time.Time
 
 	// Microphone state from ChangeVideoSettings' `audio` block; micVolume keeps
-	// the raw value, micLevel the remapped effective level, suppressing repeats.
+	// the raw value, micBitRate the controller's requested audio bitrate (echoed
+	// in the reply so its quality modes reconcile), micLevel the remapped
+	// effective level, suppressing repeats.
 	micMu       sync.Mutex
 	micVolume   int
+	micBitRate  int
 	micLevel    int
 	micLevelSet bool
 }
@@ -1024,7 +1027,10 @@ func (c *Client) handleIspSettings(m Envelope) error {
 }
 
 // handleSoundLedSettings wires the real status LED (ipc_cmd -l) to the
-// controller's ledFaceEnabled (0/1) field.
+// controller's ledFaceEnabled (0/1) field, and the speaker/talkback gate to
+// speakerEnabled. The reply must echo what the controller sent: hardcoding
+// speakerEnabled=1 made Protect believe talkback was still on after the user
+// disabled it, so the toggle could never come back off.
 func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 	if raw, err := json.Marshal(m.Payload); err == nil {
 		log.Printf("ChangeSoundLedSettings raw payload: %s", raw)
@@ -1049,12 +1055,28 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 		}
 	}
 
+	speakerOn := 1
+	if v, ok := m.Payload["speakerEnabled"]; ok {
+		speakerOn = 0
+		switch t := v.(type) {
+		case float64:
+			if t != 0 {
+				speakerOn = 1
+			}
+		case bool:
+			if t {
+				speakerOn = 1
+			}
+		}
+		c.setTalkbackEnabled(speakerOn != 0)
+	}
+
 	ledVal := 0
 	if ledOn {
 		ledVal = 1
 	}
 	return map[string]interface{}{
-		"ledFaceAlwaysOnWhenManaged": 1, "ledFaceEnabled": ledVal, "speakerEnabled": 1,
+		"ledFaceAlwaysOnWhenManaged": 1, "ledFaceEnabled": ledVal, "speakerEnabled": speakerOn,
 		"speakerVolume": 100, "systemSoundsEnabled": 1, "userLedBlinkPeriodMs": 0,
 		"userLedColorFg": "blue", "userLedOnNoff": ledVal,
 	}
@@ -1069,14 +1091,24 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 
 	// {audio:{bitRate,volume}}: volume==0 mutes. Real hardware sets ADC gain 0
 	// so audio keeps flowing silently (FlvPush does MUTE); absent block keeps last.
+	// The reply must echo the controller's own values (a real G3 answers with
+	// bitRate 64000 / quality 1); answering 32000/0 is what made the controller's
+	// "Auto" quality select no audio track. See the G3 streamer configs.
 	audioVolume := 100
+	audioBitRate := 64000
 	c.micMu.Lock()
 	audioVolume = c.micVolume
+	if c.micBitRate > 0 {
+		audioBitRate = c.micBitRate
+	}
 	hasAudio := false
 	if audio, ok := m.Payload["audio"].(map[string]interface{}); ok {
 		hasAudio = true
 		if v, ok := audio["volume"].(float64); ok {
 			audioVolume = int(v)
+		}
+		if br, ok := audio["bitRate"].(float64); ok && br > 0 {
+			c.micBitRate = int(br)
 		}
 		if en, ok := audio["enabled"].(bool); ok && !en {
 			audioVolume = 0
@@ -1225,10 +1257,13 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		"firmwarePath": "/lib/firmware/",
 		// FlvPush muxes real mic audio into the FLV output, so audio is
 		// enabled. sampleRate/channels match the real encoder's ADTS headers.
+		// The field values mirror a real G3's streamer config (quality 1,
+		// bitRate from the controller); a quality of 0 made the controller's
+		// "Auto" quality pick no audio track. See ubnt_streamer_sysid_a590.json.
 		"audio": map[string]interface{}{
-			"bitRate": 32000, "channels": 1, "description": "audio track",
+			"bitRate": audioBitRate, "channels": 1, "description": "audio track",
 			"enableTemporalNoiseShaping": false, "enabled": true, "mode": 0,
-			"quality": 0, "sampleRate": 16000, "type": "aac", "volume": audioVolume,
+			"quality": 1, "sampleRate": 16000, "type": "aac", "volume": audioVolume,
 		},
 		"video": map[string]interface{}{
 			"enableHrd": false, "hdrMode": 0, "lowDelay": false,
@@ -1607,6 +1642,22 @@ func applyMicGain(level int) {
 	log.Printf("applyMicGain: %s", strings.TrimSpace(string(out)))
 }
 
+// setTalkbackEnabled mirrors the controller's speakerEnabled into a file that
+// talkback_rx polls (it owns the UDP socket, so there is no other channel).
+// Best-effort: a failure is logged, not fatal.
+func (c *Client) setTalkbackEnabled(on bool) {
+	val := "0"
+	if on {
+		val = "1"
+	}
+	path := "/tmp/talkback_enabled"
+	if err := os.WriteFile(path, []byte(val), 0644); err != nil {
+		log.Printf("setTalkbackEnabled(%v): write %s failed: %v", on, path, err)
+		return
+	}
+	log.Printf("setTalkbackEnabled: talkback %s", map[bool]string{true: "enabled", false: "disabled"}[on])
+}
+
 // Caller must hold videoStreamMu.
 func writeFlvPushFifoLocked(line string) error {
 	if flvPushFifoFile == nil {
@@ -1708,7 +1759,7 @@ func run(ctx context.Context) error {
 	client := &Client{
 		ws: conn, startTS: time.Now(), httpClient: httpClient,
 		snapshotJPEG: map[string][]byte{}, snapshotAt: map[string]time.Time{},
-		micVolume: 100,
+		micVolume: 100, micBitRate: 64000,
 	}
 
 	// Seed the mediad delta on every fresh WSS connection: the controller's first

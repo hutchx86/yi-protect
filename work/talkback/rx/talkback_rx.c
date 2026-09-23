@@ -64,6 +64,11 @@ static int resample_to_16k(const short *in, int n, unsigned long sr,
 
 #define UDP_PORT 7004
 #define FIFO_PATH "/tmp/audio_in_fifo"
+// Talkback enable gate: the client writes 0/1 here from the controller's
+// speakerEnabled (ChangeSoundLedSettings). Absent file = enabled, so behaviour
+// is unchanged when the client never sets it. talkback_rx owns no socket the
+// client can reach, so a polled file is the control channel.
+#define ENABLE_PATH "/tmp/talkback_enabled"
 #define CPLD_DEV "/dev/cpld_periph"
 #define CPLD_DEVICE_NUM 0x70
 #define SPEAKER_ON_NUM 16
@@ -98,6 +103,21 @@ static void speaker_set(int *state, int on) {
     if (debug) fprintf(stderr, "talkback_rx: speaker %s\n", on ? "on" : "off");
     cpld_ioctl(on ? SPEAKER_ON_NUM : SPEAKER_OFF_NUM);
     *state = on;
+}
+
+/* Talkback enable gate. The client writes "0"/"1" to ENABLE_PATH from the
+ * controller's speakerEnabled; a missing or unreadable file means enabled (the
+ * pre-existing always-on behaviour). Re-read each packet so a disable takes
+ * effect immediately. */
+static int talkback_enabled(void) {
+    char b[8];
+    int fd = open(ENABLE_PATH, O_RDONLY);
+    if (fd < 0) return 1;
+    ssize_t n = read(fd, b, sizeof(b) - 1);
+    close(fd);
+    if (n <= 0) return 1;
+    b[n] = 0;
+    return b[0] != '0';
 }
 
 /* (re)open the fifo for writing; rmm holds the read end open, so this should
@@ -225,6 +245,15 @@ int main(int argc, char **argv) {
 
         last_pkt_ms = t;
         have_pkt_ever = 1;
+
+        /* Controller disabled talkback (speakerEnabled=0): mute the speaker and
+         * discard packets instead of playing them. Without this the toggle
+         * could be turned on but never off. */
+        if (!talkback_enabled()) {
+            if (speaker_state) speaker_set(&speaker_state, 0);
+            if (fifo_fd >= 0) { close(fifo_fd); fifo_fd = -1; }
+            continue;
+        }
 
         if (!speaker_state) {
             speaker_set(&speaker_state, 1);
