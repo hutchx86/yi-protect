@@ -623,12 +623,16 @@ func featureFlags() map[string]interface{} {
 		"videoMode":    []string{"default", "sport", "slowShutter"},
 		"motionDetect": []string{"enhanced"},
 
-		// Copied from a real G3 Instant's features.json; their absence made
-		// Protect show empty codec lists and gated the talkback button.
+		// Copied from a real G3 Instant's features; their absence made Protect
+		// show empty codec lists and gated the talkback button.
 		"audioCodecs":           []string{"aac", "opus"},
 		"videoCodecs":           []string{"h264", "mjpg"},
 		"opusSampleRates":       []int{16000},
-		"aecTalkbackSwitch":     false,
+		// true on the G3 Instant we spoof (features_0xa590.json); the generic
+		// features.json ships false. Talkback needs AEC to be armed (the real
+		// streamer logs "Device have AEC, force to set withTalkback"), and a
+		// false here is what left the talkback button greyed out / unarmed.
+		"aecTalkbackSwitch":     true,
 		"videoSourceCount":      1,
 		"videoModeMaxFps":       []int{30, 30, 20},
 		"squareEventThumbnail":  true,
@@ -1068,8 +1072,12 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 				speakerOn = 1
 			}
 		}
-		c.setTalkbackEnabled(speakerOn != 0)
 	}
+	// NOTE: the controller has never been observed sending speakerEnabled=0
+	// (checked across full sessions on y623), so this only echoes its value -
+	// it does not gate the talkback receiver. Talkback enable/disable is a
+	// controller<->browser negotiation plus the aecTalkbackSwitch feature flag;
+	// the camera learns of audio only from the packets on UDP :7004.
 
 	ledVal := 0
 	if ledOn {
@@ -1640,22 +1648,6 @@ func applyMicGain(level int) {
 		return
 	}
 	log.Printf("applyMicGain: %s", strings.TrimSpace(string(out)))
-}
-
-// setTalkbackEnabled mirrors the controller's speakerEnabled into a file that
-// talkback_rx polls (it owns the UDP socket, so there is no other channel).
-// Best-effort: a failure is logged, not fatal.
-func (c *Client) setTalkbackEnabled(on bool) {
-	val := "0"
-	if on {
-		val = "1"
-	}
-	path := "/tmp/talkback_enabled"
-	if err := os.WriteFile(path, []byte(val), 0644); err != nil {
-		log.Printf("setTalkbackEnabled(%v): write %s failed: %v", on, path, err)
-		return
-	}
-	log.Printf("setTalkbackEnabled: talkback %s", map[bool]string{true: "enabled", false: "disabled"}[on])
 }
 
 // Caller must hold videoStreamMu.
