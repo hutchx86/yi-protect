@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -150,9 +151,10 @@ func mediadEnabled() bool {
 	if ready != mediadReady {
 		if ready {
 			log.Printf("mediad: advanced controls ENABLED (pid %d, %s)", pid, exe)
-			// A (re)appeared daemon starts at its defaults; clear the delta
-			// (without seeding) so the next settings object is applied in full.
-			mediadDeltaReapply()
+			// A (re)appeared daemon starts at its defaults: re-send the
+			// controller's last-known values now (async: mediadSet may take
+			// mediadMu via mediadInvalidate).
+			go mediadReapplyKnown()
 		} else {
 			log.Printf("mediad: advanced controls DISABLED (installed=%v running=%v responsive=%v)", installed, running, responsive)
 		}
@@ -173,6 +175,57 @@ func logMediadStatus() {
 	// Prime the availability cache now so the false->true transition (which
 	// re-arms the delta) happens here, before run() seeds the first object.
 	mediadEnabled()
+	go mediadWatch(pid)
+}
+
+// mediadWatch notices a restarted daemon (new PID). A restart takes a few
+// seconds, well inside the 30 s availability cache, so without this the
+// client never saw it go away and the daemon stayed at its defaults until the
+// controller happened to send a new settings object.
+func mediadWatch(lastPid int) {
+	for {
+		time.Sleep(5 * time.Second)
+		pid, _, ok := findMediadProcess()
+		if !ok || pid == lastPid {
+			continue // keep lastPid while it is down so the restart is seen
+		}
+		prev := lastPid
+		lastPid = pid
+		for i := 0; i < 10 && !mediadPing(); i++ {
+			time.Sleep(time.Second)
+		}
+		log.Printf("mediad: new daemon (pid %d -> %d), re-applying controller settings", prev, pid)
+		// Force the not-ready -> ready transition, which re-applies.
+		mediadMu.Lock()
+		mediadReady = false
+		mediadCheckedAt = time.Time{}
+		mediadMu.Unlock()
+		mediadEnabled()
+	}
+}
+
+// mediadReapplyKnown re-sends the controller's last-known values (applied or
+// seeded) to a daemon that started at its defaults; Protect does not resend
+// settings by itself. A category with nothing known yet applies its next
+// complete object in full instead.
+func mediadReapplyKnown() {
+	var toSend []mediadCtl
+	mediadDeltaMu.Lock()
+	for _, d := range []*mediadDelta{mediadIspDelta, mediadVidDelta, mediadOsdDelta} {
+		if len(d.last) == 0 {
+			d.reset(false)
+			continue
+		}
+		toSend = append(toSend, d.known()...)
+	}
+	mediadDeltaMu.Unlock()
+	for _, c := range mediadDropLocked(toSend) {
+		if err := mediadSet(c.key, c.value); err != nil {
+			log.Printf("mediad ctl: reapply %s=%d: %v", c.key, c.value, err)
+		} else {
+			log.Printf("mediad ctl: reapply %s=%d ok", c.key, c.value)
+		}
+	}
 }
 
 // Some controls are config/webui-only; the daemon's `list` isn't reliable, so we
@@ -246,6 +299,21 @@ func (d *mediadDelta) changed(c mediadCtl) bool {
 
 // record notes a successfully applied value. Caller holds mediadDeltaMu.
 func (d *mediadDelta) record(c mediadCtl) { d.last[c.key] = c.value }
+
+// known returns the last-known value of every key, sorted by key. Caller holds
+// mediadDeltaMu.
+func (d *mediadDelta) known() []mediadCtl {
+	keys := make([]string, 0, len(d.last))
+	for k := range d.last {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]mediadCtl, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, mediadCtl{k, d.last[k]})
+	}
+	return out
+}
 
 // filter returns the subset of controls to forward, ending the seed once a
 // complete object has been seen. Caller holds mediadDeltaMu when shared.
@@ -410,6 +478,15 @@ func osdControlMap(payload map[string]interface{}) []mediadCtl {
 	addBool("enableDate", "osd_date")
 	addBool("enableLogo", "osd_logo")
 	addBool("enableStreamerStatsLevel", "osd_bitrate")
+	// Protect has no name toggle: "show name" sends the camera name in "tag",
+	// off sends "". The name text itself comes from the persisted device name.
+	if tag, ok := src["tag"].(string); ok {
+		iv := 0
+		if tag != "" {
+			iv = 1
+		}
+		out = append(out, mediadCtl{"osd_name", iv})
+	}
 	addScale("textScale", "osd_text_scale")
 	addScale("logoScale", "osd_logo_scale")
 	if v, ok := payload["overlayColorId"].(float64); ok {
@@ -606,4 +683,32 @@ func clampBitrate(b int) int {
 		b = mediaBitrateMax
 	}
 	return b
+}
+
+// osdSettingsResponse echoes the requested OSD settings back to the controller
+// over this camera's defaults, so it reports what was actually applied (it
+// used to hardcode date/logo on and the name shown).
+func osdSettingsResponse(payload map[string]interface{}) map[string]interface{} {
+	resp := map[string]interface{}{
+		"enableOverlay": 1, "logoScale": 50, "overlayColorId": 0,
+		"textScale": 50, "useCustomLogo": 0,
+	}
+	for k := range resp {
+		if v, ok := payload[k]; ok {
+			resp[k] = v
+		}
+	}
+	for _, n := range []string{"_1", "_2", "_3", "_4"} {
+		osd := map[string]interface{}{
+			"enableDate": 1, "enableLogo": 1, "enableReportdStatsLevel": 0,
+			"enableStreamerStatsLevel": 0, "tag": getDeviceName(),
+		}
+		if sub, ok := payload[n].(map[string]interface{}); ok {
+			for k, v := range sub {
+				osd[k] = v
+			}
+		}
+		resp[n] = osd
+	}
+	return resp
 }

@@ -795,15 +795,8 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 		// loop so a stalled mediad can't delay the controller's ack.
 		go mediadApplyOsdSettings(m.Payload)
 
-		osd := map[string]interface{}{
-			"enableDate": 1, "enableLogo": 1, "enableReportdStatsLevel": 0,
-			"enableStreamerStatsLevel": 0, "tag": getDeviceName(),
-		}
-		return false, c.send(c.genResponse("ChangeOsdSettings", m.MessageID, map[string]interface{}{
-			"_1": osd, "_2": osd, "_3": osd, "_4": osd,
-			"enableOverlay": 1, "logoScale": 50, "overlayColorId": 0,
-			"textScale": 50, "useCustomLogo": 0,
-		}))
+		return false, c.send(c.genResponse("ChangeOsdSettings", m.MessageID,
+			osdSettingsResponse(m.Payload)))
 	case "NetworkStatus":
 		payload := map[string]interface{}{
 			"connectionState": 2, "connectionStateDescription": "CONNECTED",

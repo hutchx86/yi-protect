@@ -326,3 +326,63 @@ func TestMediadDropLocked(t *testing.T) {
 		t.Fatalf("expected only brightness after locking wdr, got %+v", got)
 	}
 }
+
+func TestMediadDeltaKnownSortedIncludesSeeded(t *testing.T) {
+	d := newMediadDelta(true)
+	d.filter([]mediadCtl{{"osd_logo", 1}, {"osd_bitrate", 0}}, true) // seed pass
+	d.record(mediadCtl{"osd", 1})
+	got := d.known()
+	want := []mediadCtl{{"osd", 1}, {"osd_bitrate", 0}, {"osd_logo", 1}}
+	if len(got) != len(want) {
+		t.Fatalf("known() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("known() = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestOsdControlMapTagDrivesName(t *testing.T) {
+	get := func(p map[string]interface{}) (int, bool) {
+		for _, c := range osdControlMap(p) {
+			if c.key == "osd_name" {
+				return c.value, true
+			}
+		}
+		return 0, false
+	}
+	off := map[string]interface{}{"_1": map[string]interface{}{"enableDate": 1.0, "tag": ""}}
+	on := map[string]interface{}{"_1": map[string]interface{}{"enableDate": 1.0, "tag": "Yi Pro"}}
+	if v, ok := get(off); !ok || v != 0 {
+		t.Fatalf("empty tag: osd_name=%d present=%v, want 0", v, ok)
+	}
+	if v, ok := get(on); !ok || v != 1 {
+		t.Fatalf("named tag: osd_name=%d present=%v, want 1", v, ok)
+	}
+	if _, ok := get(map[string]interface{}{"_1": map[string]interface{}{"enableDate": 1.0}}); ok {
+		t.Fatal("no tag field must not touch osd_name")
+	}
+}
+
+func TestOsdSettingsResponseEchoesRequest(t *testing.T) {
+	req := map[string]interface{}{
+		"_1":        map[string]interface{}{"enableDate": 0.0, "enableLogo": 1.0, "tag": ""},
+		"textScale": 70.0,
+		"unrelated": 1.0,
+	}
+	r := osdSettingsResponse(req)
+	s1 := r["_1"].(map[string]interface{})
+	if s1["tag"] != "" || s1["enableDate"] != 0.0 || s1["enableLogo"] != 1.0 {
+		t.Fatalf("_1 not echoed: %v", s1)
+	}
+	if r["textScale"] != 70.0 || r["logoScale"] != 50 {
+		t.Fatalf("top-level wrong: textScale=%v logoScale=%v", r["textScale"], r["logoScale"])
+	}
+	if _, ok := r["unrelated"]; ok {
+		t.Fatal("unknown top-level key leaked into the response")
+	}
+	if _, ok := r["_2"].(map[string]interface{})["tag"]; !ok {
+		t.Fatal("_2 missing defaults")
+	}
+}
