@@ -36,6 +36,10 @@ enum { FLV_CH_HIGH = 0, FLV_CH_LOW = 1, FLV_CH_MED = 2, FLV_CH_COUNT = 3 };
 // before flvPushInit(); values <= 0 are ignored (compiled default retained).
 void flvPushSetHighResolution(unsigned width, unsigned height);
 
+// Sets the HIGH-channel declared bitrate (bps) from the model table. Must be
+// called before flvPushInit(); 0 is ignored (compiled default retained).
+void flvPushSetHighBandwidth(unsigned bps);
+
 // Called once from main(): create the control FIFO (if missing) and start its
 // reader thread.
 void flvPushInit();
@@ -46,6 +50,10 @@ bool flvPushActive(int channel);
 
 // Enqueue one parsed video frame for its channel; cheap no-op if inactive.
 void flvPushEnqueue(int channel, const output_frame &f);
+
+// Upstream frames were lost: flush the channel and refuse non-key frames until
+// the next keyframe, so the decoder never predicts from a missing reference.
+void flvPushDiscontinuity(int channel);
 
 // Enqueue an AAC frame for this channel (one shared mic fans out to every
 // active channel). Listen/mic-out only; talkback is a separate mechanism.

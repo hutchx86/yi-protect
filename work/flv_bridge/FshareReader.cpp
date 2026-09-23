@@ -161,12 +161,14 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             continue;
         }
 
-        // Walk the newly written region, accumulating up to 10 frames. This
-        // only computes frame boundaries; payload bytes are copied later.
+        // Walk the newly written region, up to kMaxBatch frames per pass. This
+        // only computes frame boundaries; payload bytes are copied later. A
+        // full batch is processed and the walk resumes next pass (no loss).
+        enum { kMaxBatch = 64 };
         struct Pending {
             FrameHeader h;
             unsigned char *addr;
-        } frames[10];
+        } frames[kMaxBatch];
         unsigned char *cur = endPrev;
         int count = 0;
         bool sync = true;
@@ -181,14 +183,17 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             frames[count].addr = cur;
             cur = movePtr(cur, (long)h.len + headerSize_);
             count++;
-            if (count == 10) {
-                sync = false;
-                break;
-            }
+            if (count == kMaxBatch) break;
         }
 
         if (!sync) {
-            if (debug_ & 4) std::fprintf(stderr, "%lld: fshare: lost sync, resyncing\n", nowMs());
+            // The writer lapped us (or a header is garbage): frames are lost.
+            // The consumer sees the stream-counter gap and resyncs on a keyframe.
+            static unsigned long lostSyncs;
+            unsigned long n = ++lostSyncs;
+            if ((n & (n - 1)) == 0)
+                std::fprintf(stderr, "%lld: fshare: lost sync, resyncing (%lu total)\n",
+                             nowMs(), lostSyncs);
             endPrev = end;
             usleep(10000);
             continue;

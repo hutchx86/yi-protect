@@ -21,11 +21,22 @@
 #define FSHARE_BUF_FILE "/dev/shm/fshare_frame_buf"
 #define FSHARE_BUF_SHM "fshare_frame_buf"
 
-// Backpressure bound on each per-channel queue. Video arrives at ~20 fps, so
-// 20 frames could buffer ~1 s of latency while the socket stalls; bound it far
-// lower so the bridge drops to stay live instead of building a latency backlog.
-// 6 frames ~= 300 ms at 20 fps (applies to the video, AAC and Opus queues).
-#define MAX_QUEUE_SIZE 6
+// Backpressure bound on each per-channel queue. Reverted from 6 to 20: at 6 the
+// bridge dropped the oldest frames under Wi-Fi jitter to stay live, but dropping
+// P/reference frames smears the picture until the next IDR (~2 s at GOP 40),
+// which read as heavy blockiness in Protect even though the locally decoded ring
+// stream was clean. Latency benefit not worth the artifacts. Briefly raised to
+// 60 on 2026-09-22 to test whether push-thread stalls under y623's motion-
+// triggered bitrate spikes were still overrunning 20; reverted same day (60's
+// extra live-view latency wasn't worth it) before that theory was confirmed —
+// the CABAC/entropy-mode fix in init.sh (FREECODEC_EXTRA) was the one that
+// actually explained the blockiness. If drops at 20 turn out to still be a
+// real, measured problem, revisit with evidence from the bridge log's
+// "still waiting" / drop counters rather than raising this blind again.
+// 2026-09-23: overflow no longer drops single frames; flvPushEnqueue flushes
+// the backlog and resumes on the next keyframe (freeze, not smear), and logs
+// "queue overflow" with a running drop count.
+#define MAX_QUEUE_SIZE 20
 
 // Frame classification tags. The numeric values are historical (they were
 // chosen to coincide with the resolution heights) and are only used
@@ -45,17 +56,18 @@
 // definition file; see work/sd_root/unifi/etc/model_table). The bridge never
 // tests model names itself -- it asks for the row by name.
 struct ModelParams {
-    unsigned offset;      // ring control-header bytes; 0 => autodetect
-    int headerSize;       // frame-header bytes; 0 => autodetect
-    unsigned highWidth;   // HIGH-channel (video1) encoder width
-    unsigned highHeight;  // HIGH-channel (video1) encoder height
-    bool ptz;             // real motorized pan/tilt base
+    unsigned offset;       // ring control-header bytes; 0 => autodetect
+    int headerSize;        // frame-header bytes; 0 => autodetect
+    unsigned highWidth;    // HIGH-channel (video1) encoder width
+    unsigned highHeight;   // HIGH-channel (video1) encoder height
+    bool ptz;              // real motorized pan/tilt base
+    unsigned highBitrate;  // HIGH-channel bitrate to declare (bps); 0 => default
 };
 
 // Looks `name` up in $UNIFI_MODEL_TABLE (default /tmp/sd/unifi/etc/model_table)
 // and returns its row. A missing table or row returns the conservative
-// defaults (368/28, 2304x1296, no PTZ) and warns on stderr -- never a silent
-// guess.
+// defaults (368/28, 2304x1296, no PTZ, 2 Mbps) and warns on stderr -- never a
+// silent guess.
 ModelParams modelParams(const char *name);
 
 // One encoded frame handed from the reader to FlvPush.

@@ -20,7 +20,8 @@ const char *kDefaultTablePath = "/tmp/sd/unifi/etc/model_table";
 
 // Conservative fallback for a missing table or an unlisted model. Matches the
 // historical defaults (most families are 368/28; y623-class is 2304x1296).
-const ModelParams kFallback = {368, 28, 2304, 1296, false};
+const unsigned kDefaultHighBitrate = 2000000;
+const ModelParams kFallback = {368, 28, 2304, 1296, false, kDefaultHighBitrate};
 
 }  // namespace
 
@@ -50,9 +51,9 @@ ModelParams modelParams(const char *name) {
     while (std::fgets(line, sizeof(line), f)) {
         if (char *hash = std::strchr(line, '#')) *hash = '\0';
         char m[64] = {0}, sensor[64] = {0}, ptz[16] = {0};
-        unsigned off = 0, hdr = 0, w = 0, h = 0;
-        int n = std::sscanf(line, "%63s %63s %u %u %u %u %15s",
-                            m, sensor, &off, &hdr, &w, &h, ptz);
+        unsigned off = 0, hdr = 0, w = 0, h = 0, highBitrate = 0;
+        int n = std::sscanf(line, "%63s %63s %u %u %u %u %15s %u",
+                            m, sensor, &off, &hdr, &w, &h, ptz, &highBitrate);
         if (n < 7) continue;                 // comment/blank/partial line
         if (strcasecmp(m, name) != 0) continue;
 
@@ -62,6 +63,8 @@ ModelParams modelParams(const char *name) {
         out.highWidth = w;
         out.highHeight = h;
         out.ptz = (strcasecmp(ptz, "yes") == 0);
+        // The 8th column is optional; absent/0 means "follow the controller".
+        out.highBitrate = (n >= 8 && highBitrate > 0) ? highBitrate : kDefaultHighBitrate;
         std::fclose(f);
         return out;
     }

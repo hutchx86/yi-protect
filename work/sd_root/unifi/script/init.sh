@@ -296,7 +296,13 @@ done
 # stock rmm; both publish /dev/shm/fshare_frame_buf. Never run both at once.
 IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
 if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
-    echo "init: starting mediad"
+    # CABAC is the code default (cabac_init_idc=1, matching the hardware's
+    # context model) since freewinner-git 0aadd22 -- verified live on y623,
+    # do NOT pin cabac=0 here (an earlier version of this comment did, based
+    # on stale docs written before that fix landed). overlay=1: opts in to the
+    # burned-in OSD overlay path (live-verified 2026-09-22).
+    export FREECODEC_EXTRA="overlay=1"
+    echo "init: starting mediad (FREECODEC_EXTRA=$FREECODEC_EXTRA)"
     "$UNIFI_PREFIX/script/mediad.sh" start
     sleep 2
     [ "$YI_CLOUD" = "yes" ] && start_yi_cloud

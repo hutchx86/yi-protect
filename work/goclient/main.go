@@ -283,28 +283,41 @@ func readHardwareModel() string {
 }
 
 // modelTablePath is the single per-model definition file (model sensor
-// ring_offset ring_header high_w high_h ptz); one binary serves every model.
+// ring_offset ring_header high_w high_h ptz high_bitrate); one binary serves
+// every model.
 const modelTablePath = unifiPrefix + "/etc/model_table"
 
 // modelDef is this client's slice of a model_table row.
 type modelDef struct {
-	highWidth  int
-	highHeight int
-	ptz        bool
+	highWidth   int
+	highHeight  int
+	ptz         bool
+	highBitrate int // HIGH-channel bitrate to pin (bps); 0 = follow controller
 }
 
 // readModelDef returns the model_table row for `model`. ok is false when the
 // table or the row is missing; the caller then keeps conservative defaults.
 func readModelDef(model string) (def modelDef, ok bool) {
-	def = modelDef{highWidth: 2304, highHeight: 1296}
 	b, err := os.ReadFile(modelTablePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Printf("model_table %q unreadable: %v; using defaults", modelTablePath, err)
 		}
-		return def, false
+		return modelDef{highWidth: 2304, highHeight: 1296}, false
 	}
-	for _, line := range strings.Split(string(b), "\n") {
+	def, ok = parseModelDef(string(b), model)
+	if !ok {
+		log.Printf("model_table: model %q not listed; using defaults (2304x1296, no PTZ)", model)
+	}
+	return def, ok
+}
+
+// parseModelDef finds `model`'s row in the model_table text. Columns: model
+// sensor ring_offset ring_header high_w high_h ptz [high_bitrate], where the
+// trailing high_bitrate (bps) is optional; 0/absent means follow the controller.
+func parseModelDef(content, model string) (def modelDef, ok bool) {
+	def = modelDef{highWidth: 2304, highHeight: 1296}
+	for _, line := range strings.Split(content, "\n") {
 		if i := strings.IndexByte(line, '#'); i >= 0 {
 			line = line[:i]
 		}
@@ -318,10 +331,21 @@ func readModelDef(model string) (def modelDef, ok bool) {
 			}
 		}
 		def.ptz = strings.EqualFold(f[6], "yes")
+		if len(f) >= 8 {
+			if b, err := strconv.Atoi(f[7]); err == nil && b > 0 {
+				def.highBitrate = b
+			}
+		}
 		return def, true
 	}
-	log.Printf("model_table: model %q not listed; using defaults (2304x1296, no PTZ)", model)
 	return def, false
+}
+
+// modelHighBitrate returns the model's pinned HIGH-channel bitrate (bps), or 0
+// when the model follows the controller (model_table high_bitrate column).
+func modelHighBitrate() int {
+	def, _ := readModelDef(readHardwareModel())
+	return def.highBitrate
 }
 
 // readHighResolution returns the real HIGH-channel (video1) encoder geometry
@@ -1081,15 +1105,28 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	// from this binary.
 	video1Width, video1Height := readHighResolution()
 
+	// A model_table high_bitrate pins this model's HIGH channel: the encoder
+	// target and the declared bitrates below all use it instead of the
+	// controller's requested value (0 = follow the controller).
+	pinnedHighBps := modelHighBitrate()
+	declaredHighBps := 2000000
+	if pinnedHighBps > 0 {
+		declaredHighBps = pinnedHighBps
+	}
+
 	if video, ok := m.Payload["video"].(map[string]interface{}); ok {
 		// Shutter (Video Mode) and HIGH bitrate -> mediad, delta-gated so the
 		// controller's periodic resend doesn't re-issue them.
 		var vidControls []mediadCtl
 		vidControls = append(vidControls, shutterControls(video)...)
-		if v1, ok := video["video1"].(map[string]interface{}); ok {
-			if bps := videoStreamBitrate(v1); bps > 0 {
-				vidControls = append(vidControls, mediadCtl{key: "bitrate", value: clampBitrate(bps)})
+		vidBps := pinnedHighBps
+		if vidBps == 0 {
+			if v1, ok := video["video1"].(map[string]interface{}); ok {
+				vidBps = videoStreamBitrate(v1)
 			}
+		}
+		if vidBps > 0 {
+			vidControls = append(vidControls, mediadCtl{key: "bitrate", value: clampBitrate(vidBps)})
 		}
 		go mediadApplyControls(vidControls, mediadVidDelta, true)
 		for _, key := range []string{"video1", "video2", "video3"} {
@@ -1229,7 +1266,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					"parameters":   streamParams("video1"),
 					"type":         "extendedFlv",
 				},
-				"bitRateCbrAvg": 1400000, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
+				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
 				"description": "Hi quality video track", "enabled": true, "fps": 15,
 				"gopModel": 0, "height": video1Height, "horizontalFlip": false,
 				"isCbr": false, "maxFps": 30, "minClientAdaptiveBitRate": 0,
@@ -1268,8 +1305,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				},
 				// video3 carries the real HIGH stream (see activeVideo3*): the
 				// expanded panel requests it for every quality setting.
-				"bitRateCbrAvg": 1400000, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
-				"currentVbrBitrate": 1400000, "description": "Hi quality video track",
+				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
+				"currentVbrBitrate": declaredHighBps, "description": "Hi quality video track",
 				"enabled": true, "fps": 15, "gopModel": 0, "height": video1Height,
 				"horizontalFlip": false, "isCbr": false, "maxFps": 30,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,

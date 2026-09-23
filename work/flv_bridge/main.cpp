@@ -14,6 +14,9 @@
 #include <strings.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+
+#include <string>
 
 #include "FshareReader.h"
 #include "FlvPush.h"
@@ -167,8 +170,64 @@ struct EmitCtx {
 
 bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
                uint32_t time, uint16_t streamCounter) {
-    (void)streamCounter;
     EmitCtx *ctx = (EmitCtx *)vctx;
+
+    // streamCounter increments per stream; a gap means the reader lost frames,
+    // so the affected channels must restart on a keyframe. Acted on only once
+    // 100 consecutive +1 steps prove the field is a per-stream counter here.
+    if (frameType == TYPE_HIGH || frameType == TYPE_LOW) {
+        static bool seen[2], trusted[2];
+        static uint16_t last[2];
+        static unsigned run[2];
+        static unsigned long gaps[2];
+        int s = frameType == TYPE_HIGH ? 0 : 1;
+        bool step = streamCounter == (uint16_t)(last[s] + 1);
+        if (seen[s] && step && !trusted[s] && ++run[s] >= 100) trusted[s] = true;
+        if (seen[s] && !step && !trusted[s]) run[s] = 0;
+        if (seen[s] && !step && trusted[s]) {
+            unsigned long n = ++gaps[s];
+            if ((n & (n - 1)) == 0)
+                fprintf(stderr, "fshare: %s stream gap %u -> %u (%lu gaps total)\n",
+                        s == 0 ? "HIGH" : "LOW", last[s], streamCounter, gaps[s]);
+            if (s == 0) {
+                flvPushDiscontinuity(FLV_CH_HIGH);
+                flvPushDiscontinuity(FLV_CH_MED);
+            } else {
+                flvPushDiscontinuity(FLV_CH_LOW);
+            }
+        }
+        seen[s] = true;
+        last[s] = streamCounter;
+    }
+
+    // Diagnostic tee (UNIFI_TEE=<path prefix>): the exact HIGH bytes handed to
+    // FlvPush -> <prefix>.h264, one "wall_ms counter bytes offset" line per
+    // frame -> <prefix>.idx. Stops at 300 MB.
+    if (frameType == TYPE_HIGH) {
+        static FILE *teeData, *teeIdx;
+        static bool teeInit;
+        static unsigned long long teeOff;
+        if (!teeInit) {
+            teeInit = true;
+            const char *p = getenv("UNIFI_TEE");
+            if (p && *p) {
+                std::string base(p);
+                teeData = fopen((base + ".h264").c_str(), "wb");
+                teeIdx = fopen((base + ".idx").c_str(), "w");
+            }
+        }
+        if (teeData && teeIdx && teeOff < 300ull * 1024 * 1024) {
+            struct timeval tv;
+            gettimeofday(&tv, nullptr);
+            fwrite(payload.data(), 1, payload.size(), teeData);
+            fprintf(teeIdx, "%lld %u %zu %llu\n",
+                    (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000,
+                    streamCounter, payload.size(), teeOff);
+            teeOff += payload.size();
+            fflush(teeData);
+            fflush(teeIdx);
+        }
+    }
 
     output_frame of;
     of.frame = std::move(payload);
@@ -305,13 +364,14 @@ int main(int argc, char **argv) {
     // drains the ring in time.
     setpriority(PRIO_PROCESS, 0, -10);
     std::fprintf(stderr, "unifi_flv_bridge: model=%s resolution=%d audio=%d "
-                         "ring=%lld offset=%u header=%d high=%ux%u ptz=%d\n",
+                         "ring=%lld offset=%u header=%d high=%ux%u bitrate=%u ptz=%d\n",
                  modelName, resolution, audio, (long long)st.st_size,
                  mp.offset, mp.headerSize, mp.highWidth, mp.highHeight,
-                 mp.ptz ? 1 : 0);
+                 mp.highBitrate, mp.ptz ? 1 : 0);
 
-    // Per-model HIGH geometry reaches FlvPush as data, not a model branch.
+    // Per-model HIGH geometry/bitrate reach FlvPush as data, not a model branch.
     flvPushSetHighResolution(mp.highWidth, mp.highHeight);
+    flvPushSetHighBandwidth(mp.highBitrate);
 
     // Starts the control-FIFO thread and per-channel state.
     flvPushInit();

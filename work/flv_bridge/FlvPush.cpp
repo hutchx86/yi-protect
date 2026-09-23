@@ -28,6 +28,9 @@
 // flvPushInit(). FlvPush never sees the model name.
 static unsigned g_highWidth = 2304;
 static unsigned g_highHeight = 1296;
+// Per-model HIGH-channel declared bitrate (bps), likewise set by main(). Must
+// match the Go client's video1 declaration (see main.go handleVideoSettings).
+static unsigned g_highBandwidth = 2000000;
 
 static double nowSeconds() {
     struct timeval tv;
@@ -88,6 +91,12 @@ struct ChannelState {
     // reconnects; 0 = not yet measured (first connection), then videoFps is
     // used.
     double cachedMeasuredFps;
+
+    // Overflow state (guarded by flvQueue.mutex): after an overflow, non-key
+    // frames are refused until the next IDR, so the viewer freezes instead of
+    // smearing on a missing reference.
+    bool dropUntilKey = false;
+    unsigned long droppedFrames = 0;
 };
 
 ChannelState g_ch[FLV_CH_COUNT];
@@ -96,6 +105,20 @@ bool g_initDone = false;
 bool nalIsSps(unsigned char hdr) { return (hdr & 0x1f) == 7; }
 bool nalIsPps(unsigned char hdr) { return (hdr & 0x1f) == 8; }
 bool nalIsIdr(unsigned char hdr) { return (hdr & 0x1f) == 5; }
+
+// True if the access unit carries an SPS or IDR. Stops at the first slice NAL,
+// so only the leading parameter sets are scanned, not the slice payload.
+bool frameIsKey(const std::vector<unsigned char> &buf) {
+    size_t n = buf.size();
+    for (size_t i = 0; i + 3 < n; i++) {
+        if (buf[i] != 0 || buf[i + 1] != 0 || buf[i + 2] != 1) continue;
+        unsigned char hdr = buf[i + 3];
+        if (nalIsSps(hdr) || nalIsIdr(hdr)) return true;
+        if ((hdr & 0x1f) == 1) return false;
+        i += 2;
+    }
+    return false;
+}
 
 // -------- byte buffer / socket write helpers --------
 
@@ -522,9 +545,41 @@ void flvPushEnqueue(int channel, const output_frame &f) {
     if (!flvPushActive(channel)) return;
     ChannelState &c = g_ch[channel];
     measureFps(c, channel);
+    bool key = frameIsKey(f.frame);
+    unsigned long dropped = 0;
     pthread_mutex_lock(&c.flvQueue.mutex);
-    c.flvQueue.frame_queue.push(f); // copy (queue item is small: one frame's worth)
-    while (c.flvQueue.frame_queue.size() > MAX_QUEUE_SIZE) c.flvQueue.frame_queue.pop();
+    if (c.dropUntilKey && !key) {
+        c.droppedFrames++;
+    } else {
+        c.dropUntilKey = false;
+        if (c.flvQueue.frame_queue.size() >= MAX_QUEUE_SIZE) {
+            // Dropping single frames leaves later P frames referencing a lost
+            // one; flush the whole backlog and resume on a keyframe instead.
+            c.droppedFrames += c.flvQueue.frame_queue.size();
+            std::queue<output_frame>().swap(c.flvQueue.frame_queue);
+            if (!key) {
+                c.droppedFrames++;
+                c.dropUntilKey = true;
+            }
+            dropped = c.droppedFrames;
+        }
+        if (key || !c.dropUntilKey)
+            c.flvQueue.frame_queue.push(f); // copy (queue item is small: one frame's worth)
+    }
+    pthread_mutex_unlock(&c.flvQueue.mutex);
+    if (dropped)
+        fprintf(stderr, "FlvPush[%d]: queue overflow, flushed to next keyframe (%lu frames dropped total)\n",
+                channel, dropped);
+}
+
+void flvPushDiscontinuity(int channel) {
+    if (channel < 0 || channel >= FLV_CH_COUNT) return;
+    if (!flvPushActive(channel)) return;
+    ChannelState &c = g_ch[channel];
+    pthread_mutex_lock(&c.flvQueue.mutex);
+    c.droppedFrames += c.flvQueue.frame_queue.size();
+    std::queue<output_frame>().swap(c.flvQueue.frame_queue);
+    c.dropUntilKey = true;
     pthread_mutex_unlock(&c.flvQueue.mutex);
 }
 
@@ -752,6 +807,13 @@ static void *pushThreadMain(void *arg) {
     ok = writeAll(fd, out.data(), out.size());
     if (ok) bytesWritten += out.size();
     lastSyncTime = nowSeconds();
+    // Per-5s video timing stats (logged with the sync inject): the tag clock
+    // is write time, so a drained backlog bunches timestamps together.
+    unsigned long stFrames = 0, stDup = 0, stBunch = 0;
+    uint32_t stLastMs = 0, stMaxGap = 0;
+    bool stHaveLast = false;
+    size_t stMaxDepth = 0;
+    double stMaxWrite = 0.0;
 
     while (ok && c.generation == myGeneration) {
         if (!peerStillAlive(fd)) {
@@ -856,6 +918,8 @@ static void *pushThreadMain(void *arg) {
         bool got = false;
         pthread_mutex_lock(&c.flvQueue.mutex);
         if (!c.flvQueue.frame_queue.empty()) {
+            if (c.flvQueue.frame_queue.size() > stMaxDepth)
+                stMaxDepth = c.flvQueue.frame_queue.size();
             f = std::move(c.flvQueue.frame_queue.front());
             c.flvQueue.frame_queue.pop();
             got = true;
@@ -901,9 +965,15 @@ static void *pushThreadMain(void *arg) {
             }
 
             // Plain write-time wall-clock elapsed; frame-time (f.time) made
-            // the wc/now drift worse.
+            // the wc/now drift worse. A ring batch is written back to back, so
+            // force strictly increasing ms: equal timestamps get a frame dropped
+            // downstream, and a dropped P frame smears until the next IDR.
             double tagElapsed = nowSeconds() - connectionStart;
             uint32_t tagMs = (uint32_t)(tagElapsed * 1000.0);
+            if (stHaveLast && (int32_t)(tagMs - stLastMs) <= 0) {
+                tagMs = stLastMs + 1;
+                tagElapsed = (double)tagMs / 1000.0;
+            }
 
             // Every 5s, re-anchor streamClock->wallClock (own write() before
             // the triggering frame) so the controller's clock doesn't drift.
@@ -919,6 +989,14 @@ static void *pushThreadMain(void *arg) {
                 writeTimestampTrailer(sync, false, tagElapsed);
                 fprintf(stderr, "FlvPush[%d]: sync inject: streamClock=%u wallClock=%.0f (bytes=%zu)\n",
                         channel, tagMs, wallNow, sync.size());
+                fprintf(stderr, "FlvPush[%d]: 5s video: frames=%lu dupTs=%lu bunched<10ms=%lu "
+                        "maxGap=%ums maxQueue=%zu maxWrite=%.0fms\n",
+                        channel, stFrames, stDup, stBunch, stMaxGap, stMaxDepth,
+                        stMaxWrite * 1000.0);
+                stFrames = stDup = stBunch = 0;
+                stMaxGap = 0;
+                stMaxDepth = 0;
+                stMaxWrite = 0.0;
                 hexDump(channel, "sync tag (onClockSync+onMpma)", sync.data(), sync.size(),
                         dumpPathFor(channel, true));
                 ok = writeAll(fd, sync.data(), sync.size());
@@ -943,7 +1021,18 @@ static void *pushThreadMain(void *arg) {
             out.clear();
             writeFlvTag(out, 9, tagData, tagMs);
             writeTimestampTrailer(out, true, tagElapsed);
+            if (stHaveLast) {
+                uint32_t gap = tagMs - stLastMs;
+                if (gap == 0) stDup++;
+                if (gap < 10) stBunch++;
+                if (gap > stMaxGap) stMaxGap = gap;
+            }
+            stHaveLast = true;
+            stLastMs = tagMs;
+            stFrames++;
+            double wt0 = nowSeconds();
             ok = writeAll(fd, out.data(), out.size());
+            if (nowSeconds() - wt0 > stMaxWrite) stMaxWrite = nowSeconds() - wt0;
             if (!ok) break;
             bytesWritten += out.size();
         }
@@ -1115,6 +1204,11 @@ void flvPushSetHighResolution(unsigned width, unsigned height) {
     }
 }
 
+void flvPushSetHighBandwidth(unsigned bps) {
+    if (bps > 0)
+        g_highBandwidth = bps;
+}
+
 void flvPushInit() {
     // Without this, write() to a peer-closed socket raises SIGPIPE, whose
     // default disposition kills the whole process (the watchdog would then
@@ -1128,11 +1222,13 @@ void flvPushInit() {
         high.activeFd = -1;
         high.generation = 0;
         high.haveCachedSpsPps = false;
-        // Matches video1's Go-client declaration (streamId=1, 1400000, fps 15).
-        // HIGH geometry comes from the model table (set by main() before this
-        // call); LOW is the real 640x360 encoder output.
+        // Matches video1's Go-client declaration (streamId=1, fps 15); the
+        // bitrate comes from the model table's high_bitrate column so both
+        // sides stay consistent. HIGH geometry likewise comes from the model
+        // table (set by main() before this call); LOW is the real 640x360
+        // encoder output.
         high.channelId = 0; high.streamId = 1;
-        high.videoBandwidth = 1400000; high.videoFps = 15;
+        high.videoBandwidth = g_highBandwidth; high.videoFps = 15;
         high.videoWidth = g_highWidth; high.videoHeight = g_highHeight;
         high.cachedMeasuredFps = 0;
 
@@ -1159,7 +1255,7 @@ void flvPushInit() {
         // expanded panel requests video3 for every quality setting, so it is
         // the high stream -- geometry and bitrate match video1's declaration.
         med.channelId = 2; med.streamId = 4;
-        med.videoBandwidth = 1400000; med.videoFps = 15;
+        med.videoBandwidth = g_highBandwidth; med.videoFps = 15;
         med.videoWidth = g_highWidth; med.videoHeight = g_highHeight;
         med.cachedMeasuredFps = 0;
 

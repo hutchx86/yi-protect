@@ -2,7 +2,8 @@
 # Copyright (C) 2026 yi-protect contributors
 #
 # model_table -- the single per-model definition file: every per-model *fact*
-# lives here once; only hardware bring-up code that can't be data stays in lower_half/.
+# (plus deliberate per-model policy overrides) lives here once; only hardware
+# bring-up code that can't be data stays in lower_half/.
 #
 # Columns (whitespace-separated); a row here is a claim about real hardware.
 #   model        model_suffix token: what /backup/init.sh sets and -m carries
@@ -11,10 +12,14 @@
 #   ring_header  per-frame header bytes before payload; 0 = autodetect
 #   high_w/h     real HIGH-channel (video1) encoder geometry, SPS-verified
 #   ptz          yes/no -- real motorized pan/tilt base
+#   high_bitrate HIGH-channel bitrate to pin (bps); 0/absent = follow the
+#                controller's target (a deliberate per-model policy override,
+#                e.g. y623's weak 2.4 GHz link). The encoder target and both
+#                declared bitrates (Go client + bridge) are pinned together.
 #
 # A row here means we own the hardware and can bring it up. No row = conservative
 # default (368/28, 2304x1296, no PTZ) + warning, never a silent guess.
-y623     gc3003  368  28  2304  1296  no
+y623     gc3003  368  28  2304  1296  no  2800000
 h51ga    gc2053  368  28  2304  1296  yes
 h52ga    gc2053  368  28  1920  1080  yes
 r35gb    gc2053  0    0   1920  1080  yes
