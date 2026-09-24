@@ -1227,7 +1227,11 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					c.activeVideo1Host = u.Host
 					c.activeVideo1StreamName = streamName
 					c.videoMu.Unlock()
-					startVideoStream(u.Host, streamName, "high")
+					if !startVideoStream(u.Host, streamName, "high") {
+						c.videoMu.Lock()
+						c.activeVideo1Host, c.activeVideo1StreamName = "", ""
+						c.videoMu.Unlock()
+					}
 				} else {
 					c.videoMu.Unlock()
 				}
@@ -1236,7 +1240,11 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					c.activeVideo2Host = u.Host
 					c.activeVideo2StreamName = streamName
 					c.videoMu.Unlock()
-					startVideoStream(u.Host, streamName, "low")
+					if !startVideoStream(u.Host, streamName, "low") {
+						c.videoMu.Lock()
+						c.activeVideo2Host, c.activeVideo2StreamName = "", ""
+						c.videoMu.Unlock()
+					}
 				} else {
 					c.videoMu.Unlock()
 				}
@@ -1245,7 +1253,11 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					c.activeVideo3Host = u.Host
 					c.activeVideo3StreamName = streamName
 					c.videoMu.Unlock()
-					startVideoStream(u.Host, streamName, "medium")
+					if !startVideoStream(u.Host, streamName, "medium") {
+						c.videoMu.Lock()
+						c.activeVideo3Host, c.activeVideo3StreamName = "", ""
+						c.videoMu.Unlock()
+					}
 				} else {
 					c.videoMu.Unlock()
 				}
@@ -1575,13 +1587,17 @@ var (
 
 // channel is "high", "low", or "medium" -- FlvPush tracks each destination
 // separately, so they can be connected/reconnected independently.
-func startVideoStream(dest, streamName, channel string) {
+// startVideoStream reports whether FlvPush got the CONNECT. On false the
+// caller forgets the destination so the controller's next re-send retries
+// (it re-sends ~every 10 s); otherwise a CONNECT lost while the bridge was
+// restarting left that channel dead, as every re-send looked like a duplicate.
+func startVideoStream(dest, streamName, channel string) bool {
 	videoStreamMu.Lock()
 	defer videoStreamMu.Unlock()
 	cmd := fmt.Sprintf("CONNECT %s %s %s\n", dest, streamName, channel)
 	if err := writeFlvPushFifoLocked(cmd); err != nil {
 		log.Printf("startVideoStream[%s]: failed to write FlvPush FIFO: %v", channel, err)
-		return
+		return false
 	}
 	// Re-assert the mic state on every CONNECT: FlvPush's flag resets if the
 	// bridge restarts, and the encoder may re-init the mixer.
@@ -1594,6 +1610,7 @@ func startVideoStream(dest, streamName, channel string) {
 	}
 	applyMicGain(currentMicLevel)
 	log.Printf("startVideoStream[%s]: told FlvPush to push to %s, streamName=%s", channel, dest, streamName)
+	return true
 }
 
 func stopVideoStream(channel string) {

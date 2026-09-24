@@ -705,6 +705,7 @@ static void *pushThreadMain(void *arg) {
     // onClockSync/onMpma resync doesn't immediately re-fire a duplicate pair
     // after the initial connection-start write, which already sends one.
     double lastSyncTime = 0;
+    double lastStatsTime = nowSeconds();
 
     // FLV tag timestamps and the extendedFlv trailer's elapsed field are
     // relative to this per-connection start, reset on every reconnect. Every
@@ -1003,9 +1004,25 @@ static void *pushThreadMain(void *arg) {
                 tagElapsed = (double)tagMs / 1000.0;
             }
 
-            // Every 5s, re-anchor streamClock->wallClock (own write() before
-            // the triggering frame) so the controller's clock doesn't drift.
-            if (nowSeconds() - lastSyncTime >= 5.0) {
+            // Stats line on its own 5 s timer.
+            if (nowSeconds() - lastStatsTime >= 5.0) {
+                lastStatsTime = nowSeconds();
+                fprintf(stderr, "FlvPush[%d]: 5s video: frames=%lu dupTs=%lu bunched<10ms=%lu "
+                        "maxGap=%ums maxQueue=%zu maxWrite=%.0fms\n",
+                        channel, stFrames, stDup, stBunch, stMaxGap, stMaxDepth,
+                        stMaxWrite * 1000.0);
+                stFrames = stDup = stBunch = 0;
+                stMaxGap = 0;
+                stMaxDepth = 0;
+                stMaxWrite = 0.0;
+            }
+
+            // Re-anchor streamClock->wallClock right before every IDR, as a
+            // G3 does (its onClockSync always precedes a keyframe). The
+            // recorder opens a seekable index point there; a fixed 5 s timer
+            // phase-locked against the 2 s GOP under capture-time stamps and
+            // left HQ minutes without one (unplayable timeline). 10 s fallback.
+            if (nalIsIdr(hdr) || nowSeconds() - lastSyncTime >= 10.0) {
                 lastSyncTime = nowSeconds();
                 double wallNow = epochMillis();
                 std::vector<unsigned char> sync;
@@ -1015,16 +1032,6 @@ static void *pushThreadMain(void *arg) {
                 std::vector<unsigned char> mpma = buildOnMpma();
                 writeFlvTag(sync, 18, mpma, tagMs);
                 writeTimestampTrailer(sync, false, tagElapsed);
-                fprintf(stderr, "FlvPush[%d]: sync inject: streamClock=%u wallClock=%.0f (bytes=%zu)\n",
-                        channel, tagMs, wallNow, sync.size());
-                fprintf(stderr, "FlvPush[%d]: 5s video: frames=%lu dupTs=%lu bunched<10ms=%lu "
-                        "maxGap=%ums maxQueue=%zu maxWrite=%.0fms\n",
-                        channel, stFrames, stDup, stBunch, stMaxGap, stMaxDepth,
-                        stMaxWrite * 1000.0);
-                stFrames = stDup = stBunch = 0;
-                stMaxGap = 0;
-                stMaxDepth = 0;
-                stMaxWrite = 0.0;
                 hexDump(channel, "sync tag (onClockSync+onMpma)", sync.data(), sync.size(),
                         dumpPathFor(channel, true));
                 ok = writeAll(fd, sync.data(), sync.size());
