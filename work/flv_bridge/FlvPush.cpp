@@ -975,7 +975,15 @@ static void *pushThreadMain(void *arg) {
             size_t len = spans[s].second - spans[s].first;
             if (len == 0) continue;
             unsigned char hdr = nal[0];
+            // A changed SPS/PPS (e.g. mediad restarted with new geometry)
+            // must reach the controller: clear sentSeqHeader so the AVC
+            // sequence header is re-sent before the next slice. Without it
+            // the controller decoded new frames with the old SPS (garbage).
             if (nalIsSps(hdr)) {
+                if (haveSps && (sps.size() != len || memcmp(sps.data(), nal, len) != 0)) {
+                    sentSeqHeader = false;
+                    fprintf(stderr, "FlvPush[%d]: SPS changed, re-sending sequence header\n", channel);
+                }
                 sps.assign(nal, nal + len);
                 haveSps = true;
                 pthread_mutex_lock(&c.stateMutex);
@@ -985,6 +993,8 @@ static void *pushThreadMain(void *arg) {
                 continue;
             }
             if (nalIsPps(hdr)) {
+                if (havePps && (pps.size() != len || memcmp(pps.data(), nal, len) != 0))
+                    sentSeqHeader = false;
                 pps.assign(nal, nal + len);
                 havePps = true;
                 pthread_mutex_lock(&c.stateMutex);
