@@ -73,7 +73,7 @@ ModelParams modelParams(const char *name);
 // One encoded frame handed from the reader to FlvPush.
 typedef struct {
     std::vector<unsigned char> frame;
-    uint32_t time;
+    uint32_t time = 0; // capture PTS, monotonic ms (mediad ring header)
 } output_frame;
 
 // A bounded FIFO protected by a mutex.

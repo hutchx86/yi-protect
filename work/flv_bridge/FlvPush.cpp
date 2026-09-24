@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <csignal>
 #include <sys/time.h>
+#include <time.h>
 
 // Per-model HIGH-channel geometry, set by main() from the model table before
 // flvPushInit(). FlvPush never sees the model name.
@@ -32,10 +33,12 @@ static unsigned g_highHeight = 1296;
 // match the Go client's video1 declaration (see main.go handleVideoSettings).
 static unsigned g_highBandwidth = 2000000;
 
+// Monotonic: stream time must not jump when avclient's timeSync steps the
+// wall clock. Only epochMillis() (onClockSync's wallClock) is wall time.
 static double nowSeconds() {
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
 static double epochMillis() {
@@ -245,41 +248,34 @@ void writeFlvTag(std::vector<unsigned char> &buf, uint8_t tagType,
 
 // "extendedFlv" trailer: 16 bytes after EVERY FLV tag (UniFi/evostreamms
 // extension, not FLV spec): 0x00, a 3-byte clock-rate marker (video
-// 0x015F90=90000 vs other 0x002B11=11025), 8 padding bytes, then a 4-byte
-// big-endian ELAPSED time in that marker's own ticks.
+// 0x015F90=90000, AAC 0x003E80=16000, Opus 0x00BB80=48000), 4 zero bytes,
+// then an 8-byte big-endian ELAPSED time in that marker's own ticks.
 //
 // The elapsed field MUST use the trailer's own ticks, not unifi-cam-proxy's
 // `elapsed * 100000`: that advances the controller's derived wall clock at
 // 100000/90000 = 1.111x, so FeedData's wc/now diff grows ~11% of connection
 // age until every frame is rejected. Real hardware advances it at ~90000
 // ticks/s, letting the ingest connection live indefinitely.
-void writeTimestampTrailer(std::vector<unsigned char> &buf, bool isPacket, double elapsedSeconds) {
-    put_u8(buf, 0);
-    double clock;
-    if (isPacket) {
-        unsigned char m[11] = {1, 95, 144, 0, 0, 0, 0, 0, 0, 0, 0}; // 0x015F90 = 90000
-        put_bytes(buf, m, 11);
-        clock = 90000.0;
-    } else {
-        unsigned char m[11] = {0, 43, 17, 0, 0, 0, 0, 0, 0, 0, 0};  // 0x002B11 = 11025
-        put_bytes(buf, m, 11);
-        clock = 11025.0;
-    }
-    put_u32(buf, (uint32_t)(elapsedSeconds * clock));
-}
-
-// Same trailer with an explicit 24-bit marker + tick rate. A G3 capture showed
-// the marker is the tag's own clock: video/metadata 90000, AAC its sample rate
-// (16000), Opus 48000. The version above only knows 90000/11025.
+//
+// The counter is 64-bit (bytes 8-15): a G3 Flex capture shows
+// 00000010eb836715 there, ~9 days of 90 kHz ticks. A 32-bit field wraps
+// after 13.25 h of video on one connection.
 void writeTimestampTrailerClock(std::vector<unsigned char> &buf, uint32_t marker,
                                 double clock, double elapsedSeconds) {
     put_u8(buf, 0);
-    unsigned char m[11] = {0};
-    m[0] = (marker >> 16) & 0xff;
-    m[1] = (marker >> 8) & 0xff;
-    m[2] = marker & 0xff;
-    put_bytes(buf, m, 11);
-    put_u32(buf, (uint32_t)(elapsedSeconds * clock));
+    put_u24(buf, marker);
+    put_u32(buf, 0);
+    uint64_t ticks = (uint64_t)(elapsedSeconds * clock);
+    put_u32(buf, (uint32_t)(ticks >> 32));
+    put_u32(buf, (uint32_t)ticks);
+}
+
+// Video/metadata (90000) or legacy non-video (11025) marker.
+void writeTimestampTrailer(std::vector<unsigned char> &buf, bool isPacket, double elapsedSeconds) {
+    if (isPacket)
+        writeTimestampTrailerClock(buf, 0x015F90, 90000.0, elapsedSeconds);
+    else
+        writeTimestampTrailerClock(buf, 0x002B11, 11025.0, elapsedSeconds);
 }
 
 // onMetaData, field-for-field from a real UniFi camera's live tag. The old
@@ -731,6 +727,31 @@ static void *pushThreadMain(void *arg) {
     // far behind (a real source dropout).
     long opusPtsIndex = -1;
 
+    // Capture-time stamping, as a real G3 does (its tags sit on an exact
+    // 1/fps grid). mediad's ring PTS is monotonic ms, the same clock as
+    // nowSeconds(), so map it onto the connection clock. Write-time stamps
+    // carried the ring/queue/WiFi jitter, which the low-latency (WebRTC) live
+    // path schedules by and macroblocked on; recordings re-mux and were clean.
+    // Never ahead of the write clock; re-anchor only on a discontinuity.
+    bool ptsAnchored = false;
+    uint32_t ptsBase = 0;
+    double ptsBaseElapsed = 0.0;
+    auto captureElapsed = [&](uint32_t pts) -> double {
+        double nowE = nowSeconds() - connectionStart;
+        double e = ptsBaseElapsed + (double)(int32_t)(pts - ptsBase) / 1000.0;
+        if (!ptsAnchored || e < nowE - 3.0) {
+            ptsAnchored = true;
+            ptsBase = pts;
+            ptsBaseElapsed = nowE;
+            return nowE;
+        }
+        if (e > nowE) {          // anchor frame was late: pull the anchor back
+            ptsBaseElapsed -= e - nowE;
+            return nowE;
+        }
+        return e;
+    };
+
     // FLV file header: "FLV", version 1, flags=0x07 (real UniFi cameras set
     // both bits even on a video-only stream; captured from live hardware),
     // header size 9, then PreviousTagSize0=0.
@@ -859,9 +880,8 @@ static void *pushThreadMain(void *arg) {
                 sentAacSeqHeader = true;
             }
 
-            // Same write-time wall-clock basis as video; a frame-duration-paced
-            // clock drifted behind and tripped ms's 1000ms A/V threshold.
-            double aTagElapsed = nowSeconds() - connectionStart;
+            // Same capture-time basis as video (shared anchor keeps A/V aligned).
+            double aTagElapsed = captureElapsed(af.time);
             uint32_t aTagMs = (uint32_t)(aTagElapsed * 1000.0);
 
             const unsigned char *rawAac = af.frame.data() + 7;
@@ -967,11 +987,10 @@ static void *pushThreadMain(void *arg) {
                 continue;
             }
 
-            // Plain write-time wall-clock elapsed; frame-time (f.time) made
-            // the wc/now drift worse. A ring batch is written back to back, so
-            // force strictly increasing ms: equal timestamps get a frame dropped
-            // downstream, and a dropped P frame smears until the next IDR.
-            double tagElapsed = nowSeconds() - connectionStart;
+            // Capture time (see captureElapsed). Still force strictly
+            // increasing ms: equal timestamps get a frame dropped downstream,
+            // and a dropped P frame smears until the next IDR.
+            double tagElapsed = captureElapsed(f.time);
             uint32_t tagMs = (uint32_t)(tagElapsed * 1000.0);
             if (stHaveLast && (int32_t)(tagMs - stLastMs) <= 0) {
                 tagMs = stLastMs + 1;
