@@ -603,6 +603,10 @@ func readWifiStatus() *wifiStatus {
 	}
 }
 
+// encoderFps is mediad's fixed capture/encode rate (SRC_FPS). Every fps field
+// declares it: the controller adopts fps/validFpsValues from our reply.
+const encoderFps = 20
+
 // featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
 // "truedaynight" is the real IR key, "ledStatus" the separate status LED.
 func featureFlags() map[string]interface{} {
@@ -625,16 +629,16 @@ func featureFlags() map[string]interface{} {
 
 		// Copied from a real G3 Instant's features; their absence made Protect
 		// show empty codec lists and gated the talkback button.
-		"audioCodecs":           []string{"aac", "opus"},
-		"videoCodecs":           []string{"h264", "mjpg"},
-		"opusSampleRates":       []int{16000},
+		"audioCodecs":     []string{"aac", "opus"},
+		"videoCodecs":     []string{"h264", "mjpg"},
+		"opusSampleRates": []int{16000},
 		// true on the G3 Instant we spoof (features_0xa590.json); the generic
 		// features.json ships false. Talkback needs AEC to be armed (the real
 		// streamer logs "Device have AEC, force to set withTalkback"), and a
 		// false here is what left the talkback button greyed out / unarmed.
 		"aecTalkbackSwitch":     true,
 		"videoSourceCount":      1,
-		"videoModeMaxFps":       []int{30, 30, 20},
+		"videoModeMaxFps":       []int{encoderFps, encoderFps, encoderFps},
 		"squareEventThumbnail":  true,
 		"luxCheck":              false,
 		"flash":                 false,
@@ -1275,7 +1279,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		},
 		"video": map[string]interface{}{
 			"enableHrd": false, "hdrMode": 0, "lowDelay": false,
-			"videoMode": "default", "vinFps": 30,
+			"videoMode": "default", "vinFps": encoderFps,
 			"mjpg": map[string]interface{}{
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{"file:///tmp/snap.jpeg", "file:///tmp/snap_av.jpg"},
@@ -1296,25 +1300,25 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			// Real hardware resolution -- per-model (see video1Width/Height),
 			// not a generic catalog default.
 			"video1": map[string]interface{}{
-				"M": 1, "N": 30,
+				"M": 1, "N": encoderFps,
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{vidDst["video1"]},
 					"parameters":   streamParams("video1"),
 					"type":         "extendedFlv",
 				},
 				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
-				"description": "Hi quality video track", "enabled": true, "fps": 15,
+				"description": "Hi quality video track", "enabled": true, "fps": encoderFps,
 				"gopModel": 0, "height": video1Height, "horizontalFlip": false,
-				"isCbr": false, "maxFps": 30, "minClientAdaptiveBitRate": 0,
+				"isCbr": false, "maxFps": encoderFps, "minClientAdaptiveBitRate": 0,
 				"minMotionAdaptiveBitRate": 0, "nMultiplier": 6, "name": "video1",
 				"sourceId": 0, "streamId": 1, "streamOrdinal": 0, "type": "h264",
 				"validBitrateRangeMax": 2800000, "validBitrateRangeMin": 32000,
-				"validFpsValues": []int{1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 30},
+				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
 				"width":          video1Width,
 			},
 			"video2": map[string]interface{}{
-				"M": 1, "N": 30,
+				"M": 1, "N": encoderFps,
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{vidDst["video2"]},
 					"parameters":   streamParams("video2"),
@@ -1323,17 +1327,17 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				// Real LOW resolution (640x360) -- must match the encoder.
 				"bitRateCbrAvg": 500000, "bitRateVbrMax": 750000, "bitRateVbrMin": 48000,
 				"currentVbrBitrate": 500000, "description": "Low quality video track",
-				"enabled": true, "fps": 15, "gopModel": 0, "height": 360,
-				"horizontalFlip": false, "isCbr": false, "maxFps": 30,
+				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": 360,
+				"horizontalFlip": false, "isCbr": false, "maxFps": encoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
 				"name": "video2", "sourceId": 1, "streamId": 2, "streamOrdinal": 1, "type": "h264",
 				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
-				"validFpsValues": []int{1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 30},
+				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
 				"width":          640,
 			},
 			"video3": map[string]interface{}{
-				"M": 1, "N": 30,
+				"M": 1, "N": encoderFps,
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{vidDst["video3"]},
 					"parameters":   streamParams("video3"),
@@ -1343,12 +1347,12 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				// expanded panel requests it for every quality setting.
 				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
 				"currentVbrBitrate": declaredHighBps, "description": "Hi quality video track",
-				"enabled": true, "fps": 15, "gopModel": 0, "height": video1Height,
-				"horizontalFlip": false, "isCbr": false, "maxFps": 30,
+				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": video1Height,
+				"horizontalFlip": false, "isCbr": false, "maxFps": encoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
 				"name": "video3", "sourceId": 2, "streamId": 4, "streamOrdinal": 2, "type": "h264",
 				"validBitrateRangeMax": 2800000, "validBitrateRangeMin": 32000,
-				"validFpsValues": []int{1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 30},
+				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
 				"width":          video1Width,
 			},

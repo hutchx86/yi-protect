@@ -506,6 +506,9 @@ bool flvPushAudioMuted() { return g_audioMuted != 0; }
 // window (see ChannelState::cachedMeasuredFps). Uses arrival time, not
 // f.time, whose units are uncharacterized. Called once per real encoder frame
 // regardless of viewers, so it reflects genuine encoder timing.
+// mediad's capture/encode rate (SRC_FPS); declared until measureFps() has data.
+static const double kEncoderFps = 20;
+
 static void measureFps(ChannelState &c, int channel) {
     static double lastFrameWallSec[FLV_CH_COUNT] = {0};
     static double intervalSum[FLV_CH_COUNT] = {0};
@@ -1222,13 +1225,13 @@ void flvPushInit() {
         high.activeFd = -1;
         high.generation = 0;
         high.haveCachedSpsPps = false;
-        // Matches video1's Go-client declaration (streamId=1, fps 15); the
+        // Matches video1's Go-client declaration (streamId=1, fps 20); the
         // bitrate comes from the model table's high_bitrate column so both
         // sides stay consistent. HIGH geometry likewise comes from the model
         // table (set by main() before this call); LOW is the real 640x360
         // encoder output.
         high.channelId = 0; high.streamId = 1;
-        high.videoBandwidth = g_highBandwidth; high.videoFps = 15;
+        high.videoBandwidth = g_highBandwidth; high.videoFps = kEncoderFps;
         high.videoWidth = g_highWidth; high.videoHeight = g_highHeight;
         high.cachedMeasuredFps = 0;
 
@@ -1241,7 +1244,7 @@ void flvPushInit() {
         // Matches video2's declaration (streamId=2); 640x360 is the real
         // low-res encoder output.
         low.channelId = 1; low.streamId = 2;
-        low.videoBandwidth = 500000; low.videoFps = 15;
+        low.videoBandwidth = 500000; low.videoFps = kEncoderFps;
         low.videoWidth = 640; low.videoHeight = 360;
         low.cachedMeasuredFps = 0;
 
@@ -1255,7 +1258,7 @@ void flvPushInit() {
         // expanded panel requests video3 for every quality setting, so it is
         // the high stream -- geometry and bitrate match video1's declaration.
         med.channelId = 2; med.streamId = 4;
-        med.videoBandwidth = g_highBandwidth; med.videoFps = 15;
+        med.videoBandwidth = g_highBandwidth; med.videoFps = kEncoderFps;
         med.videoWidth = g_highWidth; med.videoHeight = g_highHeight;
         med.cachedMeasuredFps = 0;
 
