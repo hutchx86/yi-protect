@@ -10,12 +10,10 @@
  * requested stream OOM-thrashed the device at 2-3 concurrent viewers.
  *
  * Three channels: HIGH (video1, real high-res encoder), LOW (video2, real
- * 640x360 encoder), MED (video3). MED aliases the SAME real HIGH frames as
- * video1: Protect's expanded single-camera panel requests video3 for every
- * quality setting, so video3 must be the high stream (otherwise "HQ" changes
- * nothing); video1 keeps serving the grid view. This SoC has only two
- * independently-configured encoder outputs, so video3 is a second destination
- * for the high output, not a third resolution.
+ * 640x360 encoder), MED (video3). MED aliases the SAME real LOW frames as
+ * video2 (this SoC has only two encoder outputs). Auto live view picks MED;
+ * Protect 7.3's HQ/LQ selections request video1/video2 directly. A second
+ * push is paid only while MED is watched, so it carries the cheap stream.
  *
  * Control FIFO /tmp/unifi_flv_bridge_ctl, newline-terminated commands:
  *   CONNECT <host:port> <streamName> <high|low|medium>

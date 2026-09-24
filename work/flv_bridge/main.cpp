@@ -207,9 +207,9 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
                         s == 0 ? "HIGH" : "LOW", last[s], streamCounter, gaps[s]);
             if (s == 0) {
                 flvPushDiscontinuity(FLV_CH_HIGH);
-                flvPushDiscontinuity(FLV_CH_MED);
             } else {
                 flvPushDiscontinuity(FLV_CH_LOW);
+                flvPushDiscontinuity(FLV_CH_MED);
             }
         }
         seen[s] = true;
@@ -252,16 +252,14 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
     if (frameType == TYPE_HIGH) {
         if (ctx->resolution == RESOLUTION_HIGH || ctx->resolution == RESOLUTION_BOTH) {
             if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueue(FLV_CH_HIGH, of);
-            // MED (video3) carries the SAME real HIGH frames. Protect's
-            // expanded/single-camera panel requests video3 for every quality
-            // dropdown setting, so video3 must be the high stream for the
-            // dropdown to mean anything; video1 keeps serving the grid view.
-            if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_LOW) {
-        // LOW (video2) is the real 640x360 encoder output; nothing aliases it.
+        // LOW (video2) is the real 640x360 encoder output. MED (video3) carries
+        // the same frames: Auto live view lands on MED, and duplicating LOW
+        // costs ~0.5 Mbps uplink while watched vs ~2.2 Mbps for HIGH.
         if (ctx->resolution != RESOLUTION_HIGH) {
             if (flvPushActive(FLV_CH_LOW)) flvPushEnqueue(FLV_CH_LOW, of);
+            if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_AAC) {
         if (ctx->audio == 2) {

@@ -1286,12 +1286,11 @@ void flvPushInit() {
         med.activeFd = -1;
         med.generation = 0;
         med.haveCachedSpsPps = false;
-        // video3 (MED) aliases the real HIGH output (see FlvPush.h): Protect's
-        // expanded panel requests video3 for every quality setting, so it is
-        // the high stream -- geometry and bitrate match video1's declaration.
+        // video3 (MED) aliases the real LOW output (see FlvPush.h); geometry
+        // and bitrate match video3's declaration.
         med.channelId = 2; med.streamId = 4;
-        med.videoBandwidth = g_highBandwidth; med.videoFps = kEncoderFps;
-        med.videoWidth = g_highWidth; med.videoHeight = g_highHeight;
+        med.videoBandwidth = 500000; med.videoFps = kEncoderFps;
+        med.videoWidth = 640; med.videoHeight = 360;
         med.cachedMeasuredFps = 0;
 
         for (int i = 0; i < FLV_CH_COUNT; i++) {
