@@ -19,12 +19,33 @@ var currentTimeDeltaMs atomic.Int64
 // clockSynced records whether we have applied at least one correction.
 var clockSynced atomic.Bool
 
+// pendingOffsetMs holds an out-of-tolerance offset awaiting confirmation by
+// the next sample (0 = none). Messages are handled inline, so a timeSync
+// queued behind a slow handler reads stale: stepping on it moved the clock
+// -751 ms, and the next sample stepped it back +761 ms.
+var pendingOffsetMs atomic.Int64
+
+// needsStep reports whether offset warrants a clock step: always for the
+// first fix, else only when two consecutive samples agree within 200 ms.
+func needsStep(offset int64) bool {
+	if !clockSynced.Load() {
+		return true
+	}
+	if offset <= 500 && offset >= -500 {
+		pendingOffsetMs.Store(0)
+		return false
+	}
+	prev := pendingOffsetMs.Swap(offset)
+	if prev == 0 {
+		return false
+	}
+	d := offset - prev
+	return d <= 200 && d >= -200
+}
+
 // setSystemClock steps the wall clock to unixMs. We are root on the camera.
 func setSystemClock(unixMs int64) error {
-	tv := syscall.Timeval{
-		Sec:  int32(unixMs / 1000),
-		Usec: int32((unixMs % 1000) * 1000),
-	}
+	tv := syscall.NsecToTimeval(unixMs * int64(time.Millisecond))
 	return syscall.Settimeofday(&tv)
 }
 
@@ -55,9 +76,9 @@ func (c *Client) handleTimeSync(m Envelope) (bool, error) {
 		local := time.Now().UnixMilli()
 		offset := remote - local
 		currentTimeDeltaMs.Store(offset)
-		// Only step on the first fix or a meaningful correction: FlvPush derives
-		// tag timestamps from the clock, so a backwards step yields negative times.
-		if !clockSynced.Load() || offset > 500 || offset < -500 {
+		// Only step on the first fix or a confirmed meaningful correction.
+		if needsStep(offset) {
+			pendingOffsetMs.Store(0)
 			if err := setSystemClock(remote); err != nil {
 				log.Printf("timeSync: settimeofday(%d) failed: %v", remote, err)
 			} else {
@@ -65,6 +86,8 @@ func (c *Client) handleTimeSync(m Envelope) (bool, error) {
 				log.Printf("timeSync: controller=%d local=%d offset=%dms -> system clock set",
 					remote, local, offset)
 			}
+		} else if offset > 500 || offset < -500 {
+			log.Printf("timeSync: offset=%dms, waiting for a confirming sample", offset)
 		}
 	}
 

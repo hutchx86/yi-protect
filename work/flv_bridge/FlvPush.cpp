@@ -590,7 +590,7 @@ void flvPushEnqueueAudio(int channel, const output_frame &f) {
     ChannelState &c = g_ch[channel];
     pthread_mutex_lock(&c.audioQueue.mutex);
     c.audioQueue.frame_queue.push(f);
-    while (c.audioQueue.frame_queue.size() > MAX_QUEUE_SIZE) c.audioQueue.frame_queue.pop();
+    while (c.audioQueue.frame_queue.size() > MAX_AAC_QUEUE_SIZE) c.audioQueue.frame_queue.pop();
     pthread_mutex_unlock(&c.audioQueue.mutex);
 }
 
@@ -606,7 +606,7 @@ void flvPushEnqueueOpus(int channel, const output_frame &f) {
     ChannelState &c = g_ch[channel];
     pthread_mutex_lock(&c.opusQueue.mutex);
     c.opusQueue.frame_queue.push(f);
-    while (c.opusQueue.frame_queue.size() > MAX_QUEUE_SIZE) c.opusQueue.frame_queue.pop();
+    while (c.opusQueue.frame_queue.size() > MAX_OPUS_QUEUE_SIZE) c.opusQueue.frame_queue.pop();
     pthread_mutex_unlock(&c.opusQueue.mutex);
 }
 
@@ -919,14 +919,20 @@ static void *pushThreadMain(void *arg) {
             }
             pthread_mutex_unlock(&c.opusQueue.mutex);
             if (!gotOpus) break;
-            double nowE = nowSeconds() - connectionStart;
-            if (opusPtsIndex < 0) {
-                opusPtsIndex = (long)(nowE * 50.0);          // 20 ms grid
-            } else if ((double)opusPtsIndex / 50.0 < nowE - 0.25) {
-                opusPtsIndex = (long)(nowE * 50.0);          // dropped behind: re-anchor
+            double oTagElapsed;
+            if (ofr.time != 0) {
+                // Capture PTS from the transcoder's sample clock (20 ms steps).
+                oTagElapsed = captureElapsed(ofr.time);
+            } else {
+                double nowE = nowSeconds() - connectionStart;
+                if (opusPtsIndex < 0) {
+                    opusPtsIndex = (long)(nowE * 50.0);          // 20 ms grid
+                } else if ((double)opusPtsIndex / 50.0 < nowE - 0.25) {
+                    opusPtsIndex = (long)(nowE * 50.0);          // dropped behind: re-anchor
+                }
+                oTagElapsed = (double)opusPtsIndex / 50.0;
+                opusPtsIndex++;
             }
-            double oTagElapsed = (double)opusPtsIndex / 50.0;
-            opusPtsIndex++;
             uint32_t oTagMs = (uint32_t)(oTagElapsed * 1000.0);
             out.clear();
             writeFlvTag(out, 10, ofr.frame, oTagMs);

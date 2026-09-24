@@ -21,8 +21,12 @@ if [ -z "$YI_CLOUD" ]; then
     if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
 fi
 
+# Match argv[0] (ps COMMAND's first word) exactly or by basename. A substring
+# grep also matched any shell whose command line merely named the process
+# (e.g. `cat /tmp/unifi_flv_bridge.log`), so a dead process was never restarted.
 alive() {
-    ps | grep -v grep | grep -q "$1"
+    ps | awk -v n="$1" 'NR > 1 { c = $5; b = c; sub(/.*\//, "", b); m = n; sub(/.*\//, "", m)
+        if (c == n || b == m) f = 1 } END { exit !f }'
 }
 
 log() { echo "$(date +'%H:%M:%S') $*"; }

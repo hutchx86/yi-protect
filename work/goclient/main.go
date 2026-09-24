@@ -636,9 +636,12 @@ func featureFlags() map[string]interface{} {
 		// features.json ships false. Talkback needs AEC to be armed (the real
 		// streamer logs "Device have AEC, force to set withTalkback"), and a
 		// false here is what left the talkback button greyed out / unarmed.
-		"aecTalkbackSwitch":     true,
-		"videoSourceCount":      1,
-		"videoModeMaxFps":       []int{encoderFps, encoderFps, encoderFps},
+		"aecTalkbackSwitch": true,
+		"videoSourceCount":  1,
+		"videoModeMaxFps":   []int{encoderFps, encoderFps, encoderFps},
+		// 0 on a real G3 Instant; absent (null) makes the controller log "has no
+		// max scale down level, cannot calculate down-scale mode" on every connect.
+		"maxScaleDownLevel":     0,
 		"squareEventThumbnail":  true,
 		"luxCheck":              false,
 		"flash":                 false,

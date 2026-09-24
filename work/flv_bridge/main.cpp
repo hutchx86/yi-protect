@@ -60,11 +60,16 @@ int g_pcmInLen = 0;
 double g_rsPos = 0.0;                  // resampler position, in input samples
 short g_pcm48[1024];                   // resampled accumulator at 48 kHz
 int g_pcm48Len = 0;
+// Capture PTS (monotonic ms) of g_pcmIn[0], advanced by sample count so each
+// Opus packet gets a smooth 20 ms stamp on the same clock as video/AAC.
+double g_pcmInPts = 0.0;
+bool g_pcmInPtsValid = false;
+double g_pcm48Pts = 0.0;               // PTS of g_pcm48[0]
 
-void emitOpusPacket(const unsigned char *data, size_t len) {
+void emitOpusPacket(const unsigned char *data, size_t len, double ptsMs) {
     output_frame of;
     of.frame.assign(data, data + len);
-    of.time = 0;
+    of.time = (uint32_t)(int64_t)(ptsMs + 0.5);
     if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueueOpus(FLV_CH_HIGH, of);
     if (flvPushActive(FLV_CH_LOW)) flvPushEnqueueOpus(FLV_CH_LOW, of);
     if (flvPushActive(FLV_CH_MED)) flvPushEnqueueOpus(FLV_CH_MED, of);
@@ -81,10 +86,12 @@ void flushOpusFrames() {
         int idx = (int)g_rsPos;
         double f = g_rsPos - idx;
         double v = g_pcmIn[idx] * (1.0 - f) + g_pcmIn[idx + 1] * f;
+        if (g_pcm48Len == 0)
+            g_pcm48Pts = g_pcmInPts + g_rsPos * 1000.0 / g_aacRate;
         g_pcm48[g_pcm48Len++] = (short)(v >= 0.0 ? v + 0.5 : v - 0.5);
         if (g_pcm48Len >= g_opusFrameSamples) {
             int n = opus_encode(g_opusEnc, g_pcm48, g_opusFrameSamples, opusBuf, sizeof(opusBuf));
-            if (n > 0) emitOpusPacket(opusBuf, (size_t)n);
+            if (n > 0) emitOpusPacket(opusBuf, (size_t)n, g_pcm48Pts);
             g_pcm48Len = 0;
         }
         g_rsPos += step;
@@ -99,10 +106,11 @@ void flushOpusFrames() {
                 (size_t)(g_pcmInLen - consumed) * sizeof(short));
         g_pcmInLen -= consumed;
         g_rsPos -= consumed;
+        g_pcmInPts += consumed * 1000.0 / g_aacRate;
     }
 }
 
-void transcodeAacToOpus(std::vector<unsigned char> &adts) {
+void transcodeAacToOpus(std::vector<unsigned char> &adts, uint32_t ptsMs) {
     if (!g_aacDec) return;
     // The ring's audio is ADTS-framed. FAAD2 needs one NeAACDecInit() to read
     // the first header; it consumes that header, so the first frame's payload
@@ -152,6 +160,14 @@ void transcodeAacToOpus(std::vector<unsigned char> &adts) {
     // silence; FlvPush substitutes silent AAC on the type-8 track too.
     if (flvPushAudioMuted()) {
         memset(pcm, 0, sizeof(short) * (size_t)nsamp * (size_t)nch);
+    }
+    // This frame's first sample lands at g_pcmInLen. Keep the sample-count
+    // clock unless the frame's PTS disagrees by >100 ms (a dropout).
+    double expect = g_pcmInPts + g_pcmInLen * 1000.0 / g_aacRate;
+    int32_t off = (int32_t)(ptsMs - (uint32_t)(int64_t)expect);   // wrap-safe
+    if (!g_pcmInPtsValid || off > 100 || off < -100) {
+        g_pcmInPts = (double)ptsMs - g_pcmInLen * 1000.0 / g_aacRate;
+        g_pcmInPtsValid = true;
     }
     // info.samples counts all channels; a stereo block is interleaved, so take
     // the left channel (the ring's mic is mono in practice anyway).
@@ -252,7 +268,7 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
             if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueueAudio(FLV_CH_HIGH, of);
             if (flvPushActive(FLV_CH_LOW)) flvPushEnqueueAudio(FLV_CH_LOW, of);
             if (flvPushActive(FLV_CH_MED)) flvPushEnqueueAudio(FLV_CH_MED, of);
-            transcodeAacToOpus(of.frame);
+            transcodeAacToOpus(of.frame, of.time);
         }
     }
     return true;

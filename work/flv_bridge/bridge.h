@@ -36,7 +36,13 @@
 // 2026-09-23: overflow no longer drops single frames; flvPushEnqueue flushes
 // the backlog and resumes on the next keyframe (freeze, not smear), and logs
 // "queue overflow" with a running drop count.
-#define MAX_QUEUE_SIZE 20
+// 2026-09-24: 20 (1 s) overflowed on measured 1.5 s WiFi write stalls (81
+// frames flushed: live-view freezes, recording gaps). Capture-time stamps
+// make a drained backlog replay with correct timing, so size every queue by
+// time: 2 s each (video 40 @ 20 fps, AAC 32 x 64 ms, Opus 100 x 20 ms).
+#define MAX_QUEUE_SIZE 40
+#define MAX_AAC_QUEUE_SIZE 32
+#define MAX_OPUS_QUEUE_SIZE 100
 
 // Frame classification tags. The numeric values are historical (they were
 // chosen to coincide with the resolution heights) and are only used
