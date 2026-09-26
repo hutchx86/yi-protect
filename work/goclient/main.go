@@ -75,6 +75,9 @@ type Config struct {
 	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false pins
 	// tdf=0 because enable3dnr=1 (re-sent on connect) causes low-light ghosting.
 	Mediad3DNR bool
+	// WebUIPort is the firmware settings page's HTTP port (unifi.cfg
+	// WEBUI_PORT, default 80; 0 disables it). See webui.go.
+	WebUIPort int
 }
 
 // cfg.MAC/cfg.IP are last-resort fallbacks used only when detectNetworkIdentity
@@ -2140,6 +2143,14 @@ func main() {
 		cfg.IsMediad = isTruthy(v)
 		log.Printf("unifi.cfg: is_mediad %q -> %v", v, cfg.IsMediad)
 	}
+	cfg.WebUIPort = 80
+	if v := unifiCfg["WEBUI_PORT"]; v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p >= 0 && p < 65536 {
+			cfg.WebUIPort = p
+		} else {
+			log.Printf("unifi.cfg: bad WEBUI_PORT %q, using 80", v)
+		}
+	}
 	if v := unifiCfg["MEDIAD_3DNR"]; v != "" {
 		cfg.Mediad3DNR = isTruthy(v)
 		log.Printf("unifi.cfg: mediad_3dnr %q -> %v", v, cfg.Mediad3DNR)
@@ -2244,6 +2255,11 @@ func main() {
 	// runManageServer's doc comment.
 	manageAwaitFilePath = *manageAwaitFile
 	go runManageServer()
+
+	// The firmware's own settings page (webui.go).
+	if cfg.WebUIPort > 0 {
+		go runWebUI(fmt.Sprintf(":%d", cfg.WebUIPort))
+	}
 
 	// The updates companion connection: real ubnt_reportd negotiates
 	// subprotocol "logs1" (found via a live heap capture). Keep it.
