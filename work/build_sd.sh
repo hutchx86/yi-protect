@@ -180,32 +180,20 @@ for b in main_blank.bmp sub_blank.bmp; do
     [ -f "$ETC/$b" ] || echo "   WARN: $b missing (watermark not hidden)"
 done
 
-# 6b. Vendor per-model bring-up: stock/yi-hack lower_half_init.sh with /tmp/sd/
-#     yi-hack repathed to /tmp/sd/unifi, one per model row in model_table.
-echo "== 6b/7 vendoring per-model bring-up =="
-# Supported models come from model_table (one row = we own and can bring up that
-# hardware); each row needs a sysroot/<model>/lower_half_init.sh.
+# 6b. Per-model bring-up is generated on the camera at every boot from its own
+#     stock lower_half_init.sh (unifi/script/gen-lower-half.sh); no vendor boot
+#     script is shipped. Drop the per-model copies older builds left behind.
+echo "== 6b/7 per-model bring-up: generated on camera (nothing to vendor) =="
 MODEL_TABLE="$ETC/model_table"
 if [ ! -f "$MODEL_TABLE" ]; then
     echo "ERROR: $MODEL_TABLE missing (it defines the supported models)"; exit 1
 fi
-SUPPORTED_MODELS="${SUPPORTED_MODELS:-$(awk '!/^[[:space:]]*#/ && NF {print $1}' "$MODEL_TABLE")}"
-[ -n "$SUPPORTED_MODELS" ] || { echo "ERROR: no models in $MODEL_TABLE"; exit 1; }
-LHDIR="$UNIFI/script/lower_half"
-mkdir -p "$LHDIR"
-for m in $SUPPORTED_MODELS; do
-    f="$YH/sysroot/$m/lower_half_init.sh"
-    [ -f "$f" ] || { echo "   WARN: no bring-up script for $m (skipped)"; continue; }
-    sed -e 's#/tmp/sd/yi-hack/script/system.sh#/tmp/sd/unifi/script/init.sh#g' \
-        -e 's#/tmp/sd/yi-hack/script/wifidhcp.sh#/tmp/sd/unifi/script/wifidhcp.sh#g' \
-        -e 's#/tmp/sd/yi-hack/script/ethdhcp.sh#/tmp/sd/unifi/script/ethdhcp.sh#g' \
-        -e 's#/tmp/sd/yi-hack/lib/ipc_multiplex.so#/tmp/sd/unifi/lib/ipc_multiplex.so#g' \
-        -e 's#/tmp/sd/yi-hack/etc/system.conf#/tmp/sd/unifi/etc/unifi.cfg#g' \
-        -e 's#/tmp/sd/yi-hack/etc/watermark/blank.bmp#/tmp/sd/unifi/etc/main_blank.bmp#g' \
-        "$f" > "$LHDIR/$m.sh"
+LHDIR="${UNIFI:?}/script/lower_half"
+for m in default $(awk '!/^[[:space:]]*#/ && NF {print $1}' "$MODEL_TABLE"); do
+    rm -f "$LHDIR/$m.sh"
 done
-cp "$LHDIR/y623.sh" "$LHDIR/default.sh" 2>/dev/null || true
-echo "   lower_half models: $(ls "$LHDIR" | tr '\n' ' ')"
+rmdir "$LHDIR" 2>/dev/null || true
+[ -d "$LHDIR" ] && echo "   WARN: $LHDIR still holds files; it would ship in the tarball"
 
 # 6c. License texts + source offer for our AGPL code and the compiled
 #     GPL/LGPL third-party components.
@@ -213,7 +201,7 @@ cp "$ROOT/LICENSE" "$SD/LICENSE"
 cp "$ROOT/NOTICE"  "$SD/NOTICE"
 rm -rf "$SD/licenses"
 cp -R "$ROOT/licenses" "$SD/licenses"
-cat > "$SD/SOURCES.txt" <<'SOURCES_EOF'
+cat > "$SD/SOURCES.txt" <<SOURCES_EOF
 Sources for the binaries in this image
 ======================================
 
@@ -229,8 +217,8 @@ GPL/LGPL components:
 * FFmpeg (static in imggrabber)       https://ffmpeg.org/       (LGPL-2.1)
 * libjpeg-turbo (static in imggrabber)
   https://github.com/libjpeg-turbo/libjpeg-turbo                (BSD-3/IJG)
-* FAAD2 (static in unifi_flv_bridge, talkback_rx)
-  https://github.com/knik0/faad2                               (GPL-2.0-or-later)
+* FAAD2 ${FAAD2_VER} (static in unifi_flv_bridge, talkback_rx)
+  https://github.com/knik0/faad2/releases/tag/${FAAD2_VER}      (GPL-2.0-or-later)
 * libopus (static in unifi_flv_bridge, talkback_rx)
   https://opus-codec.org/                                       (BSD-2)
 * alsa-lib (libasound.so.2)           https://www.alsa-project.org/  (LGPL-2.1)

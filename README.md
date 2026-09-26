@@ -91,9 +91,14 @@ native product to these sensors.
 
 The camera keeps its stock vendor firmware and kernel; this project adds a
 self-contained stack on the SD card (`/tmp/sd/unifi/`). A patched
-`/backup/init.sh` sources our `lower_half_init.sh`, which hands off to
+`/backup/init.sh` sources our `lower_half_init.sh`. On every boot it builds the
+bring-up script from the camera's own stock `lower_half_init.sh`
+(`unifi/script/gen-lower-half.sh`): the stock hardware bring-up runs unchanged,
+and the vendor app launch is replaced by ours, which hands off to
 `unifi/script/init.sh`. That brings up our binaries and leaves the stock
-low-level daemons (sensor/ISP/encoder) in place.
+low-level daemons (sensor/ISP/encoder) in place. If the stock script is not in a
+shape the generator recognises, it runs unmodified (the camera boots without our
+app) and `/tmp/lower_half.log` says why.
 
 | Component | Language | Role |
 | --- | --- | --- |
@@ -211,10 +216,10 @@ Per-model **facts** live in `work/sd_root/unifi/etc/model_table` — one row per
 camera (sensor, fshare ring geometry, HIGH-channel resolution, PTZ, an optional
 pinned HIGH bitrate). The bridge,
 the client, the boot scripts, `detect-model.sh` and `build_sd.sh` all read that
-one table and never hardcode a model name, so adding a camera is a single row
-plus — only if its hardware bring-up actually differs — a
-`work/sd_root/unifi/script/lower_half/<model>.sh`. An unlisted model gets a
-conservative default and a warning rather than a silent guess.
+one table and never hardcode a model name, so adding a camera is a single row.
+Hardware bring-up needs no per-model file: it comes from each camera's own
+stock script at boot. An unlisted model gets a conservative default and a
+warning rather than a silent guess.
 
 ## Access (SSH)
 
@@ -290,6 +295,9 @@ attribution is in [`NOTICE`](NOTICE).
 
 - **Not affiliated with, or endorsed by, Ubiquiti Inc.** "UniFi" and "UniFi
   Protect" are trademarks of Ubiquiti Inc.
+- **Not affiliated with, or endorsed by, YI Technology or Kami Vision**, the
+  makers of YI cameras. "YI" and "Kami" are trademarks of their respective
+  owners.
 - **No Ubiquiti firmware or binaries are distributed here.** Vendor firmware,
   extracted root filesystems and stock scripts/watermark bitmaps are not in this
   repository; supply your own. This repo is our own source, scripts and

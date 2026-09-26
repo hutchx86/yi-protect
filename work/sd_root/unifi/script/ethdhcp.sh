@@ -1,8 +1,9 @@
 #!/bin/sh
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later AND MIT
 # Copyright (C) 2026 yi-protect contributors
 #
-# Vendored from yi-hack's ethdhcp.sh (GPLv3), repathed to /tmp/sd/unifi/etc.
+# Modified from yi-hack-Allwinner-v2 script/ethdhcp.sh (MIT; notice in
+# licenses/yi-hack-Allwinner-v2-MIT.txt), repathed to /tmp/sd/unifi/etc.
 # The stock firmware bind-mounts this over /home/app/script and /backup/tools.
 UNIFI_PREFIX=/tmp/sd/unifi
 CONF_FILE="etc/unifi.cfg"
