@@ -1,0 +1,17 @@
+diff --git a/src/snapshot/snapshot/imggrabber.c b/src/snapshot/snapshot/imggrabber.c
+index 1d2ad55..0436495 100644
+--- a/src/snapshot/snapshot/imggrabber.c
++++ b/src/snapshot/snapshot/imggrabber.c
+@@ -395,6 +395,12 @@ int frame_decode(unsigned char *outbuffer, unsigned char *p, int length, int h26
+     c = avcodec_alloc_context3(codec);
+     picture = av_frame_alloc();
+ 
++    /* Honour the SPS frame crop even when its left offset would break plane
++     * alignment. ffmpeg's default (aligned) cropping drops a left crop that is
++     * not a multiple of the plane alignment (e.g. 8px on a 1936->1920 stream),
++     * so the snapshot then shows the coded left margin (white columns). */
++    c->flags |= AV_CODEC_FLAG_UNALIGNED;
++
+ #if LIBAVCODEC_VERSION_MAJOR < 60
+     if((codec->capabilities) & AV_CODEC_CAP_TRUNCATED)
+         (c->flags) |= AV_CODEC_FLAG_TRUNCATED;
