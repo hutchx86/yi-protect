@@ -591,12 +591,11 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	add("saturation", "saturation", func(v float64) int { return scaleLinear(v, 0, 100) })
 	add("sharpness", "sharpness", func(v float64) int { return scaleLinear(v, 0, 10) })
 	add("denoise", "denoise", func(v float64) int { return scaleLinear(v, 0, 100) })
-	// 3DNR (tdf) is a module enable, not a 0-100 level; pinned OFF by default
-	// (MEDIAD_3DNR=no) to avoid mediad's low-light temporal-filter ghosting.
+	// 3DNR (tdf) is a module enable, not a 0-100 level. Only with
+	// MEDIAD_3DNR=yes does Protect's enable3dnr drive it; otherwise tdf is
+	// left to mediad (default on, mediad.conf / the settings page).
 	if cfg.Mediad3DNR {
 		add("enable3dnr", "tdf", func(v float64) int { return scaleLinear(v, 0, 100) })
-	} else {
-		out = append(out, mediadCtl{"tdf", 0})
 	}
 	// HDR is a PLTM module enable plus a strength: wdr 1 (Protect default) is
 	// stock pltm=1/wdr=0, 0 disables the module, 2/3 raise the strength.

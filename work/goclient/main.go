@@ -72,8 +72,9 @@ type Config struct {
 	// mediad is detected, picture settings go to its control socket (mediad_ctl.go).
 	IsMediad bool
 
-	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false pins
-	// tdf=0 because enable3dnr=1 (re-sent on connect) causes low-light ghosting.
+	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false
+	// leaves tdf to mediad's own default/config (Protect re-sends enable3dnr=1
+	// on every connect, which would otherwise override the settings page).
 	Mediad3DNR bool
 	// WebUIPort is the firmware settings page's HTTP port (unifi.cfg
 	// WEBUI_PORT, default 80; 0 disables it). See webui.go.

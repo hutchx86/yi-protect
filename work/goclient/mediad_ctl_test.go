@@ -19,16 +19,17 @@ func findCtl(t *testing.T, out []mediadCtl, key string) (int, bool) {
 // unchanged fields is the delta layer's job, so the mapper must not drop them.
 func TestIspControlMapEmitsMappedFields(t *testing.T) {
 	out := ispControlMap(ispSettingsDefaults())
-	for _, key := range []string{"brightness", "contrast", "hue", "saturation", "sharpness", "denoise", "tdf", "wdr", "mirror", "flip"} {
+	for _, key := range []string{"brightness", "contrast", "hue", "saturation", "sharpness", "denoise", "wdr", "mirror", "flip"} {
 		if _, ok := findCtl(t, out, key); !ok {
 			t.Errorf("key %s missing from default mapping: %+v", key, out)
 		}
 	}
 }
 
-// TestIspControlMap3DnrDefaultOff: 3DNR is pinned off because re-sending
-// enable3dnr re-enables mediad's temporal filter (low-light motion ghosting).
-func TestIspControlMap3DnrDefaultOff(t *testing.T) {
+// TestIspControlMap3DnrLeftToMediad: by default tdf is not sent at all, so
+// Protect's connect-time enable3dnr cannot override mediad's own default or
+// the settings page; MEDIAD_3DNR=yes forwards enable3dnr as tdf.
+func TestIspControlMap3DnrLeftToMediad(t *testing.T) {
 	saved := cfg.Mediad3DNR
 	defer func() { cfg.Mediad3DNR = saved }()
 
@@ -36,8 +37,8 @@ func TestIspControlMap3DnrDefaultOff(t *testing.T) {
 	on["enable3dnr"] = float64(1)
 
 	cfg.Mediad3DNR = false
-	if got, ok := findCtl(t, ispControlMap(on), "tdf"); !ok || got != 0 {
-		t.Fatalf("default must pin tdf=0 regardless of enable3dnr, got %d (ok=%v)", got, ok)
+	if got, ok := findCtl(t, ispControlMap(on), "tdf"); ok {
+		t.Fatalf("default must not send tdf, got %d", got)
 	}
 
 	cfg.Mediad3DNR = true

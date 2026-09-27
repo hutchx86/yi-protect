@@ -20,7 +20,7 @@ func TestWebuiRoutes(t *testing.T) {
 		{"GET", "/index.html", "", http.StatusOK},
 		{"POST", "/", "", http.StatusMethodNotAllowed},
 		{"POST", "/api/denoise", `{"key":"brightness","value":1}`, http.StatusBadRequest},
-		{"POST", "/api/denoise", `{"key":"venc3d","value":4}`, http.StatusBadRequest},
+		{"POST", "/api/denoise", `{"key":"venc3d","value":512}`, http.StatusBadRequest},
 		{"POST", "/api/denoise", `{"key":"tdf","value":-1}`, http.StatusBadRequest},
 		{"POST", "/api/denoise", `not json`, http.StatusBadRequest},
 		{"POST", "/api/denoise/unpin", `{"key":"gamma"}`, http.StatusBadRequest},

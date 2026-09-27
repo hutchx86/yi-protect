@@ -34,7 +34,7 @@ var webuiDenoise = []webuiControl{
 	{"nr2d", "Spatial denoise", "Smooths grain within each frame (ISP 2D noise reduction). Keeps motion sharp.", "toggle", 1},
 	{"cnr", "Chroma denoise", "Removes colour speckle (ISP chroma noise reduction).", "toggle", 1},
 	{"tdf", "Temporal denoise", "Averages across frames (ISP 3DNR). Strongest in low light, but can leave a ghost behind moving subjects.", "toggle", 1},
-	{"venc3d", "Encoder 3D filter", "The video encoder's own temporal filter, level 0 (off) to 3. The stock firmware uses 3.", "level", 3},
+	{"venc3d", "Encoder 3D filter", "The video encoder's own temporal filter strength, 0 (off) to 511. The stock firmware's levels 1-3 equal about 1-6, which is barely visible; higher values smooth more and smear motion more.", "range", 511},
 	{"denoise", "Denoise strength", "Threshold ramp for spatial and temporal denoise. 0 uses the camera tuning's own strength.", "range", 100},
 }
 
