@@ -122,7 +122,7 @@ fi
 echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv_bridge, downloader) =="
 ( cd "$ROOT/work/goclient"
   CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 CC="$CC" \
-      go build -ldflags="-s -w" -o "$BIN/unifi_avclient_go" . )
+      go build -trimpath -ldflags="-s -w" -o "$BIN/unifi_avclient_go" . )
 
 "$CC" -O2 -o "$BIN/cpld_ctl" "$ROOT/work/cpld_ctl/cpld_ctl.c"
 "$STRIP" "$BIN/cpld_ctl"
@@ -231,6 +231,23 @@ SOURCES_EOF
 
 # 7. Package the whole SD layout as one tarball; extract to the card root.
 echo "== 7/7 packaging =="
+# bin/ and lib/ are gitignored and never emptied, so anything left there by
+# hand (e.g. a vendor-linked mediad from an old deploy) would ship. Refuse.
+SHIP_BIN="cpld_ctl downloader dropbearmulti imggrabber ipc_cmd mixer_set mkpasswd set_tz_offset talkback_rx unifi_avclient_go unifi_flv_bridge"
+SHIP_LIB="ipc_multiplex.so libasound.so.2"
+stray=""
+for f in "$BIN"/* "$LIB"/*; do
+    [ -e "$f" ] || continue
+    case " $SHIP_BIN $SHIP_LIB " in
+        *" $(basename "$f") "*) ;;
+        *) stray="$stray $f" ;;
+    esac
+done
+if [ -n "$stray" ]; then
+    echo "ERROR: files this script does not build are in the SD layout; move them out:"
+    for f in $stray; do echo "   $f"; done
+    exit 1
+fi
 REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
 PKG="$ROOT/work/yi-protect-$REV.tar.gz"
 rm -f "$PKG"
