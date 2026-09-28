@@ -121,6 +121,38 @@ func TestMediadDeltaPendingFullApply(t *testing.T) {
 	}
 }
 
+// Both restarted and the controller's connect object beat the daemon up: the
+// values must survive as known (for the ready-transition reapply), and the
+// next object must be a plain delta, not another seed or pending full apply.
+func TestMediadDeltaStashWhileDaemonDown(t *testing.T) {
+	d := newMediadDelta(true)
+	d.reset(true) // connect
+	d.stash([]mediadCtl{{"nightvision", 2}, {"night_lux", 30}}, true)
+	got := d.known()
+	want := []mediadCtl{{"night_lux", 30}, {"nightvision", 2}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("known() after stash = %v, want %v", got, want)
+	}
+	if d.seed || d.pending {
+		t.Fatalf("complete stash must end seed/pending (seed=%v pending=%v)", d.seed, d.pending)
+	}
+	if out := d.filter([]mediadCtl{{"nightvision", 2}, {"night_lux", 25}}, true); len(out) != 1 || out[0].key != "night_lux" {
+		t.Fatalf("post-stash object should send only the change, got %+v", out)
+	}
+}
+
+// A partial object while down is kept but does not end the seed.
+func TestMediadDeltaStashPartialKeepsSeed(t *testing.T) {
+	d := newMediadDelta(true)
+	d.stash([]mediadCtl{{"brightness", 40}}, false)
+	if !d.seed {
+		t.Fatal("partial stash must not end the seed")
+	}
+	if got := d.known(); len(got) != 1 || got[0] != (mediadCtl{"brightness", 40}) {
+		t.Fatalf("known() = %v", got)
+	}
+}
+
 // Without a seed (e.g. after a daemon restart / ResetIspSettings) the first
 // sight of a value is applied, then deduped.
 func TestMediadDeltaUnseededAppliesThenDedupes(t *testing.T) {

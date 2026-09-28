@@ -186,7 +186,19 @@ func mediadWatch(lastPid int) {
 	for {
 		time.Sleep(5 * time.Second)
 		pid, _, ok := findMediadProcess()
-		if !ok || pid == lastPid {
+		if ok && pid == lastPid {
+			// Same daemon, but it may have been running without its socket
+			// yet at the last check; don't wait out the 30 s cache for that.
+			mediadMu.Lock()
+			ready := mediadReady
+			mediadMu.Unlock()
+			if !ready {
+				mediadInvalidate()
+				mediadEnabled()
+			}
+			continue
+		}
+		if !ok {
 			continue // keep lastPid while it is down so the restart is seen
 		}
 		prev := lastPid
@@ -341,6 +353,20 @@ func (d *mediadDelta) filter(controls []mediadCtl, complete bool) []mediadCtl {
 	return out
 }
 
+// stash records controls that could not be sent (daemon down or still starting)
+// as last-known, so mediadReapplyKnown pushes them when the daemon appears. A
+// complete object ends the seed and any pending full apply: the reapply covers
+// it, and the next object must be a normal delta. Caller holds mediadDeltaMu.
+func (d *mediadDelta) stash(controls []mediadCtl, complete bool) {
+	for _, c := range controls {
+		d.last[c.key] = c.value
+	}
+	if complete {
+		d.seed = false
+		d.pending = false
+	}
+}
+
 // reset re-arms the delta. reset(true) is the connect reset (seed the next
 // object); reset(false) forces a full apply on the next complete object.
 func (d *mediadDelta) reset(seed bool) {
@@ -383,7 +409,15 @@ func mediadDeltaReapply() {
 // mediadApplyControls forwards only the controls whose value changed since the
 // previous object of the same category; `complete` ends the seed.
 func mediadApplyControls(controls []mediadCtl, d *mediadDelta, complete bool) {
-	if len(controls) == 0 || !mediadEnabled() {
+	if len(controls) == 0 || !cfg.IsMediad {
+		return
+	}
+	if !mediadEnabled() {
+		// Not up yet (e.g. both restarted and the controller got here first):
+		// keep the values for the ready transition instead of dropping them.
+		mediadDeltaMu.Lock()
+		d.stash(mediadDropLocked(controls), complete)
+		mediadDeltaMu.Unlock()
 		return
 	}
 	// Drop controls the daemon has reported as config/webui-only before the
