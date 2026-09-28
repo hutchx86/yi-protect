@@ -88,7 +88,20 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
   Keshav Varma. MIT.
 
 * Dropbear SSH -- https://matt.ucc.asn.au/dropbear/dropbear.html
-  MIT-style license.
+  MIT-style license. Built from the upstream 2026.91 release with our patch
+  (work/dropbear/, AGPL-3.0-or-later) for a second password per account.
+
+* musl libc SHA-512 crypt -- https://musl.libc.org/
+  work/dropbear/yp_crypt_sha512.c is musl 1.2.5 src/crypt/crypt_sha512.c,
+  public domain, unchanged apart from its entry-point name; compiled into the
+  distributed `dropbearmulti`.
+
+* Mbed TLS -- https://github.com/Mbed-TLS/mbedtls
+  TLS for the static `downloader` (work/downloader). Version 2.28.8 is fetched
+  (checksum-verified) and built from upstream source at build time and linked
+  statically into that binary. Apache-2.0 OR GPL-2.0-or-later; we take it
+  under Apache-2.0. License text:
+  licenses/mbedtls-Apache-2.0-OR-GPL-2.0-or-later.txt.
 
 
 Disclaimer

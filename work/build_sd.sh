@@ -143,10 +143,10 @@ echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv
 "$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/work/mkpasswd/mkpasswd.c"
 "$STRIP" "$BIN/mkpasswd"
 
-# Static HTTPS downloader (prebuilt by work/downloader/build.sh): the camera has
-# no https client/CA store, so init.sh uses it with -k to fetch the H.264 libs.
-[ -x "$ROOT/work/downloader/downloader" ] || \
-    { echo "ERROR: work/downloader/downloader missing (run work/downloader/build.sh)"; exit 1; }
+# Static HTTPS downloader (downloader.c + mbedTLS, fetched and verified by its
+# build.sh): the camera has no https client/CA store, so init.sh uses it with
+# -k to fetch the H.264 libs (md5-checked afterwards).
+TCBIN="$TCBIN" sh "$ROOT/work/downloader/build.sh"
 cp "$ROOT/work/downloader/downloader" "$BIN/downloader"
 
 # mixer_set: maps the controller's mic volume onto the codec capture element
@@ -230,6 +230,8 @@ GPL/LGPL components:
   https://github.com/libjpeg-turbo/libjpeg-turbo                (BSD-3/IJG)
 * FAAD2 ${FAAD2_VER} (static in unifi_flv_bridge, talkback_rx)
   https://github.com/knik0/faad2/releases/tag/${FAAD2_VER}      (GPL-2.0-or-later)
+* Mbed TLS 2.28.8 (static in downloader)
+  https://github.com/Mbed-TLS/mbedtls/releases/tag/v2.28.8     (Apache-2.0)
 * libopus (static in unifi_flv_bridge, talkback_rx)
   https://opus-codec.org/                                       (BSD-2)
 * alsa-lib (libasound.so.2)           https://www.alsa-project.org/  (LGPL-2.1)

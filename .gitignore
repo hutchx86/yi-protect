@@ -104,6 +104,6 @@ known_hosts
 wg*.conf
 *.wg.conf
 
-# Static HTTPS downloader (binary + source): kept out of git until its source
-# and licence are settled; build_sd.sh still takes the local copy.
-work/downloader/
+# Static HTTPS downloader build outputs (work/downloader/build.sh).
+work/downloader/downloader
+work/downloader/build/
