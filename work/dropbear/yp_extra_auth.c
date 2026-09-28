@@ -34,9 +34,8 @@
 #define YP_EXTRA_HASH_FILE "/etc/ssh_protect"
 #endif
 
-/* 1 if password matches a YP_EXTRA_HASH_FILE entry for user. Calls libc
- * crypt() for non-$6$ entries, so run it before the caller's own crypt(),
- * whose static result buffer it would overwrite. */
+/* 1 if password matches user's YP_EXTRA_HASH_FILE entry. Uses libc crypt() for
+ * non-$6$, so call it before the caller's crypt() (shared static buffer). */
 static int yp_extra_password_ok(const char *user, const char *password) {
 	char line[512];
 	char out[128];

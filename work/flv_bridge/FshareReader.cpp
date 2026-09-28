@@ -161,9 +161,8 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             continue;
         }
 
-        // Walk the newly written region, up to kMaxBatch frames per pass. This
-        // only computes frame boundaries; payload bytes are copied later. A
-        // full batch is processed and the walk resumes next pass (no loss).
+        // Find frame boundaries in the new region, up to kMaxBatch per pass;
+        // payloads are copied later and a full batch resumes next pass (no loss).
         enum { kMaxBatch = 64 };
         struct Pending {
             FrameHeader h;
@@ -199,9 +198,8 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             continue;
         }
 
-        // The final frame is retained for the next pass: the writer may not
-        // have finished depositing it yet, so treating it as authoritative
-        // risks emitting a truncated payload.
+        // Hold the last frame for the next pass: the writer may still be
+        // depositing it, and emitting it now could truncate the payload.
         if (count > 1) {
             endPrev = frames[count - 1].addr;
             count--;
@@ -227,9 +225,8 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             }
             if (frameType == TYPE_NONE) continue;
 
-            // SPS frames carry a 6-byte prefix ahead of the NAL in this
-            // vendor framing; every other frame's payload starts right after
-            // the header.
+            // Vendor framing: SPS frames carry a 6-byte prefix before the NAL;
+            // other payloads start right after the header.
             if (h.type & 0x0002) {
                 payload = movePtr(payload, headerSize_ + 6);
                 plen -= 6;

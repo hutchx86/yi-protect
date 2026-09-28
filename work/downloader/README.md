@@ -30,7 +30,7 @@ acceptable. To verify instead, put a CA bundle on the SD card and pass
 `work/build_sd.sh` runs `build.sh` with its toolchain. Standalone:
 
 ```
-TCBIN=/path/to/toolchain-sunxi-musl/toolchain/bin sh build.sh
+TCBIN=/path/to/toolchain-sunxi-musl/gcc/linux-x86/arm/toolchain-sunxi-musl/toolchain/bin sh build.sh
 ```
 
 `build.sh` fetches Mbed TLS 2.28.8 from upstream, checks its sha256, builds its
@@ -47,6 +47,17 @@ reset, chunked and Range-capable endpoints for regression tests:
 python3 test/serve.py 18080 http
 python3 test/serve.py 18443 https cert.pem key.pem
 ```
+
+Routes (200000-byte body, byte i = `(i*7+3)&0xff`):
+
+| Route | Response |
+| --- | --- |
+| `/full` | 200, Content-Length 200000, full body |
+| `/trunc` | 200, Content-Length 200000, 90000 bytes then FIN |
+| `/truncrst` | 200, Content-Length 200000, 90000 bytes then RST |
+| `/chunk` | 200, chunked, full body |
+| `/range` | 200 full body, or 206 partial with a Range header |
+| `/small` | 200, Content-Length 1234 |
 
 Expected: full and chunked fetches byte-match; truncated or reset responses
 exit non-zero; a second run on a truncated file resumes to the full size.

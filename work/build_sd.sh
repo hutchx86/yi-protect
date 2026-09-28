@@ -61,9 +61,8 @@ sed -i \
     "$YHB/src/ipc_cmd/ipc_cmd/ptz.c"
 sed -i 's|/tmp/sd/yi-hack|/tmp/sd/unifi|g' "$YHB/src/dropbear/localoptions.h"
 
-# dropbear: a second password per account (the controller's device credential,
-# SHA-512 crypt; work/dropbear/yp_extra_auth.c). Patched in right after
-# init.dropbear unpacks the release tarball.
+# dropbear: second per-account password (controller device credential, SHA-512
+# crypt; work/dropbear/yp_extra_auth.c), patched in after the tarball unpacks.
 mkdir -p "$YHB/src/dropbear/yp"
 cp "$ROOT"/work/dropbear/yp_crypt_sha512.c "$ROOT"/work/dropbear/yp_extra_auth.c \
    "$ROOT"/work/dropbear/svr-authpasswd.patch "$YHB/src/dropbear/yp/"
@@ -143,9 +142,8 @@ echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv
 "$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/work/mkpasswd/mkpasswd.c"
 "$STRIP" "$BIN/mkpasswd"
 
-# Static HTTPS downloader (downloader.c + mbedTLS, fetched and verified by its
-# build.sh): the camera has no https client/CA store, so init.sh uses it with
-# -k to fetch the H.264 libs (md5-checked afterwards).
+# Static HTTPS downloader (downloader.c + mbedTLS): the camera has no https
+# client/CA store, so init.sh uses it with -k to fetch the md5-checked H.264 libs.
 TCBIN="$TCBIN" sh "$ROOT/work/downloader/build.sh"
 cp "$ROOT/work/downloader/downloader" "$BIN/downloader"
 
@@ -191,9 +189,8 @@ for b in main_blank.bmp sub_blank.bmp; do
     [ -f "$ETC/$b" ] || echo "   WARN: $b missing (watermark not hidden)"
 done
 
-# 6b. Per-model bring-up is generated on the camera at every boot from its own
-#     stock lower_half_init.sh (unifi/script/gen-lower-half.sh); no vendor boot
-#     script is shipped. Drop the per-model copies older builds left behind.
+# 6b. Per-model bring-up is generated on camera at boot from its stock
+#     lower_half_init.sh (gen-lower-half.sh); drop stale per-model copies.
 echo "== 6b/7 per-model bring-up: generated on camera (nothing to vendor) =="
 MODEL_TABLE="$ETC/model_table"
 if [ ! -f "$MODEL_TABLE" ]; then
@@ -217,24 +214,35 @@ Sources for the binaries in this image
 ======================================
 
 This SD image contains this project's own code (AGPL-3.0-or-later) and
-redistributes compiled third-party components. License texts are in LICENSE and
-NOTICE. The project's own source is at
-https://github.com/hutchx86/yi-protect . Corresponding source for the bundled
-GPL/LGPL components:
+redistributes compiled third-party components. License texts are in LICENSE,
+NOTICE and licenses/. The project's own source is at
+https://github.com/hutchx86/yi-protect . Components shipped in this image:
 
-* yi-hack-Allwinner-v2 (ipc_cmd/libipc, ipc_multiplex.so, imggrabber,
-  set_tz_offset, dropbearmulti, patched alsa-lib)
-  https://github.com/roleoroleo/yi-hack-Allwinner-v2            (GPL-3.0 / MIT)
-* FFmpeg (static in imggrabber)       https://ffmpeg.org/       (LGPL-2.1)
-* libjpeg-turbo (static in imggrabber)
-  https://github.com/libjpeg-turbo/libjpeg-turbo                (BSD-3/IJG)
+* yi-hack-Allwinner-v2 (pinned submodule commit; ipc_cmd, ipc_multiplex.so,
+  imggrabber, set_tz_offset, dropbearmulti, patched alsa-lib)
+  https://github.com/roleoroleo/yi-hack-Allwinner-v2          (MIT / GPL-3.0)
+* libipc (ipc_cmd, ipc_multiplex.so)
+  https://github.com/TheCrypt0/libipc                         (GPL-3.0)
+* FFmpeg 8.1.1 (static in imggrabber)
+  https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.bz2            (LGPL-2.1)
+* libjpeg-turbo 3.1.4.1 (static in imggrabber)
+  https://github.com/libjpeg-turbo/libjpeg-turbo              (BSD-3-Clause / IJG)
 * FAAD2 ${FAAD2_VER} (static in unifi_flv_bridge, talkback_rx)
-  https://github.com/knik0/faad2/releases/tag/${FAAD2_VER}      (GPL-2.0-or-later)
+  https://github.com/knik0/faad2/releases/tag/${FAAD2_VER}    (GPL-2.0-or-later)
+* libopus ${OPUS_VER} (static in unifi_flv_bridge, talkback_rx)
+  https://downloads.xiph.org/releases/opus/opus-${OPUS_VER}.tar.gz (BSD-3-Clause)
+* alsa-lib 1.1.4.1 + yi-hack audio-FIFO patch (libasound.so.2)
+  https://www.alsa-project.org/files/pub/lib/alsa-lib-1.1.4.1.tar.bz2 (LGPL-2.1)
+* Dropbear 2026.91 + work/dropbear patch (dropbearmulti)
+  https://github.com/mkj/dropbear/releases/tag/DROPBEAR_2026.91 (MIT; patch AGPL-3.0-or-later)
+* musl libc (static in downloader; SHA-512 crypt in dropbearmulti)
+  https://musl.libc.org/                                      (MIT)
 * Mbed TLS 2.28.8 (static in downloader)
-  https://github.com/Mbed-TLS/mbedtls/releases/tag/v2.28.8     (Apache-2.0)
-* libopus (static in unifi_flv_bridge, talkback_rx)
-  https://opus-codec.org/                                       (BSD-2)
-* alsa-lib (libasound.so.2)           https://www.alsa-project.org/  (LGPL-2.1)
+  https://github.com/Mbed-TLS/mbedtls/releases/tag/v2.28.8    (Apache-2.0)
+* gorilla/websocket v1.5.3 (in unifi_avclient_go)
+  https://github.com/gorilla/websocket                        (BSD-2-Clause)
+* Go runtime/standard library (in unifi_avclient_go; go.mod go 1.23.4,
+  release CI builds with Go 1.23.x)  https://go.dev/            (BSD-3-Clause)
 
 Written offer: the yi-protect maintainers (https://github.com/hutchx86/yi-protect)
 will provide the complete corresponding source for any GPL/LGPL component in

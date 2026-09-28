@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later AND MIT
 # Copyright (C) 2026 yi-protect contributors
 #
 # One-time install: patch /backup/init.sh to source /tmp/sd/lower_half_init.sh,

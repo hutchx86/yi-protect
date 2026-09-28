@@ -44,9 +44,8 @@ if [ ! -f "$MB/library/libmbedcrypto.a" ]; then
         CFLAGS='-Os -ffunction-sections -fdata-sections' lib >/dev/null
 fi
 
-# 3. The downloader. -lc -lgcc_eh last: this toolchain's static libc.a
-#    objects reference __aeabi_unwind_cpp_pr0, which only libgcc_eh.a has, and
-#    gcc does not add libgcc_eh.a to a plain C link by itself.
+# 3. The downloader. -lc -lgcc_eh last: static libc.a needs __aeabi_unwind_cpp_pr0,
+#    which only libgcc_eh.a provides and gcc does not add to a plain C link.
 "$CC" -Os -static -ffunction-sections -fdata-sections \
     -I "$MB/include" \
     -o "$HERE/downloader" "$HERE/downloader.c" \

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// Native POSIX-mqueue reader for rmm's motion broadcast, replacing an earlier
-// `ipc_read -n N` subprocess that went deaf and leaked orphan receivers.
+// Native POSIX-mqueue reader for rmm's motion broadcast (no ipc_read
+// subprocess, which could go deaf and leak orphan receivers).
 package main
 
 /*

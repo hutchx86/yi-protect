@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// webui.go - the firmware's own settings page (plain HTTP, default :80).
-//
-// The page talks to mediad over its control socket. A value saved here is
-// PINNED (socket `pin`): mediad applies it, persists it to mediad.conf and
-// ignores Protect's connect-time re-asserts for that key. "Let Protect
-// control" sends `unpin`, which drops the key from mediad.conf and hands it
-// back to Protect.
+// webui.go: the firmware settings page (plain HTTP, default :80), via mediad's socket.
+// Saving pins a key (persisted in mediad.conf, immune to Protect's re-asserts);
+// "Let Protect control" unpins it.
 
 package main
 

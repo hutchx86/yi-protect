@@ -1,21 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
-"""Local test server for the downloader regression tests.
-
-Routes (deterministic 200000-byte body, pattern byte i = (i*7+3)&0xff):
-
-  GET /full     -> 200, Content-Length: 200000, full body
-  GET /trunc    -> 200, Content-Length: 200000, only 90000 bytes then FIN
-  GET /truncrst -> 200, Content-Length: 200000, only 90000 bytes then RST
-  GET /chunk    -> 200, Transfer-Encoding: chunked, full body
-  GET /range    -> 200 full body, or 206 partial when a Range header is sent
-  GET /small    -> 200, Content-Length: 1234
-
-Usage:
-  serve.py <port> http
-  serve.py <port> https <certfile> <keyfile>
-"""
+"""Local test server for the downloader regression tests (routes: README.md)."""
 import os
 import socket
 import socketserver

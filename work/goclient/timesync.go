@@ -19,10 +19,8 @@ var currentTimeDeltaMs atomic.Int64
 // clockSynced records whether we have applied at least one correction.
 var clockSynced atomic.Bool
 
-// pendingOffsetMs holds an out-of-tolerance offset awaiting confirmation by
-// the next sample (0 = none). Messages are handled inline, so a timeSync
-// queued behind a slow handler reads stale: stepping on it moved the clock
-// -751 ms, and the next sample stepped it back +761 ms.
+// pendingOffsetMs: an out-of-tolerance offset awaiting confirmation (0 = none);
+// a timeSync queued behind a slow handler is stale and must not step alone.
 var pendingOffsetMs atomic.Int64
 
 // needsStep reports whether offset warrants a clock step: always for the

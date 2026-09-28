@@ -26,9 +26,8 @@ func TestIspControlMapEmitsMappedFields(t *testing.T) {
 	}
 }
 
-// TestIspControlMap3DnrLeftToMediad: by default tdf is not sent at all, so
-// Protect's connect-time enable3dnr cannot override mediad's own default or
-// the settings page; MEDIAD_3DNR=yes forwards enable3dnr as tdf.
+// By default tdf is never sent, so connect-time enable3dnr can't override
+// mediad; MEDIAD_3DNR=yes forwards enable3dnr as tdf.
 func TestIspControlMap3DnrLeftToMediad(t *testing.T) {
 	saved := cfg.Mediad3DNR
 	defer func() { cfg.Mediad3DNR = saved }()
@@ -121,9 +120,8 @@ func TestMediadDeltaPendingFullApply(t *testing.T) {
 	}
 }
 
-// Both restarted and the controller's connect object beat the daemon up: the
-// values must survive as known (for the ready-transition reapply), and the
-// next object must be a plain delta, not another seed or pending full apply.
+// Connect object arrives before the daemon is up: values stay known for the
+// reapply, and the next object is a plain delta.
 func TestMediadDeltaStashWhileDaemonDown(t *testing.T) {
 	d := newMediadDelta(true)
 	d.reset(true) // connect

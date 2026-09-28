@@ -165,9 +165,8 @@ for kt in ecdsa ed25519; do
     [ -f "$DBDIR/dropbear_${kt}_host_key" ] && DBKEYS="$DBKEYS -r $DBDIR/dropbear_${kt}_host_key"
 done
 
-# Login accounts (root + the controller's user, uid 0): see ssh-accounts.sh.
-# No -B: the stock image ships a blank root password, and an empty
-# SSH_PASSWORD now means "locked", never "open".
+# Accounts: ssh-accounts.sh. No -B: stock root has a blank password, and an
+# empty SSH_PASSWORD means "locked", never "open".
 UNIFI_PREFIX="$UNIFI_PREFIX" sh "$UNIFI_PREFIX/script/ssh-accounts.sh"
 dropbearmulti dropbear -R $DBKEYS -p 0.0.0.0:22
 
@@ -199,78 +198,78 @@ start_yi_cloud() {
     [ -f ./oss_lapse ] && ./oss_lapse >/dev/null 2>&1 &
 }
 
-# Fetch the vendor H.264 codec libs (libvenc_codec.so, libVE.so) from the pinned
-# lindenis SDK on first boot; the camera has no https client/CA store, so use -k.
-UNIFI_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
-[ -n "$UNIFI_DIR" ] && [ -d "$UNIFI_DIR/script" ] || UNIFI_DIR="$UNIFI_PREFIX"
-FETCH_BIN="$UNIFI_DIR/bin/downloader"
-LIBFETCH_LOG=/tmp/libfetch.log
-SDK_URL="https://raw.githubusercontent.com/lindenis-org/lindenis-v833-softwinner/834a5afe83ec037a38ed0dbed522ff65439eabdf/eyesee-mpp/middleware/sun8iw19p1/media/LIBRARY/libcedarc/library"
+# The vendor H.264 libs (libvenc_codec.so, libVE.so) are needed only by a
+# vendor-linked mediad build; the default build links its own encoder.
+if grep -q 'libvenc_codec.so' "$UNIFI_PREFIX/bin/mediad" 2>/dev/null; then
+    # From the pinned lindenis SDK; no CA store on the camera, so -k (md5-checked).
+    UNIFI_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+    [ -n "$UNIFI_DIR" ] && [ -d "$UNIFI_DIR/script" ] || UNIFI_DIR="$UNIFI_PREFIX"
+    FETCH_BIN="$UNIFI_DIR/bin/downloader"
+    LIBFETCH_LOG=/tmp/libfetch.log
+    SDK_URL="https://raw.githubusercontent.com/lindenis-org/lindenis-v833-softwinner/834a5afe83ec037a38ed0dbed522ff65439eabdf/eyesee-mpp/middleware/sun8iw19p1/media/LIBRARY/libcedarc/library"
 
-# Poll up to ~45s for network/DNS before fetching (cold-boot DHCP/DNS is often
-# late): ping proves DNS+ICMP, a tiny probe download proves downloader/TLS.
-PROBE_URL="$SDK_URL/tina.mk"
-net_ready() {
-    ping -c 1 -W 2 github.com >/dev/null 2>&1 && return 0
-    [ -x "$FETCH_BIN" ] || return 1
-    "$FETCH_BIN" -k "$PROBE_URL" /tmp/.netprobe >/dev/null 2>&1 \
-        && { rm -f /tmp/.netprobe; return 0; }
-    return 1
-}
-i=0
-while [ "$i" -lt 15 ]; do
-    if net_ready; then
-        echo "libfetch: network/DNS ready after $((i*3))s" >> "$LIBFETCH_LOG"
-        break
-    fi
-    i=$((i+1))
-    echo "libfetch: waiting for network/DNS (${i}/15)" >> "$LIBFETCH_LOG"
-    sleep 3
-done
-[ "$i" -ge 15 ] && echo "libfetch: network/DNS not ready after 45s; proceeding anyway" >> "$LIBFETCH_LOG"
-
-# ensure_lib: skip if md5 matches, else download to .tmp and verify. WiFi resets
-# mid-body, so the downloader resumes .tmp via Range; keep it across the 12 tries.
-ensure_lib() {
-    dst="$UNIFI_DIR/lib/$1"
-    [ "$(md5sum "$dst" 2>/dev/null | awk '{print $1}')" = "$2" ] && return 0
-    if [ ! -x "$FETCH_BIN" ]; then
-        echo "libfetch: $FETCH_BIN missing; cannot fetch $1" >> "$LIBFETCH_LOG"
+    # Poll up to ~45s for network/DNS before fetching (cold-boot DHCP/DNS is often
+    # late): ping proves DNS+ICMP, a tiny probe download proves downloader/TLS.
+    PROBE_URL="$SDK_URL/tina.mk"
+    net_ready() {
+        ping -c 1 -W 2 github.com >/dev/null 2>&1 && return 0
+        [ -x "$FETCH_BIN" ] || return 1
+        "$FETCH_BIN" -k "$PROBE_URL" /tmp/.netprobe >/dev/null 2>&1 \
+            && { rm -f /tmp/.netprobe; return 0; }
         return 1
-    fi
-    tmp="$dst.tmp"
-    rm -f "$tmp"
-    n=0
-    while [ "$n" -lt 12 ]; do
-        n=$((n+1))
-        if "$FETCH_BIN" -k "$SDK_URL/$1" "$tmp" >> "$LIBFETCH_LOG" 2>&1 \
-           && [ "$(md5sum "$tmp" 2>/dev/null | awk '{print $1}')" = "$2" ]; then
-            mv -f "$tmp" "$dst"
-            echo "libfetch: $1 fetched (md5 ok)" >> "$LIBFETCH_LOG"
-            return 0
+    }
+    i=0
+    while [ "$i" -lt 15 ]; do
+        if net_ready; then
+            echo "libfetch: network/DNS ready after $((i*3))s" >> "$LIBFETCH_LOG"
+            break
         fi
-        echo "libfetch: $1 fetch/verify failed (attempt $n)" >> "$LIBFETCH_LOG"
-        sleep 2
+        i=$((i+1))
+        echo "libfetch: waiting for network/DNS (${i}/15)" >> "$LIBFETCH_LOG"
+        sleep 3
     done
-    rm -f "$tmp"
-    return 1
-}
+    [ "$i" -ge 15 ] && echo "libfetch: network/DNS not ready after 45s; proceeding anyway" >> "$LIBFETCH_LOG"
 
-ensure_lib libvenc_codec.so 8888f9a820021484e1cea01efd8142e6
-ensure_lib libVE.so          096259a6c6178dee25e9dda61b01b715
-for l in libvenc_codec.so libVE.so; do
-    [ -f "$UNIFI_DIR/lib/$l" ] || echo "libfetch: WARNING: $l still missing; mediad will fail to load the H.264 encoder" >> "$LIBFETCH_LOG"
-done
+    # ensure_lib: skip if md5 matches, else download to .tmp and verify. WiFi resets
+    # mid-body, so the downloader resumes .tmp via Range; keep it across the 12 tries.
+    ensure_lib() {
+        dst="$UNIFI_DIR/lib/$1"
+        [ "$(md5sum "$dst" 2>/dev/null | awk '{print $1}')" = "$2" ] && return 0
+        if [ ! -x "$FETCH_BIN" ]; then
+            echo "libfetch: $FETCH_BIN missing; cannot fetch $1" >> "$LIBFETCH_LOG"
+            return 1
+        fi
+        tmp="$dst.tmp"
+        rm -f "$tmp"
+        n=0
+        while [ "$n" -lt 12 ]; do
+            n=$((n+1))
+            if "$FETCH_BIN" -k "$SDK_URL/$1" "$tmp" >> "$LIBFETCH_LOG" 2>&1 \
+               && [ "$(md5sum "$tmp" 2>/dev/null | awk '{print $1}')" = "$2" ]; then
+                mv -f "$tmp" "$dst"
+                echo "libfetch: $1 fetched (md5 ok)" >> "$LIBFETCH_LOG"
+                return 0
+            fi
+            echo "libfetch: $1 fetch/verify failed (attempt $n)" >> "$LIBFETCH_LOG"
+            sleep 2
+        done
+        rm -f "$tmp"
+        return 1
+    }
+
+    ensure_lib libvenc_codec.so 8888f9a820021484e1cea01efd8142e6
+    ensure_lib libVE.so          096259a6c6178dee25e9dda61b01b715
+    for l in libvenc_codec.so libVE.so; do
+        [ -f "$UNIFI_DIR/lib/$l" ] || echo "libfetch: WARNING: $l still missing; mediad will fail to load the H.264 encoder" >> "$LIBFETCH_LOG"
+    done
+fi
 
 # Media daemon: mediad (sister project's rmm replacement) if installed, else
 # stock rmm; both publish /dev/shm/fshare_frame_buf. Never run both at once.
 IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
 if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
-    # CABAC is the code default (cabac_init_idc=1, matching the hardware's
-    # context model) since freewinner-git 0aadd22 -- verified live on y623,
-    # do NOT pin cabac=0 here (an earlier version of this comment did, based
-    # on stale docs written before that fix landed). overlay=1: opts in to the
-    # burned-in OSD overlay path (live-verified 2026-09-22).
+    # CABAC is the encoder default (cabac_init_idc=1); do not pin cabac=0.
+    # overlay=1 enables the burned-in OSD overlay path.
     export FREECODEC_EXTRA="overlay=1"
     echo "init: starting mediad (FREECODEC_EXTRA=$FREECODEC_EXTRA)"
     "$UNIFI_PREFIX/script/mediad.sh" start

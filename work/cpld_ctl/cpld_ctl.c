@@ -3,15 +3,9 @@
  * Copyright (C) 2026 yi-protect contributors
  */
 
-/*
- * cpld_ctl -- control the IR-cut filter and IR LED array via /dev/cpld_periph,
- * bypassing rmm's automatic day/night logic. A second open() while rmm holds
- * the device open succeeds, so no coordination is needed.
- *
- * Commands:
- *   cpld_ctl ircut out      -- filter out (night/IR-passing)
- *   cpld_ctl ircut in       -- filter in (day)
- *   cpld_ctl led <0-100>    -- IR LED level (only 0 and 100 are verified)
+/* cpld_ctl: IR-cut filter and IR LEDs via /dev/cpld_periph, bypassing rmm's
+ * day/night logic (a second open() alongside rmm is fine).
+ * Usage: cpld_ctl ircut out|in   cpld_ctl led <0-100> (only 0 and 100 tested)
  */
 #include <fcntl.h>
 #include <stdio.h>

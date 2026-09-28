@@ -45,9 +45,8 @@ fi
 sed -i 's|^root:[^:]*:|root:x:|' /etc/passwd
 set_shadow root "$HASH"
 
-# Drop accounts from an earlier run (the tmpfs /etc only resets at boot): every
-# line of exactly the shape written below, root excepted, plus the old
-# init.sh's uid-1000 ubnt.
+# Drop accounts from an earlier run (tmpfs /etc resets only at boot): lines of
+# exactly the shape written below (root excepted), plus any ubnt account.
 for u in $(sed -n 's|^\([a-z_][a-z0-9_-]*\):x:0:0:\1:/root:/bin/ash$|\1|p' /etc/passwd); do
     [ "$u" = root ] || sed -i "/^$u:/d" /etc/passwd /etc/shadow
 done

@@ -3,14 +3,8 @@
 
 package main
 
-// UpdateUsernamePassword: the controller's device SSH credential. Protect
-// sends {username, hashedPassword}, a SHA-512 crypt ("$6$" + 16-char salt) of
-// the NVR-wide device password, on adoption and again on every connect (fresh
-// salt each time). Off by default (unifi.cfg PROTECT_SSH): the push is only
-// acked. When on, we store "user:hash" in etc/ssh_protect and re-run
-// ssh-accounts.sh, which creates the account (uid 0, like a real UniFi camera)
-// and copies the line to /etc/ssh_protect, where our patched dropbear accepts
-// it as a second password for that user (work/dropbear/yp_extra_auth.c).
+// UpdateUsernamePassword {username, hashedPassword: $6$ crypt}, sent on every connect.
+// With PROTECT_SSH, "user:hash" -> etc/ssh_protect for ssh-accounts.sh (README: Access).
 
 import (
 	"fmt"

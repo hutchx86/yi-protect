@@ -1,10 +1,7 @@
 name: release
 
-# Builds the SD-card package from source and attaches it to a GitHub release.
-#
-# Manual only — pushing a tag does NOT start a build. Run it from the Actions
-# tab, or:
-#   gh workflow run release.yml -f tag=v0.1.0
+# Builds the SD package from source and attaches it to a GitHub release. Manual
+# only (tags do not trigger it): Actions tab or `gh workflow run release.yml -f tag=v0.1.0`.
 
 on:
   workflow_dispatch:

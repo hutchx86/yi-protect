@@ -1,11 +1,6 @@
 /* SPDX-License-Identifier: LicenseRef-Public-Domain
- *
- * yi-protect: musl 1.2.5 src/crypt/crypt_sha512.c (public domain), unchanged
- * except that the entry point is renamed from __crypt_sha512 to a static
- * yp_crypt_sha512. The camera's libc crypt() has no SHA-512 ($6$) support, so
- * dropbear carries this copy to verify the controller's device credential
- * (see yp_extra_auth.c). #included into svr-authpasswd.c by
- * svr-authpasswd.patch; not compiled on its own.
+ * musl 1.2.5 src/crypt/crypt_sha512.c, entry point renamed to static yp_crypt_sha512
+ * (camera crypt() lacks $6$). #included by svr-authpasswd.patch, not built alone.
  */
 /*
  * public domain sha512 crypt implementation

@@ -27,11 +27,8 @@ public:
         int headerSize = 0;   // 0 => autodetect
     };
 
-    // Called once per fully parsed frame. `payload` is the frame's bytes with
-    // the frame header (and, for SPS frames, the extra 6-byte prefix the
-    // vendor framing uses) already skipped, linearized out of the ring and
-    // moved in so the consumer can take ownership without a second copy.
-    // Return false to stop the reader.
+    // Per parsed frame: payload is linearized, header (and SPS 6-byte prefix)
+    // stripped, and moved in for zero-copy ownership. Return false to stop.
     typedef bool (*EmitFn)(void *ctx, int frameType,
                            std::vector<unsigned char> &&payload,
                            uint32_t time, uint16_t streamCounter);

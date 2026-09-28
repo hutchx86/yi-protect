@@ -7,12 +7,8 @@ CXX ?= g++
 CXXFLAGS ?= -O2 -Wall -std=gnu++14
 LDLIBS ?= -lpthread
 
-# FAAD2 AAC decoder + libopus encoder, used by main.cpp's AAC->Opus transcode
-# for the FLV type-10 audio track. Paths are supplied by work/build_sd.sh:
-# FAAD2=<faad2 build dir with include/ + libfaad.a>, OPUS=<libopus source dir>.
-# Left empty for a host build (main.cpp resolves the symbols at link time, so a
-# real build needs both; the host `test` target links neither, and it only
-# exercises reader code).
+# FAAD2 (build dir: include/ + libfaad.a) and OPUS (source dir) for the AAC->Opus
+# transcode, set by build_sd.sh; the host `test` target needs neither.
 FAAD2 ?=
 OPUS  ?=
 EXTRA_INC = $(if $(FAAD2),-I$(FAAD2)/include) $(if $(OPUS),-I$(OPUS)/include)

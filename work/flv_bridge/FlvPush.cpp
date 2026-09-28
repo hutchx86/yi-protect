@@ -49,21 +49,15 @@ static double epochMillis() {
 
 namespace {
 
-// Per-channel onMetaData fields. videoWidth/Height/Fps must match the real
-// encoder output (these are real frames, not transcoded); channelId/streamId/
-// videoBandwidth match the Go client's handleVideoSettings() declarations so
-// both sides stay consistent.
+// onMetaData fields: width/height/fps match the real encoder output;
+// channelId/streamId/videoBandwidth match the Go client's handleVideoSettings().
 struct ChannelState {
     output_queue flvQueue;
-    // Per-channel AAC queue (one shared mic feeds every active channel).
-    // cachedAsc mirrors cachedSps/Pps: derived once from the first ADTS header
-    // (see parseAdtsHeader), then reused across reconnects since the encoder's
-    // rate/channel count never change stream-to-stream on this hardware.
+    // AAC queue (one mic feeds every channel). cachedAsc comes from the first
+    // ADTS header and is reused across reconnects (rate/channels never change).
     output_queue audioQueue;
-    // Opus queue, muxed as FLV tag type 10. Real cameras send both 16kHz AAC
-    // (type 8, recording/mobile) and 48kHz Opus (type 10, the only audio the
-    // controller's web-live path uses); without it ms sees no audio track and
-    // web live is silent.
+    // Opus queue (FLV tag type 10, 48 kHz): the controller's web-live path plays
+    // only Opus; AAC (type 8, 16 kHz) serves recording and mobile.
     output_queue opusQueue;
     unsigned char cachedAsc[2];
     bool haveCachedAsc;
@@ -72,32 +66,24 @@ struct ChannelState {
     volatile unsigned generation;
     std::string streamName;
 
-    // Dial target + desired state, so a push thread whose peer vanished can
-    // redial the same destination. The Go client suppresses repeat CONNECTs
-    // for an unchanged destination, so a peer-gone close would otherwise
-    // leave the channel dead until a new streamName arrives.
+    // Dial target + desired state for redialling a vanished peer: the Go client
+    // does not resend CONNECT for an unchanged destination.
     std::string host;
     int port;
     bool wantConnected;
 
-    // Last-known SPS/PPS, cached across reconnects (guarded by stateMutex).
-    // The ILFL acceptor drops the connection unless the AVC sequence header
-    // ships with the FLV header/onMetaData, and a fresh SPS/PPS can take over
-    // a second to appear, so reuse the cached one. SPS/PPS differ per channel
-    // but never change stream-to-stream on this hardware.
+    // SPS/PPS cached across reconnects (stateMutex): the ingest drops the
+    // connection unless the AVC sequence header ships with onMetaData.
     std::vector<unsigned char> cachedSps, cachedPps;
     bool haveCachedSpsPps;
 
     double channelId, streamId, videoBandwidth, videoFps, videoWidth, videoHeight;
 
-    // Real measured fps from actual frame arrival timing, cached across
-    // reconnects; 0 = not yet measured (first connection), then videoFps is
-    // used.
+    // Measured fps, cached across reconnects; 0 = not yet measured (use videoFps).
     double cachedMeasuredFps;
 
-    // Overflow state (guarded by flvQueue.mutex): after an overflow, non-key
-    // frames are refused until the next IDR, so the viewer freezes instead of
-    // smearing on a missing reference.
+    // After an overflow (flvQueue.mutex), non-key frames are refused until the
+    // next IDR, so the viewer freezes instead of smearing.
     bool dropUntilKey = false;
     unsigned long droppedFrames = 0;
 };
@@ -148,12 +134,8 @@ void hexDump(int channel, const char *label, const unsigned char *data, size_t l
     fprintf(stderr, "FlvPush[%d]: %s: wrote %zu raw bytes to %s\n", channel, label, len, path);
 }
 
-// Drains inbound bytes evostreamms sent on this write-only socket and reports
-// whether the peer is still there. Without a recv(), an abandoned connection
-// stays ESTABLISHED with a growing Recv-Q and we keep pushing full-res video
-// into a socket nobody reads, burning CPU on an already-starved single core.
-// Non-blocking recv: 0 = orderly close, any error but EAGAIN/EWOULDBLOCK =
-// dead; both tear the thread down instead of writing into a void.
+// Drains inbound bytes and reports whether the peer is still there; without a
+// recv() an abandoned connection stays ESTABLISHED and we push into a void.
 static bool peerStillAlive(int fd) {
     unsigned char buf[512];
     for (;;) {
@@ -246,20 +228,8 @@ void writeFlvTag(std::vector<unsigned char> &buf, uint8_t tagType,
     put_u32(buf, 11 + dataSize);
 }
 
-// "extendedFlv" trailer: 16 bytes after EVERY FLV tag (UniFi/evostreamms
-// extension, not FLV spec): 0x00, a 3-byte clock-rate marker (video
-// 0x015F90=90000, AAC 0x003E80=16000, Opus 0x00BB80=48000), 4 zero bytes,
-// then an 8-byte big-endian ELAPSED time in that marker's own ticks.
-//
-// The elapsed field MUST use the trailer's own ticks, not unifi-cam-proxy's
-// `elapsed * 100000`: that advances the controller's derived wall clock at
-// 100000/90000 = 1.111x, so FeedData's wc/now diff grows ~11% of connection
-// age until every frame is rejected. Real hardware advances it at ~90000
-// ticks/s, letting the ingest connection live indefinitely.
-//
-// The counter is 64-bit (bytes 8-15): a G3 Flex capture shows
-// 00000010eb836715 there, ~9 days of 90 kHz ticks. A 32-bit field wraps
-// after 13.25 h of video on one connection.
+// extendedFlv trailer after every tag: 0x00, 3-byte clock marker, 4 zero bytes,
+// 64-bit BE elapsed time in the marker's own ticks (docs/flv-bridge.md).
 void writeTimestampTrailerClock(std::vector<unsigned char> &buf, uint32_t marker,
                                 double clock, double elapsedSeconds) {
     put_u8(buf, 0);
@@ -278,11 +248,8 @@ void writeTimestampTrailer(std::vector<unsigned char> &buf, bool isPacket, doubl
         writeTimestampTrailerClock(buf, 0x002B11, 11025.0, elapsedSeconds);
 }
 
-// onMetaData, field-for-field from a real UniFi camera's live tag. The old
-// hand-rolled ECMA array was rejected by evostreamms's ILFL parser, so this is
-// an AMF0 OBJECT (0x03, not ECMA 0x08), with no videocodecid/audiocodecid,
-// audio* fields always present, and streamName being the controller-issued
-// per-session token. Properties in alphabetical order.
+// onMetaData as a real camera sends it: AMF0 object (not ECMA array), no codec
+// ids, audio* always present, alphabetical order (docs/flv-bridge.md).
 std::vector<unsigned char> buildOnMetaData(const std::string &streamName,
                                             double channelId, double streamId,
                                             double videoBandwidth, double videoFps,
@@ -298,13 +265,9 @@ std::vector<unsigned char> buildOnMetaData(const std::string &streamName,
     amf0_prop_number(body, "audioChannels", audioChannels);
     amf0_prop_number(body, "audioFrequency", audioFrequency);
     amf0_prop_number(body, "channelId", channelId);
-    // Real cameras declare true (UniFi extendedFlv wrapping), which we don't
-    // implement; true passed onMetaData but then failed with "Unexpected
-    // clockrate value", so false for our plain spec-compliant tags.
+    // Real cameras declare true; with our tags true fails ("Unexpected clockrate value").
     amf0_prop_bool(body, "extendedFormat", false);
-    // True once an ASC is cached for this channel (see call site); the one
-    // real onMetaData capture had hasAudio=false, never confirmed on an
-    // audio-enabled camera.
+    // True once an ASC is cached for this channel (see call site).
     amf0_prop_bool(body, "hasAudio", hasAudio);
     amf0_prop_bool(body, "hasVideo", true);
     amf0_prop_number(body, "streamId", streamId);
@@ -317,10 +280,8 @@ std::vector<unsigned char> buildOnMetaData(const std::string &streamName,
     return body;
 }
 
-// "onClockSync" / "onMpma": UniFi extension (not FLV spec), REQUIRED -- without
-// periodic onClockSync the controller fails every chunk with "no last known
-// clock sync - dropping". Injected every 5s (see pushThreadMain's lastSyncTime),
-// each followed by its own non-packet trailer.
+// onClockSync/onMpma (UniFi extension) are required: without onClockSync the
+// controller drops every chunk ("no last known clock sync"). Sent before each IDR.
 std::vector<unsigned char> buildOnClockSync(double streamClockMs, double wallClockMs) {
     std::vector<unsigned char> body;
     amf0_string_typed(body, "onClockSync");
@@ -394,14 +355,8 @@ std::vector<unsigned char> buildNaluTag(const unsigned char *nal, size_t len, bo
     return tag;
 }
 
-// -------- Audio: ADTS -> FLV/AAC tags --------
-//
-// Each audio queue frame is a 7-byte ADTS header (no CRC) + raw AAC payload.
-// The sample-rate index/channel config are read from each real frame's own ADTS
-// header, so no rate is hardcoded; object type is hardcoded AAC LC (2).
-// The FLV envelope is fixed 0xAF (SoundFormat=10/AAC, SoundRate=3, SoundSize=1,
-// SoundType=1; AACPacketType 0=seq header/1=raw). AAC tags use isPacket=true,
-// the same trailer marker as video -- revisit if evostreamms rejects audio.
+// -------- Audio: 7-byte ADTS header (no CRC) + raw AAC -> FLV tags --------
+// Rate/channels come from each ADTS header; object type is fixed AAC LC.
 
 static bool adtsSyncWordOk(const unsigned char *d, size_t len) {
     return len >= 7 && d[0] == 0xFF && (d[1] & 0xF0) == 0xF0;
@@ -412,27 +367,20 @@ static const unsigned kAdtsSampleRateTable[16] = {
     16000, 12000, 11025, 8000, 7350, 0, 0, 0
 };
 
-// Parses sampling_frequency_index (bits 18-21) and channel_configuration
-// (bits 23-25) straight out of a 7-byte ADTS header's byte 2/3, per the
-// standard ADTS fixed-header bit layout.
+// sampling_frequency_index and channel_configuration from ADTS bytes 2-3.
 static void parseAdtsHeader(const unsigned char *d, uint8_t *samplingFreqIdx, uint8_t *channelConfig) {
     *samplingFreqIdx = (d[2] >> 2) & 0x0F;
     *channelConfig = ((d[2] & 0x01) << 2) | ((d[3] >> 6) & 0x03);
 }
 
 static void buildAudioSpecificConfig(uint8_t samplingFreqIdx, uint8_t channelConfig, unsigned char asc[2]) {
-    const uint8_t audioObjectType = 2; // AAC LC -- see comment block above
+    const uint8_t audioObjectType = 2; // AAC LC
     asc[0] = (audioObjectType << 3) | (samplingFreqIdx >> 1);
     asc[1] = (samplingFreqIdx << 7) | (channelConfig << 3);
 }
 
-// One digitally-silent raw AAC-LC mono frame (no ADTS header), substituted
-// while the controller muted the mic. Real hardware mutes the ADC gain, so the
-// encoder keeps emitting silent audio tags rather than stopping the track; we
-// have no AAC encoder, so this pre-encoded frame is used. Generic mono LC
-// raw_data_block (1024 samples), valid at any declared sample rate; verified to
-// decode to -91 dB. Regenerate from an ffmpeg anullsrc->aac stream and take a
-// steady-state frame's 4-byte payload.
+// Silent raw AAC-LC mono frame (1024 samples, any rate), sent while muted so the
+// track keeps flowing like real hardware. From ffmpeg anullsrc->aac (steady state).
 static const unsigned char kSilentAacMono[] = {0x01, 0x18, 0x20, 0x07};
 
 std::vector<unsigned char> buildAacSequenceHeaderTag(const unsigned char asc[2]) {
@@ -498,13 +446,11 @@ static volatile int g_audioMuted = 0;
 
 bool flvPushAudioMuted() { return g_audioMuted != 0; }
 
-// Measures real fps from wall-clock inter-frame intervals over a rolling
-// window (see ChannelState::cachedMeasuredFps). Uses arrival time, not
-// f.time, whose units are uncharacterized. Called once per real encoder frame
-// regardless of viewers, so it reflects genuine encoder timing.
 // mediad's capture/encode rate (SRC_FPS); declared until measureFps() has data.
 static const double kEncoderFps = 20;
 
+// Real fps from frame arrival intervals over a rolling window; runs for every
+// encoder frame, viewers or not.
 static void measureFps(ChannelState &c, int channel) {
     static double lastFrameWallSec[FLV_CH_COUNT] = {0};
     static double intervalSum[FLV_CH_COUNT] = {0};
@@ -631,14 +577,12 @@ static int connectTo(const std::string &host, int port) {
     return fd;
 }
 
-// A push thread that loses its peer re-arms a connection to the same
-// destination. `generation` gates the retry: a newer CONNECT bumps it and a
-// DISCONNECT clears wantConnected, so explicit controller actions always win.
+// A push thread that loses its peer re-dials; a newer CONNECT (generation) or a
+// DISCONNECT (wantConnected) always wins over the retry.
 static void doConnect(int channel, const std::string &host, int port, const std::string &streamName);
 
 // Serializes connection setup/teardown: retry threads race the FIFO control
-// thread, and doConnect's generation/activeFd handoff assumes one setup at a
-// time.
+// thread, and the generation/activeFd handoff assumes one setup at a time.
 static pthread_mutex_t g_connectMutex = PTHREAD_MUTEX_INITIALIZER;
 
 #define FLV_RETRY_INTERVAL_MS 1000
@@ -693,47 +637,27 @@ static void *pushThreadMain(void *arg) {
     out.reserve(65536);
     bool haveSps = false, havePps = false, sentSeqHeader = false;
     std::vector<unsigned char> sps, pps;
-    // Mirrors haveSps/havePps/sentSeqHeader above: one AAC sequence-header
-    // tag sent once per connection, from cached ASC bytes if a prior
-    // connection on this channel already derived them.
+    // One AAC sequence header per connection, from the cached ASC if known.
     bool sentAacSeqHeader = false;
     unsigned char asc[2] = {0, 0};
     uint64_t bytesWritten = 0;
     bool ok = true;
 
-    // Seeded to the connection-start time (below) so the periodic 5s
-    // onClockSync/onMpma resync doesn't immediately re-fire a duplicate pair
-    // after the initial connection-start write, which already sends one.
+    // Set after the initial write, which already carries a sync pair.
     double lastSyncTime = 0;
     double lastStatsTime = nowSeconds();
 
-    // FLV tag timestamps and the extendedFlv trailer's elapsed field are
-    // relative to this per-connection start, reset on every reconnect. Every
-    // reconnect gets a brand-new streamName token and ingest point from the
-    // controller, so evostreamms already treats it as a new stream; keeping
-    // the values connection-relative keeps them small. Process-lifetime and
-    // persisted-clock variants were tried and rejected by the controller
-    // (growing or constant wc/now diff); do not retry them without first
-    // reproducing ms's actual wall-clock formula.
+    // Tag timestamps and trailer elapsed are relative to this connection (each
+    // reconnect is a new stream); longer-lived clocks are rejected (docs/flv-bridge.md).
     double connectionStart = nowSeconds();
     double elapsed = nowSeconds() - connectionStart;
 
-    // Opus PTS grid: the type-10 encoder produces ~3-4 frames at a time (one
-    // AAC frame's worth) but each is a continuous 20 ms, so write-time stamping
-    // made several frames share a millisecond and then jump (measured: most
-    // common inter-frame gap 0 ms, vs a smooth 20 ms on real hardware). ms and
-    // the player schedule Opus by these timestamps, so the bursty grid made
-    // web-live audio garbled/robotic. Stamp them on their own monotonic 20 ms
-    // grid anchored to the connection clock, re-anchoring only if it drifts
-    // far behind (a real source dropout).
+    // Fallback Opus PTS: a steady 20 ms grid (re-anchored on dropouts); Opus
+    // arrives in bursts and bursty stamps garble web-live audio.
     long opusPtsIndex = -1;
 
-    // Capture-time stamping, as a real G3 does (its tags sit on an exact
-    // 1/fps grid). mediad's ring PTS is monotonic ms, the same clock as
-    // nowSeconds(), so map it onto the connection clock. Write-time stamps
-    // carried the ring/queue/WiFi jitter, which the low-latency (WebRTC) live
-    // path schedules by and macroblocked on; recordings re-mux and were clean.
-    // Never ahead of the write clock; re-anchor only on a discontinuity.
+    // Capture-time stamps (ring PTS = monotonic ms) mapped onto the connection
+    // clock: write-time jitter macroblocks WebRTC live. Never ahead of write time.
     bool ptsAnchored = false;
     uint32_t ptsBase = 0;
     double ptsBaseElapsed = 0.0;
@@ -753,18 +677,16 @@ static void *pushThreadMain(void *arg) {
         return e;
     };
 
-    // FLV file header: "FLV", version 1, flags=0x07 (real UniFi cameras set
-    // both bits even on a video-only stream; captured from live hardware),
-    // header size 9, then PreviousTagSize0=0.
+    // FLV header: version 1, flags 0x07 (real UniFi cameras set both bits even
+    // video-only), header size 9, PreviousTagSize0=0.
     put_bytes(out, (const unsigned char *)"FLV", 3);
     put_u8(out, 1);
     put_u8(out, 0x07);
     put_u32(out, 9);
     put_u32(out, 0);
 
-    // Fetch any cached ASC before onMetaData so hasAudio/audioChannels/
-    // audioFrequency reflect reality after the first connection. A genuine
-    // first connection declares hasAudio=false (see buildOnMetaData).
+    // A cached ASC fills onMetaData's audio fields; a first connection declares
+    // hasAudio=false.
     pthread_mutex_lock(&c.stateMutex);
     bool haveCachedAscLocal = c.haveCachedAsc;
     if (haveCachedAscLocal) { asc[0] = c.cachedAsc[0]; asc[1] = c.cachedAsc[1]; }
@@ -818,9 +740,8 @@ static void *pushThreadMain(void *arg) {
         sentAacSeqHeader = true;
     }
 
-    // Opus track (type 10): real cameras send a 4-byte config tag
-    // (0xcf 00 03 02) at connection start, 48000 trailer marker. The
-    // controller's web/desktop live view is Opus-only.
+    // Opus (type 10) config tag 0xcf 00 03 02 at connection start, as real
+    // cameras send; the web/desktop live view is Opus-only.
     if (g_opusEnabled) {
         unsigned char opusCfg[4] = {0xcf, 0x00, 0x03, 0x02};
         std::vector<unsigned char> cfg(opusCfg, opusCfg + 4);
@@ -832,8 +753,7 @@ static void *pushThreadMain(void *arg) {
     ok = writeAll(fd, out.data(), out.size());
     if (ok) bytesWritten += out.size();
     lastSyncTime = nowSeconds();
-    // Per-5s video timing stats (logged with the sync inject): the tag clock
-    // is write time, so a drained backlog bunches timestamps together.
+    // Per-5s video timing stats.
     unsigned long stFrames = 0, stDup = 0, stBunch = 0;
     uint32_t stLastMs = 0, stMaxGap = 0;
     bool stHaveLast = false;
@@ -847,8 +767,7 @@ static void *pushThreadMain(void *arg) {
             break;
         }
 
-        // Drain pending AAC frames each iteration, interleaving audio/video
-        // tags on the same write-time clock basis as video.
+        // Drain pending AAC frames each iteration, interleaved with video.
         for (;;) {
             output_frame af;
             bool gotAudio = false;
@@ -975,10 +894,8 @@ static void *pushThreadMain(void *arg) {
             size_t len = spans[s].second - spans[s].first;
             if (len == 0) continue;
             unsigned char hdr = nal[0];
-            // A changed SPS/PPS (e.g. mediad restarted with new geometry)
-            // must reach the controller: clear sentSeqHeader so the AVC
-            // sequence header is re-sent before the next slice. Without it
-            // the controller decoded new frames with the old SPS (garbage).
+            // A changed SPS/PPS (e.g. mediad restarted with new geometry) re-sends
+            // the AVC sequence header; else the controller decodes with the old one.
             if (nalIsSps(hdr)) {
                 if (haveSps && (sps.size() != len || memcmp(sps.data(), nal, len) != 0)) {
                     sentSeqHeader = false;
@@ -1004,9 +921,8 @@ static void *pushThreadMain(void *arg) {
                 continue;
             }
 
-            // Capture time (see captureElapsed). Still force strictly
-            // increasing ms: equal timestamps get a frame dropped downstream,
-            // and a dropped P frame smears until the next IDR.
+            // Capture time, forced strictly increasing: equal timestamps get a
+            // frame dropped downstream, which smears until the next IDR.
             double tagElapsed = captureElapsed(f.time);
             uint32_t tagMs = (uint32_t)(tagElapsed * 1000.0);
             if (stHaveLast && (int32_t)(tagMs - stLastMs) <= 0) {
@@ -1027,11 +943,8 @@ static void *pushThreadMain(void *arg) {
                 stMaxWrite = 0.0;
             }
 
-            // Re-anchor streamClock->wallClock right before every IDR, as a
-            // G3 does (its onClockSync always precedes a keyframe). The
-            // recorder opens a seekable index point there; a fixed 5 s timer
-            // phase-locked against the 2 s GOP under capture-time stamps and
-            // left HQ minutes without one (unplayable timeline). 10 s fallback.
+            // onClockSync before every IDR, as a G3 does: the recorder opens a
+            // seekable index point there. 10 s fallback.
             if (nalIsIdr(hdr) || nowSeconds() - lastSyncTime >= 10.0) {
                 lastSyncTime = nowSeconds();
                 double wallNow = epochMillis();
@@ -1092,9 +1005,8 @@ static void *pushThreadMain(void *arg) {
         close(c.activeFd);
         c.activeFd = -1;
         c.streamName.clear();
-        // Ended on its own (peer gone / write failure), not superseded by a
-        // DISCONNECT or newer CONNECT -- re-dial. The streamName was captured
-        // in a local above, which clear() doesn't touch.
+        // Ended on its own (peer gone / write failure), not superseded: re-dial
+        // with the streamName captured above.
         shouldRetry = c.wantConnected && !c.host.empty();
     }
     int retryPort = c.port;
@@ -1135,9 +1047,8 @@ static void doConnect(int channel, const std::string &host, int port, const std:
 
     pthread_mutex_lock(&c.stateMutex);
     if (c.activeFd >= 0) {
-        // Close the old fd here, before bumping generation below: the old push
-        // thread's cleanup only closes activeFd when generation still matches,
-        // so it would never run. shutdown() alone does not release the fd.
+        // Close here: the old thread only closes activeFd while generation still
+        // matches, and shutdown() alone does not release the fd.
         shutdown(c.activeFd, SHUT_RDWR);
         close(c.activeFd);
         c.activeFd = -1; // also signal old push thread's generation check to fail on next loop
@@ -1255,9 +1166,7 @@ void flvPushSetHighBandwidth(unsigned bps) {
 }
 
 void flvPushInit() {
-    // Without this, write() to a peer-closed socket raises SIGPIPE, whose
-    // default disposition kills the whole process (the watchdog would then
-    // restart it, looking like a content rejection rather than a crash).
+    // A write to a peer-closed socket would otherwise kill the process (SIGPIPE).
     signal(SIGPIPE, SIG_IGN);
 
     if (!g_initDone) {
@@ -1267,11 +1176,7 @@ void flvPushInit() {
         high.activeFd = -1;
         high.generation = 0;
         high.haveCachedSpsPps = false;
-        // Matches video1's Go-client declaration (streamId=1, fps 20); the
-        // bitrate comes from the model table's high_bitrate column so both
-        // sides stay consistent. HIGH geometry likewise comes from the model
-        // table (set by main() before this call); LOW is the real 640x360
-        // encoder output.
+        // video1 (streamId 1); geometry and bitrate come from the model table.
         high.channelId = 0; high.streamId = 1;
         high.videoBandwidth = g_highBandwidth; high.videoFps = kEncoderFps;
         high.videoWidth = g_highWidth; high.videoHeight = g_highHeight;

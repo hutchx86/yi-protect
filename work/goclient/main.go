@@ -72,16 +72,14 @@ type Config struct {
 	// mediad is detected, picture settings go to its control socket (mediad_ctl.go).
 	IsMediad bool
 
-	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false
-	// leaves tdf to mediad's own default/config (Protect re-sends enable3dnr=1
-	// on every connect, which would otherwise override the settings page).
+	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false, as
+	// Protect re-sends enable3dnr=1 on every connect and would override mediad.
 	Mediad3DNR bool
 	// WebUIPort is the firmware settings page's HTTP port (unifi.cfg
 	// WEBUI_PORT, default 80; 0 disables it). See webui.go.
 	WebUIPort int
-	// ProtectSSH lets the controller's device credential log in over SSH
-	// (unifi.cfg PROTECT_SSH, default false: UpdateUsernamePassword is only
-	// acked). See ssh_credential.go.
+	// ProtectSSH lets the controller's device credential log in over SSH (unifi.cfg
+	// PROTECT_SSH; default false only acks UpdateUsernamePassword). ssh_credential.go.
 	ProtectSSH bool
 }
 
@@ -198,10 +196,8 @@ type Client struct {
 	snapshotJPEG map[string][]byte
 	snapshotAt   map[string]time.Time
 
-	// Microphone state from ChangeVideoSettings' `audio` block; micVolume keeps
-	// the raw value, micBitRate the controller's requested audio bitrate (echoed
-	// in the reply so its quality modes reconcile), micLevel the remapped
-	// effective level, suppressing repeats.
+	// ChangeVideoSettings `audio` state: raw micVolume, micBitRate (echoed so the
+	// controller's quality modes reconcile), and the effective micLevel.
 	micMu       sync.Mutex
 	micVolume   int
 	micBitRate  int
@@ -293,9 +289,8 @@ func readHardwareModel() string {
 	return "y623"
 }
 
-// modelTablePath is the single per-model definition file (model sensor
-// ring_offset ring_header high_w high_h ptz high_bitrate); one binary serves
-// every model.
+// modelTablePath is the per-model definition file (columns: see parseModelDef);
+// one binary serves every model.
 const modelTablePath = unifiPrefix + "/etc/model_table"
 
 // modelDef is this client's slice of a model_table row.
@@ -323,9 +318,8 @@ func readModelDef(model string) (def modelDef, ok bool) {
 	return def, ok
 }
 
-// parseModelDef finds `model`'s row in the model_table text. Columns: model
-// sensor ring_offset ring_header high_w high_h ptz [high_bitrate], where the
-// trailing high_bitrate (bps) is optional; 0/absent means follow the controller.
+// parseModelDef finds `model`'s row: model sensor ring_offset ring_header high_w
+// high_h ptz [high_bitrate bps; 0/absent = follow the controller].
 func parseModelDef(content, model string) (def modelDef, ok bool) {
 	def = modelDef{highWidth: 2304, highHeight: 1296}
 	for _, line := range strings.Split(content, "\n") {
@@ -640,10 +634,8 @@ func featureFlags() map[string]interface{} {
 		"audioCodecs":     []string{"aac", "opus"},
 		"videoCodecs":     []string{"h264", "mjpg"},
 		"opusSampleRates": []int{16000},
-		// true on the G3 Instant we spoof (features_0xa590.json); the generic
-		// features.json ships false. Talkback needs AEC to be armed (the real
-		// streamer logs "Device have AEC, force to set withTalkback"), and a
-		// false here is what left the talkback button greyed out / unarmed.
+		// true on the spoofed G3 Instant (features_0xa590.json); talkback needs
+		// AEC armed, and false leaves the talkback button greyed out.
 		"aecTalkbackSwitch": true,
 		"videoSourceCount":  1,
 		"videoModeMaxFps":   []int{encoderFps, encoderFps, encoderFps},
@@ -1046,11 +1038,8 @@ func (c *Client) handleIspSettings(m Envelope) error {
 	return c.send(c.genResponse("ChangeIspSettings", m.MessageID, resp))
 }
 
-// handleSoundLedSettings wires the real status LED (ipc_cmd -l) to the
-// controller's ledFaceEnabled (0/1) field, and the speaker/talkback gate to
-// speakerEnabled. The reply must echo what the controller sent: hardcoding
-// speakerEnabled=1 made Protect believe talkback was still on after the user
-// disabled it, so the toggle could never come back off.
+// handleSoundLedSettings drives the status LED (ipc_cmd -l) from ledFaceEnabled
+// and echoes speakerEnabled as sent, or Protect's talkback toggle cannot turn off.
 func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 	if raw, err := json.Marshal(m.Payload); err == nil {
 		log.Printf("ChangeSoundLedSettings raw payload: %s", raw)
@@ -1089,11 +1078,8 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 			}
 		}
 	}
-	// NOTE: the controller has never been observed sending speakerEnabled=0
-	// (checked across full sessions on y623), so this only echoes its value -
-	// it does not gate the talkback receiver. Talkback enable/disable is a
-	// controller<->browser negotiation plus the aecTalkbackSwitch feature flag;
-	// the camera learns of audio only from the packets on UDP :7004.
+	// Echo only: talkback on/off is negotiated controller<->browser (plus
+	// aecTalkbackSwitch); the camera just sees packets on UDP :7004.
 
 	ledVal := 0
 	if ledOn {
@@ -1113,11 +1099,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		log.Printf("ChangeVideoSettings raw payload: %s", raw)
 	}
 
-	// {audio:{bitRate,volume}}: volume==0 mutes. Real hardware sets ADC gain 0
-	// so audio keeps flowing silently (FlvPush does MUTE); absent block keeps last.
-	// The reply must echo the controller's own values (a real G3 answers with
-	// bitRate 64000 / quality 1); answering 32000/0 is what made the controller's
-	// "Auto" quality select no audio track. See the G3 streamer configs.
+	// {audio:{bitRate,volume}}: volume 0 mutes but keeps audio flowing (FlvPush
+	// MUTE); absent keeps last. Echo the controller's values, or "Auto" drops audio.
 	audioVolume := 100
 	audioBitRate := 64000
 	c.micMu.Lock()
@@ -1154,9 +1137,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	// from this binary.
 	video1Width, video1Height := readHighResolution()
 
-	// A model_table high_bitrate pins this model's HIGH channel: the encoder
-	// target and the declared bitrates below all use it instead of the
-	// controller's requested value (0 = follow the controller).
+	// A model_table high_bitrate pins HIGH's encoder target and declared
+	// bitrates below (0 = follow the controller).
 	pinnedHighBps := modelHighBitrate()
 	declaredHighBps := 2000000
 	if pinnedHighBps > 0 {
@@ -1291,11 +1273,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 
 	payload := map[string]interface{}{
 		"firmwarePath": "/lib/firmware/",
-		// FlvPush muxes real mic audio into the FLV output, so audio is
-		// enabled. sampleRate/channels match the real encoder's ADTS headers.
-		// The field values mirror a real G3's streamer config (quality 1,
-		// bitRate from the controller); a quality of 0 made the controller's
-		// "Auto" quality pick no audio track. See ubnt_streamer_sysid_a590.json.
+		// Mirrors a real G3 streamer config; sampleRate/channels match the ADTS
+		// headers, and quality 0 would make "Auto" pick no audio track.
 		"audio": map[string]interface{}{
 			"bitRate": audioBitRate, "channels": 1, "description": "audio track",
 			"enableTemporalNoiseShaping": false, "enabled": true, "mode": 0,
@@ -1579,8 +1558,8 @@ func fetchFirmwareVersion(uri string) (string, error) {
 	return version, nil
 }
 
-// FlvPush control FIFO of the deployed unifi_flv_bridge (work/flv_bridge/); an
-// earlier ffmpeg-spawning relay exhausted this 60MB device's RAM.
+// FlvPush control FIFO of unifi_flv_bridge (work/flv_bridge/), which muxes in
+// process: spawning ffmpeg would exhaust this 60 MB device's RAM.
 const flvPushFifo = "/tmp/unifi_flv_bridge_ctl"
 
 var (
@@ -1593,12 +1572,8 @@ var (
 	currentMicLevel = 100
 )
 
-// channel is "high", "low", or "medium" -- FlvPush tracks each destination
-// separately, so they can be connected/reconnected independently.
-// startVideoStream reports whether FlvPush got the CONNECT. On false the
-// caller forgets the destination so the controller's next re-send retries
-// (it re-sends ~every 10 s); otherwise a CONNECT lost while the bridge was
-// restarting left that channel dead, as every re-send looked like a duplicate.
+// startVideoStream CONNECTs one channel ("high"/"low"/"medium"). On false the
+// caller forgets dest so the controller's ~10 s re-send retries, not a duplicate.
 func startVideoStream(dest, streamName, channel string) bool {
 	videoStreamMu.Lock()
 	defer videoStreamMu.Unlock()

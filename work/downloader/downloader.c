@@ -1,17 +1,8 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
  */
-/*
- * downloader - tiny static HTTP/HTTPS file fetcher for BusyBox cameras.
- *
- * Usage:
- *   downloader [--insecure|-k|--no-check-certificate] [--ca FILE] <url> <outfile>
- *
- * HTTPS is provided by mbedTLS 2.28 linked statically.
- * Certificates are verified against a CA bundle when one can be found
- * (--ca FILE, $DOWNLOADER_CA, $SSL_CERT_FILE, $CURL_CA_BUNDLE, or a set
- * of well-known paths).  -k / --insecure disables verification, which is
- * required on the camera because it ships no CA store.
+/* downloader: tiny static HTTP/HTTPS fetcher (mbedTLS 2.28) for BusyBox cameras.
+ * Usage and CA-bundle search order: see README.md.
  */
 #define _GNU_SOURCE
 #include <stdio.h>

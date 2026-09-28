@@ -13,7 +13,7 @@ func TestNeedsStep(t *testing.T) {
 	}
 	clockSynced.Store(true)
 
-	// The 2026-09-24 sequence: one stale sample, then the true offset.
+	// Observed sequence: one stale sample, then the true offset.
 	if needsStep(-751) {
 		t.Fatal("single out-of-tolerance sample must not step")
 	}

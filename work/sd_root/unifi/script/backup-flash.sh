@@ -77,8 +77,7 @@ EOF
 
 cat > "$DIR/restore.sh" <<'EOF'
 #!/bin/sh
-# DANGEROUS: writes raw flash. Same model/layout only. Read RESTORE.md first.
-# Usage: ./restore.sh <mtdN>        (e.g. ./restore.sh mtd4)
+# DANGEROUS raw flash write, same model/layout only; read RESTORE.md. Usage: ./restore.sh <mtdN>
 set -e
 [ -n "$1" ] || { echo "usage: $0 <mtdN>"; sed -n '3,6p' /proc/mtd; exit 2; }
 part="$1"

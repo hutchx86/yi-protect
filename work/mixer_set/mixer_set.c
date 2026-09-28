@@ -1,23 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
-/* mixer_set.c - read or set one ALSA simple-mixer capture-volume control.
- *
- * Emulates how a real UniFi camera applies the controller's microphone
- * `audio.volume`: libubnt_encoder's pcm_mixer_wrapper_t::SetVolume maps
- * volume 0..100 linearly onto its capture element's [min,max]
- *   raw = min + (uint)(volume * (uint)(max - min)) / 100
- * and writes it to the shared capture device, so the AAC and Opus tracks
- * scale together (the gain is upstream of the encoder). On this hardware the
- * equivalent element is the codec's MIC/ADC capture gain, e.g.
- * "MIC1 gain volume" on card hw:0 (sun8iw19codec).
- *
- * Usage:
- *   mixer_set <card> <control>            print range + current value (no change)
- *   mixer_set <card> <control> <0-100>    set to that percent of [min,max]
- *
- * Output (one line):
- *   mixer_set: <card>|<control> min <min> max <max> cur <cur>
- *   mixer_set: <card>|<control> <pct>% -> <raw> (min <min> max <max>)
+/* mixer_set <card> <control> [0-100]: print or set an ALSA capture volume as
+ * raw = min + vol*(max-min)/100, as UniFi's pcm_mixer_wrapper_t::SetVolume does
+ * (e.g. "MIC1 gain volume" on hw:0), so AAC and Opus scale together.
  */
 #include <stdio.h>
 #include <stdlib.h>

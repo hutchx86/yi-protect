@@ -2,8 +2,8 @@
 # Copyright (C) 2026 yi-protect contributors
 #
 # model_table -- the single per-model definition file: every per-model *fact*
-# (plus deliberate per-model policy overrides) lives here once; only hardware
-# bring-up code that can't be data stays in lower_half/.
+# (plus deliberate per-model policy overrides) lives here once; hardware bring-up
+# comes from each camera's stock lower_half_init.sh (gen-lower-half.sh).
 #
 # Columns (whitespace-separated); a row here is a claim about real hardware.
 #   model        model_suffix token: what /backup/init.sh sets and -m carries

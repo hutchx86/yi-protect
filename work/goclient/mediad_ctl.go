@@ -151,9 +151,8 @@ func mediadEnabled() bool {
 	if ready != mediadReady {
 		if ready {
 			log.Printf("mediad: advanced controls ENABLED (pid %d, %s)", pid, exe)
-			// A (re)appeared daemon starts at its defaults: re-send the
-			// controller's last-known values now (async: mediadSet may take
-			// mediadMu via mediadInvalidate).
+			// A (re)appeared daemon is at defaults: re-send last-known values
+			// (async: mediadSet may take mediadMu via mediadInvalidate).
 			go mediadReapplyKnown()
 		} else {
 			log.Printf("mediad: advanced controls DISABLED (installed=%v running=%v responsive=%v)", installed, running, responsive)
@@ -178,10 +177,8 @@ func logMediadStatus() {
 	go mediadWatch(pid)
 }
 
-// mediadWatch notices a restarted daemon (new PID). A restart takes a few
-// seconds, well inside the 30 s availability cache, so without this the
-// client never saw it go away and the daemon stayed at its defaults until the
-// controller happened to send a new settings object.
+// mediadWatch notices a restarted daemon (new PID): a restart fits inside the
+// 30 s availability cache, so it would otherwise stay at defaults unnoticed.
 func mediadWatch(lastPid int) {
 	for {
 		time.Sleep(5 * time.Second)
@@ -216,10 +213,8 @@ func mediadWatch(lastPid int) {
 	}
 }
 
-// mediadReapplyKnown re-sends the controller's last-known values (applied or
-// seeded) to a daemon that started at its defaults; Protect does not resend
-// settings by itself. A category with nothing known yet applies its next
-// complete object in full instead.
+// mediadReapplyKnown re-sends last-known values to a daemon at its defaults
+// (Protect won't); a category with none applies its next complete object in full.
 func mediadReapplyKnown() {
 	var toSend []mediadCtl
 	mediadDeltaMu.Lock()
@@ -353,10 +348,8 @@ func (d *mediadDelta) filter(controls []mediadCtl, complete bool) []mediadCtl {
 	return out
 }
 
-// stash records controls that could not be sent (daemon down or still starting)
-// as last-known, so mediadReapplyKnown pushes them when the daemon appears. A
-// complete object ends the seed and any pending full apply: the reapply covers
-// it, and the next object must be a normal delta. Caller holds mediadDeltaMu.
+// stash keeps unsendable controls as last-known for mediadReapplyKnown; a complete
+// object ends the seed/pending full apply (next is a delta). Holds mediadDeltaMu.
 func (d *mediadDelta) stash(controls []mediadCtl, complete bool) {
 	for _, c := range controls {
 		d.last[c.key] = c.value
@@ -625,9 +618,8 @@ func ispControlMap(payload map[string]interface{}) []mediadCtl {
 	add("saturation", "saturation", func(v float64) int { return scaleLinear(v, 0, 100) })
 	add("sharpness", "sharpness", func(v float64) int { return scaleLinear(v, 0, 10) })
 	add("denoise", "denoise", func(v float64) int { return scaleLinear(v, 0, 100) })
-	// 3DNR (tdf) is a module enable, not a 0-100 level. Only with
-	// MEDIAD_3DNR=yes does Protect's enable3dnr drive it; otherwise tdf is
-	// left to mediad (default on, mediad.conf / the settings page).
+	// 3DNR (tdf) is a module enable; only MEDIAD_3DNR=yes lets enable3dnr drive
+	// it, otherwise mediad keeps its own (default on).
 	if cfg.Mediad3DNR {
 		add("enable3dnr", "tdf", func(v float64) int { return scaleLinear(v, 0, 100) })
 	}
@@ -718,9 +710,8 @@ func clampBitrate(b int) int {
 	return b
 }
 
-// osdSettingsResponse echoes the requested OSD settings back to the controller
-// over this camera's defaults, so it reports what was actually applied (it
-// used to hardcode date/logo on and the name shown).
+// osdSettingsResponse echoes the requested OSD settings over this camera's
+// defaults, so the controller sees what was actually applied.
 func osdSettingsResponse(payload map[string]interface{}) map[string]interface{} {
 	resp := map[string]interface{}{
 		"enableOverlay": 1, "logoScale": 50, "overlayColorId": 0,

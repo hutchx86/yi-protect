@@ -39,16 +39,8 @@ int resolution = RESOLUTION_HIGH;
 int audio = 1;     // 0=off, 1=PCM fifo (unsupported), 2=AAC from the ring
 int debug = 0;
 
-// ---- Opus track transcode ------------------------------------------------
-// Real cameras publish two audio tracks: native AAC (type 8, recording/mobile)
-// and Opus (type 10), the only audio the controller's web/desktop live view
-// decodes. The ring only has AAC, so decode with FAAD2, re-buffer into 20ms
-// frames, encode with libopus, and enqueue on the type-10 track; without it
-// web live is silent even though the AAC track is fine.
-//
-// Params match a G3 capture (type-10 ~160 B = ~64 kbps, 48 kHz 20 ms). The
-// ring's AAC is 16 kHz: decode, linearly upsample to 48 kHz, encode with
-// OPUS_APPLICATION_AUDIO @ 64 kbps.
+// ---- Opus track transcode: web/desktop live view decodes only the type-10 Opus
+// track (AAC type 8 is recording/mobile); ring AAC -> 48 kHz 20 ms Opus @ 64 kbps.
 const int kOpusRate = 48000;
 NeAACDecHandle g_aacDec = nullptr;
 bool g_aacInit = false;                // NeAACDecInit has parsed the first ADTS header
@@ -75,10 +67,8 @@ void emitOpusPacket(const unsigned char *data, size_t len, double ptsMs) {
     if (flvPushActive(FLV_CH_MED)) flvPushEnqueueOpus(FLV_CH_MED, of);
 }
 
-// Upsample the current g_pcmIn (at g_aacRate) to 48 kHz by linear
-// interpolation and emit 20 ms Opus frames. Linear interpolation is enough
-// here: the mic band is <= 8 kHz, so any imaging lands above it, and the
-// Opus encoder only ever sees 48 kHz regardless of the source rate.
+// Linear-upsample g_pcmIn to 48 kHz and emit 20 ms Opus frames; the mic band is
+// <= 8 kHz, so interpolation images land above it.
 void flushOpusFrames() {
     const double step = (double)g_aacRate / (double)kOpusRate;
     unsigned char opusBuf[1500];
@@ -112,10 +102,8 @@ void flushOpusFrames() {
 
 void transcodeAacToOpus(std::vector<unsigned char> &adts, uint32_t ptsMs) {
     if (!g_aacDec) return;
-    // The ring's audio is ADTS-framed. FAAD2 needs one NeAACDecInit() to read
-    // the first header; it consumes that header, so the first frame's payload
-    // is decoded from the remainder. Later frames are passed whole -- FAAD2
-    // skips each ADTS header itself.
+    // ADTS: NeAACDecInit() consumes the first header, so frame 1 decodes from
+    // the remainder; later frames go in whole (FAAD2 skips their headers).
     const unsigned char *in = adts.data();
     size_t inLen = adts.size();
     if (!g_aacInit) {
@@ -188,9 +176,8 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
                uint32_t time, uint16_t streamCounter) {
     EmitCtx *ctx = (EmitCtx *)vctx;
 
-    // streamCounter increments per stream; a gap means the reader lost frames,
-    // so the affected channels must restart on a keyframe. Acted on only once
-    // 100 consecutive +1 steps prove the field is a per-stream counter here.
+    // A streamCounter gap means lost frames: restart the channel on a keyframe.
+    // Trusted only after 100 consecutive +1 steps prove it is per-stream.
     if (frameType == TYPE_HIGH || frameType == TYPE_LOW) {
         static bool seen[2], trusted[2];
         static uint16_t last[2];
@@ -216,9 +203,8 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
         last[s] = streamCounter;
     }
 
-    // Diagnostic tee (UNIFI_TEE=<path prefix>): the exact HIGH bytes handed to
-    // FlvPush -> <prefix>.h264, one "wall_ms counter bytes offset" line per
-    // frame -> <prefix>.idx. Stops at 300 MB.
+    // UNIFI_TEE=<prefix>: HIGH bytes -> <prefix>.h264, per-frame
+    // "wall_ms counter bytes offset" -> <prefix>.idx; stops at 300 MB.
     if (frameType == TYPE_HIGH) {
         static FILE *teeData, *teeIdx;
         static bool teeInit;
@@ -254,9 +240,8 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
             if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueue(FLV_CH_HIGH, of);
         }
     } else if (frameType == TYPE_LOW) {
-        // LOW (video2) is the real 640x360 encoder output. MED (video3) carries
-        // the same frames: Auto live view lands on MED, and duplicating LOW
-        // costs ~0.5 Mbps uplink while watched vs ~2.2 Mbps for HIGH.
+        // MED (video3) duplicates LOW (640x360): Auto live view lands on MED,
+        // and LOW costs ~0.5 Mbps while watched vs ~2.2 Mbps for HIGH.
         if (ctx->resolution != RESOLUTION_HIGH) {
             if (flvPushActive(FLV_CH_LOW)) flvPushEnqueue(FLV_CH_LOW, of);
             if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
@@ -324,10 +309,10 @@ int main(int argc, char **argv) {
             break;
         case 'b':  // back channel (talkback) is handled by talkback_rx, not here
             break;
-        case 'p':  // port; RTSP is gone, accepted for CLI compatibility
+        case 'p':  // RTSP port; accepted for CLI compatibility
         case 's':  // SPS timing info; accepted for CLI compatibility
             break;
-        case 'u':  // RTSP credentials: no longer applicable
+        case 'u':  // RTSP credentials: ignored
         case 'w':
             break;
         case 'd': debug = (int)strtol(optarg, nullptr, 10); break;

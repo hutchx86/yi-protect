@@ -3,22 +3,10 @@
  * Copyright (C) 2026 yi-protect contributors
  */
 
-/*
- * talkback_rx - bridges UniFi Protect's talkback UDP stream to the speaker.
- *
- * Binds UDP :7004 and accepts two formats on the same port, told apart by the
- * first byte (ADTS sync 0xFF vs RTP version-2 0b10 -- ranges never collide):
- *   - mobile app: one ADTS AAC-LC frame per datagram, decoded with FAAD2.
- *   - desktop/web app: RTP-encapsulated Opus (12-byte RTP header plus optional
- *     extension block, Opus payload), decoded with libopus.
- *
- * Both decode to 16-bit PCM at the device's native 16 kHz mono (libopus
- * resamples internally) then share the gain-scaling + fifo-write path.
- *
- * Speaker side: PCM is written to /tmp/audio_in_fifo with inline gain scaling.
- * The amp-enable GPIO (/dev/cpld_periph) is toggled on activity: on at the first
- * packet after idle, off after IDLE_TIMEOUT_MS without packets.
- */
+/* talkback_rx: UniFi Protect talkback on UDP :7004 -> /tmp/audio_in_fifo (16 kHz mono).
+ * First byte picks the format: 0xFF = ADTS AAC (mobile, FAAD2), 0b10 = RTP Opus
+ * (web/desktop, libopus). The cpld amp is on at the first packet after idle and
+ * off after IDLE_TIMEOUT_MS of silence. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,10 +52,8 @@ static int resample_to_16k(const short *in, int n, unsigned long sr,
 
 #define UDP_PORT 7004
 #define FIFO_PATH "/tmp/audio_in_fifo"
-// Talkback enable gate: the client writes 0/1 here from the controller's
-// speakerEnabled (ChangeSoundLedSettings). Absent file = enabled, so behaviour
-// is unchanged when the client never sets it. talkback_rx owns no socket the
-// client can reach, so a polled file is the control channel.
+// Optional enable gate: "0" here mutes talkback; absent file = enabled. The
+// client does not write it (the controller never sends speakerEnabled=0).
 #define ENABLE_PATH "/tmp/talkback_enabled"
 #define CPLD_DEV "/dev/cpld_periph"
 #define CPLD_DEVICE_NUM 0x70
@@ -105,10 +91,8 @@ static void speaker_set(int *state, int on) {
     *state = on;
 }
 
-/* Talkback enable gate. The client writes "0"/"1" to ENABLE_PATH from the
- * controller's speakerEnabled; a missing or unreadable file means enabled (the
- * pre-existing always-on behaviour). Re-read each packet so a disable takes
- * effect immediately. */
+/* Missing or unreadable ENABLE_PATH means enabled. Re-read per packet so a
+ * disable takes effect immediately. */
 static int talkback_enabled(void) {
     char b[8];
     int fd = open(ENABLE_PATH, O_RDONLY);
@@ -120,9 +104,8 @@ static int talkback_enabled(void) {
     return b[0] != '0';
 }
 
-/* (re)open the fifo for writing; rmm holds the read end open, so this should
- * return immediately rather than block. Clear O_NONBLOCK once a reader is
- * confirmed present, so writes block normally under backpressure. */
+/* (Re)open the fifo; rmm holds the read end, so a non-blocking open succeeds.
+ * O_NONBLOCK is then cleared so writes block under backpressure. */
 static int fifo_open(void) {
     int fd = open(FIFO_PATH, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
@@ -246,9 +229,7 @@ int main(int argc, char **argv) {
         last_pkt_ms = t;
         have_pkt_ever = 1;
 
-        /* Controller disabled talkback (speakerEnabled=0): mute the speaker and
-         * discard packets instead of playing them. Without this the toggle
-         * could be turned on but never off. */
+        /* Gate closed: mute the speaker and discard packets. */
         if (!talkback_enabled()) {
             if (speaker_state) speaker_set(&speaker_state, 0);
             if (fifo_fd >= 0) { close(fifo_fd); fifo_fd = -1; }

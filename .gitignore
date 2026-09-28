@@ -17,6 +17,7 @@ work/sd_root/unifi/lib/
 work/sd_root/unifi/script/lower_half/
 # License files copied into the SD image by build_sd.sh (generated).
 work/sd_root/LICENSE
+work/sd_root/licenses/
 work/sd_root/NOTICE
 work/sd_root/SOURCES.txt
 work/yi-protect-*.tar.gz
@@ -69,21 +70,12 @@ repos/unifi-cam-proxy/
 # Secret-bearing controller dumps (must never be committed).
 archive/cameras.json
 
-# Local working docs — kept on disk, never published.
-/CLAUDE.md
-/commands.md
-/implementation.md
-/llm_decisions.md
-/other.md
-/protocol.md
-/status.md
-/todo.md
+# Local working docs — kept on disk, never published (README.md is tracked).
+/*.md
+!/README.md
 
 # Local archive of older notes/code — kept on disk, never published.
 /archive/
-
-# Internal binary/kernel reverse-engineering notes.
-/disassembly.md
 
 # Editor swap files
 *.swp

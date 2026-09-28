@@ -50,16 +50,22 @@ controller. It is still a moving target — expect rough edges.
 - **Snapshots**, **motion events**, **PTZ** (models with a motorized base), and
   rudimentary **IR / night-vision** control.
 - **Two-way audio (talkback)** — from the Protect mobile/web app to the speaker.
-- **SSH access** — a Dropbear server serving two independent accounts: `root`
-  (admin) and `ubnt` (the account native Protect cameras expose, kept separate
-  so a controller credential rotation cannot lock out root). See
-  [Access](#access-ssh).
+- **SSH access** — a Dropbear server for `root` (password from `unifi.cfg`
+  `SSH_PASSWORD`). Protect's own account (`ui`; `ubnt` before adoption) is
+  accepted only with `PROTECT_SSH=yes`. See [Access](#access-ssh).
+- **Settings page** — a small HTTP page on `:80` (`unifi.cfg` `WEBUI_PORT`,
+  `0` = off) for pinning the optional mediad's image settings. It is
+  **unauthenticated**: anyone on the LAN can change them.
 - **Optional Yi cloud** — the `unifi.cfg` key `YI_CLOUD` also runs the stock Yi
   cloud daemons (`cloud`, `p2p_tnp`, `oss`) so the camera still appears in the
   YI app alongside Protect. It is **on by default**, except on `mediad` builds
   (`IS_MEDIAD=yes`) where it defaults off; set `yes`/`no` to force it. Off =
   local-only, no Yi cloud traffic.
-- **Self-contained SD deploy** — everything builds from source into
+- **Optional mediad** — [yi-mediad](https://github.com/hutchx86/yi-mediad) can
+  replace the stock media daemon (`IS_MEDIAD=yes`). Only a vendor-linked mediad
+  build makes the camera fetch the vendor H.264 libs from GitHub at boot; the
+  default setup makes no such fetch.
+- **Self-contained SD deploy** — everything in the image builds from source into
   `/tmp/sd/unifi/`; no yi-hack install required at runtime.
 - **One image, any supported camera** — the model is auto-detected at boot, so
   the same SD card works across models with no per-camera edits.
@@ -70,8 +76,8 @@ controller. It is still a moving target — expect rough edges.
 
 - A supported Yi camera (see below) with an SD card, and root access to modify
   its boot.
-- A build host with Go (1.23+), `cmake`, `wget`, and the cross-toolchain
-  (cloned manually, below).
+- A build host with Go (1.23+), `cmake`, `wget`, `patch`, `make`, and the
+  cross-toolchain (cloned manually, below).
 - A UniFi Protect controller on the same network.
 
 ## Supported hardware
@@ -106,6 +112,9 @@ app) and `/tmp/lower_half.log` says why.
 | `unifi_avclient_go` | Go | Control plane: L2/UDP discovery, WSS adoption/control, clock sync, snapshots (`imggrabber`), motion events, PTZ, and the camera-side manage API on `:443`. |
 | `talkback_rx` | C | Talkback receiver: decodes ADTS AAC / RTP Opus from UDP `:7004` to 16 kHz PCM and drives the speaker + amp. |
 | `cpld_ctl` | C | CPLD / IR-LED / amp control helper for the `/dev/cpld_periph` ioctls. |
+| `mixer_set` | C | Sets the codec capture gain (ALSA) from Protect's Microphone Level. |
+| `mkpasswd` | C | MD5-crypt helper that hashes `SSH_PASSWORD` at boot. |
+| `downloader` | C | Static HTTPS client (Mbed TLS); used only to fetch the vendor libs for a vendor-linked mediad. |
 | boot scripts | shell | `init.sh`, `watchdog.sh`, network/identity detection, model auto-detection. |
 
 Protocol findings (wire formats, message shapes, discovery TLVs, the
@@ -183,7 +192,7 @@ reads, so it works without the Yi app or cloud.
 
 An on-camera **hotspot / captive-portal flow is not yet possible**: the Yi
 firmware ships no `hostapd`, no `udhcpd`, and a `wpa_supplicant` built without AP
-mode. It needs a cross-built AP daemon (see `todo.md`).
+mode. It needs a cross-built AP daemon.
 
 ## Build from source
 
@@ -203,9 +212,13 @@ Then:
 # Host-only self-test of the FLV/fshare parser (no cross toolchain needed)
 make -C work/flv_bridge test
 
-# Full SD package: builds the project binaries into work/sd_root/ and writes
-# work/yi-protect-<rev>.tar.gz (+ SHA256SUMS). Requires the prebuilt
-# work/downloader/downloader (static HTTPS downloader).
+# Full SD package: build_sd.sh builds every binary from source (including the
+# static downloader with Mbed TLS) into work/sd_root/ and writes
+# work/yi-protect-<rev>.tar.gz
+work/build_sd.sh
+
+# Release: runs build_sd.sh, then writes work/yi-protect-<rev>-src.tar.gz
+# (corresponding source) and SHA256SUMS
 work/release.sh
 ```
 
@@ -310,8 +323,8 @@ attribution is in [`NOTICE`](NOTICE).
   repository; supply your own. This repo is our own source, scripts and
   documentation, plus a few helper scripts vendored from
   [yi-hack-Allwinner-v2](https://github.com/roleoroleo/yi-hack-Allwinner-v2)
-  (`unifi/script/ethdhcp.sh`, `wifidhcp.sh`) and the BSD-licensed libopus
-  headers; see [`NOTICE`](NOTICE).
+  (`unifi/script/ethdhcp.sh`, `wifidhcp.sh`); other third-party code is
+  fetched from upstream at build time. See [`NOTICE`](NOTICE).
 - **This project exists to ensure interoperability between Unifi Protect and
   other cameras.** This interoperability goal is recognised under EU law:
   Directive 2009/24/EC (the Software Directive), **Art. 6**, which permits

@@ -17,12 +17,8 @@ OUT="$2"
 
 [ -f "$STOCK" ] && [ -n "$OUT" ] || exit 1
 
-# Anchors: the stock launch block runs from "./dispatch &" to
-# "./watch_process &" (identical across all stock scripts we have dumped;
-# column 0 there, but indentation is tolerated). The factory aging-test block
-# starts its own ./dispatch and is skipped. An "exit" inside the factory
-# log_tools block would stop the script before our launch, so it is commented
-# out.
+# Stock launch block: "./dispatch &" .. "./watch_process &" (the aging-test
+# block's own ./dispatch is skipped; log_tools' "exit" is commented out).
 awk -v P="$UNIFI_PREFIX" '
 NR == 1 {
     if ($0 !~ /^#!/) { bad = 1 }
