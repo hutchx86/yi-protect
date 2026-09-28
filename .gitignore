@@ -30,6 +30,7 @@ work/SHA256SUMS
 *.so
 __pycache__/
 work/flv_bridge/unifi_flv_bridge
+work/snapshot/unifi_snapshot
 
 # local agent settings (may contain pasted credentials)
 .claude/settings.local.json

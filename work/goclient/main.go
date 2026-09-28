@@ -187,7 +187,7 @@ type Client struct {
 	// snapshot uploads -- see handleGetRequest().
 	httpClient *http.Client
 
-	// snapshotGrabMu serializes imggrabber runs; concurrent forks race for the
+	// snapshotGrabMu serializes snapshot runs; concurrent forks race for the
 	// shared sensor/ISP and OOM-kill rmm on this 60MB board.
 	snapshotGrabMu sync.Mutex
 	// snapshotMu guards the last-good JPEG cache below -- a slightly-stale
@@ -1363,8 +1363,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	return c.send(c.genResponse("ChangeVideoSettings", m.MessageID, payload))
 }
 
-// handleGetRequest answers "GetRequest": grabs a JPEG via imggrabber and HTTP
-// POSTs it with the WSS mTLS cert; imggrabber blocks until the next IDR.
+// handleGetRequest answers "GetRequest": grabs a JPEG via unifi_snapshot and
+// HTTP POSTs it with the WSS mTLS cert; it blocks until the next IDR.
 func (c *Client) handleGetRequest(m Envelope) {
 	what, _ := m.Payload["what"].(string)
 	uri, _ := m.Payload["uri"].(string)
@@ -1382,12 +1382,12 @@ func (c *Client) handleGetRequest(m Envelope) {
 
 	timeout := snapshotTimeout(m.Payload)
 
-	// Serialize grabs: each imggrabber costs ~9MB RSS and fights rmm for the
+	// Serialize grabs: each snapshot costs ~9MB RSS and fights rmm for the
 	// shared sensor/ISP on a 60MB board.
 	c.snapshotGrabMu.Lock()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, unifiPrefix+"/bin/imggrabber", "-m", model, "-r", res)
+	cmd := exec.CommandContext(ctx, unifiPrefix+"/bin/unifi_snapshot", "-m", model, "-r", res)
 	cmd.Stderr = &stderr
 	jpeg, err := cmd.Output()
 	cancel()
@@ -1395,9 +1395,9 @@ func (c *Client) handleGetRequest(m Envelope) {
 
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("GetRequest[%s]: imggrabber timed out after %s", what, timeout)
+			log.Printf("GetRequest[%s]: snapshot timed out after %s", what, timeout)
 		} else {
-			log.Printf("GetRequest[%s]: imggrabber failed: %v (stderr: %s)", what, err, strings.TrimSpace(stderr.String()))
+			log.Printf("GetRequest[%s]: snapshot failed: %v (stderr: %s)", what, err, strings.TrimSpace(stderr.String()))
 		}
 		cached, age, ok := c.cachedSnapshot(res)
 		if !ok {

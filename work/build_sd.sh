@@ -29,7 +29,7 @@ export STAGING_DIR="$TCDIR"
 echo "== prerequisites =="
 [ -x "$TCBIN/arm-openwrt-linux-gcc" ] || { echo "ERROR: cross-toolchain missing ($TCBIN). Clone lindenis-org/lindenis-v536-prebuilt into $TOOLCHAIN_DIR (or set TOOLCHAIN_DIR)."; exit 1; }
 [ -d "$YH/src" ] || { echo "ERROR: yi-hack submodule missing ($YH). Run: git submodule update --init --recursive"; exit 1; }
-command -v cmake >/dev/null 2>&1 || { echo "ERROR: cmake not found (needed for imggrabber). Try: python3 -m pip install --user cmake"; exit 1; }
+command -v cmake >/dev/null 2>&1 || { echo "ERROR: cmake not found (needed for libjpeg-turbo). Try: python3 -m pip install --user cmake"; exit 1; }
 
 XP=arm-openwrt-linux-
 CC="${XP}gcc"; CXX="${XP}g++"; AR="${XP}ar"; STRIP="${XP}strip"
@@ -83,12 +83,51 @@ build_module() {
 }
 
 # 2. yi-hack-sourced components (each downloads + builds its own deps).
-echo "== 2/6 yi-hack modules (ipc_cmd, set_tz_offset, dropbear, alsa-lib, snapshot) =="
+echo "== 2/6 yi-hack modules (ipc_cmd, set_tz_offset, dropbear, alsa-lib) =="
 build_module ipc_cmd
 build_module set_tz_offset
 build_module dropbear
 build_module alsa-lib
-build_module snapshot        # imggrabber: builds ffmpeg + libjpeg-turbo (slow)
+
+# 2b. Snapshot decode/encode deps for our own unifi_snapshot: FFmpeg (H.264
+#     decoder) + libjpeg-turbo, built from upstream (no yi-hack imggrabber).
+echo "== 2b/6 snapshot deps (ffmpeg, libjpeg-turbo) =="
+SNAPD="$BUILD/snapshot-deps"
+FFMPEG_VER=8.1.1
+FFMPEG_DIR="$SNAPD/ffmpeg-$FFMPEG_VER"
+JPEGLIB_VER=3.1.4.1
+JPEGLIB_DIR="$SNAPD/libjpeg-turbo-$JPEGLIB_VER"
+JPEG_DIR="$SNAPD/libjpeg"
+mkdir -p "$SNAPD"
+if [ ! -f "$FFMPEG_DIR/libavcodec/libavcodec.a" ]; then
+    fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VER.tar.bz2" "$SNAPD/ffmpeg-$FFMPEG_VER.tar.bz2"
+    [ -d "$FFMPEG_DIR" ] || tar xf "$SNAPD/ffmpeg-$FFMPEG_VER.tar.bz2" -C "$SNAPD"
+    ( cd "$FFMPEG_DIR"
+      ./configure --enable-cross-compile --cross-prefix="$TCBIN/$XP" \
+          --arch=arm --target-os=linux --enable-thumb --enable-small \
+          --disable-autodetect --disable-ffplay --disable-ffprobe --disable-doc \
+          --disable-decoders --enable-decoder=h264 --disable-encoders \
+          --disable-demuxers --disable-muxers --disable-protocols \
+          --disable-parsers --enable-parser=h264 \
+          --disable-filters --disable-bsfs --disable-indevs --disable-outdevs \
+          --disable-swscale \
+          --extra-cflags="-Os -ffunction-sections -fdata-sections" \
+          > "$SNAPD/ffmpeg-configure.log" 2>&1
+      make -j4 > "$SNAPD/ffmpeg-make.log" 2>&1 )
+fi
+if [ ! -f "$JPEG_DIR/lib/libjpeg.a" ]; then
+    fetch "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/$JPEGLIB_VER.tar.gz" "$SNAPD/jpeg.tar.gz"
+    [ -d "$JPEGLIB_DIR" ] || tar xzf "$SNAPD/jpeg.tar.gz" -C "$SNAPD"
+    cmake -S "$JPEGLIB_DIR" -B "$JPEGLIB_DIR/build" \
+        -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=arm \
+        -DCMAKE_C_COMPILER="$TCBIN/${XP}gcc" \
+        -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+        -DENABLE_SHARED=OFF -DWITH_SIMD=OFF -DWITH_TURBOJPEG=OFF -DWITH_JPEG8=1 \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$JPEG_DIR" \
+        > "$SNAPD/jpeg-cmake.log" 2>&1
+    cmake --build "$JPEGLIB_DIR/build" --target install -j4 \
+        > "$SNAPD/jpeg-make.log" 2>&1
+fi
 
 # FAAD2 (GPL-2.0-or-later) static lib for the bridge's AAC->Opus transcode
 # and talkback_rx's ADTS decode.
@@ -170,6 +209,16 @@ FAAD2="$BUILD/faad2-$FAAD2_VER"
       "$FAAD2/libfaad.a" "$OPUS_DIR/.libs/libopus.a" -lm )
 "$STRIP" "$BIN/talkback_rx"
 
+# unifi_snapshot: Protect GetRequest JPEG from the ring's keyframe (our own
+# replacement for yi-hack's imggrabber); reuses the bridge's ring reader.
+( cd "$ROOT/work/snapshot"
+  make -s clean
+  make -s CXX="$CXX" CXXFLAGS="-O2 -Wall -std=gnu++14" \
+      FLV="$ROOT/work/flv_bridge" FFMPEG_DIR="$FFMPEG_DIR" JPEG_DIR="$JPEG_DIR" \
+      unifi_snapshot
+  "$STRIP" unifi_snapshot
+  cp unifi_snapshot "$BIN/unifi_snapshot" )
+
 # 5. Collect yi-hack-built artifacts into the SD layout (from _install/).
 echo "== 5/6 installing built artifacts =="
 I="$YHB/src"
@@ -179,7 +228,6 @@ cp "$I/set_tz_offset/_install/bin/set_tz_offset"  "$BIN/"
 cp "$I/dropbear/_install/dropbearmulti"           "$BIN/"
 # libasound named .so.2 to match its SONAME (FAT32 can't hold the .so.2 -> .so.2.0.0 symlink)
 cp "$I/alsa-lib/_install/lib/libasound.so.2.0.0"  "$LIB/libasound.so.2"
-cp "$I/snapshot/_install/bin/imggrabber"          "$BIN/"
 "$STRIP" "$BIN/dropbearmulti" "$LIB/libasound.so.2" 2>/dev/null || true
 
 # 6. Static assets: all-white blanks of the stock watermark size are bind-mounted
@@ -219,13 +267,13 @@ NOTICE and licenses/. The project's own source is at
 https://github.com/hutchx86/yi-protect . Components shipped in this image:
 
 * yi-hack-Allwinner-v2 (pinned submodule commit; ipc_cmd, ipc_multiplex.so,
-  imggrabber, set_tz_offset, dropbearmulti, patched alsa-lib)
+  set_tz_offset, dropbearmulti, patched alsa-lib)
   https://github.com/roleoroleo/yi-hack-Allwinner-v2          (MIT / GPL-3.0)
 * libipc (ipc_cmd, ipc_multiplex.so)
   https://github.com/TheCrypt0/libipc                         (GPL-3.0)
-* FFmpeg 8.1.1 (static in imggrabber)
+* FFmpeg 8.1.1 (static in unifi_snapshot)
   https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.bz2            (LGPL-2.1)
-* libjpeg-turbo 3.1.4.1 (static in imggrabber)
+* libjpeg-turbo 3.1.4.1 (static in unifi_snapshot)
   https://github.com/libjpeg-turbo/libjpeg-turbo              (BSD-3-Clause / IJG)
 * FAAD2 ${FAAD2_VER} (static in unifi_flv_bridge, talkback_rx)
   https://github.com/knik0/faad2/releases/tag/${FAAD2_VER}    (GPL-2.0-or-later)
@@ -254,7 +302,7 @@ SOURCES_EOF
 echo "== 7/7 packaging =="
 # bin/ and lib/ are gitignored and never emptied, so anything left there by
 # hand (e.g. a vendor-linked mediad from an old deploy) would ship. Refuse.
-SHIP_BIN="cpld_ctl downloader dropbearmulti imggrabber ipc_cmd mixer_set mkpasswd set_tz_offset talkback_rx unifi_avclient_go unifi_flv_bridge"
+SHIP_BIN="cpld_ctl downloader dropbearmulti ipc_cmd mixer_set mkpasswd set_tz_offset talkback_rx unifi_avclient_go unifi_flv_bridge unifi_snapshot"
 SHIP_LIB="ipc_multiplex.so libasound.so.2"
 stray=""
 for f in "$BIN"/* "$LIB"/*; do

@@ -109,7 +109,8 @@ app) and `/tmp/lower_half.log` says why.
 | Component | Language | Role |
 | --- | --- | --- |
 | `unifi_flv_bridge` | C++ | Reads the stock encoder's shared-memory ring (`fshare`) directly, muxes UniFi's `extendedFlv` (video, native AAC, and a transcoded Opus track) and pushes it over a self-dialled TCP socket. No RTSP, no LIVE555. |
-| `unifi_avclient_go` | Go | Control plane: L2/UDP discovery, WSS adoption/control, clock sync, snapshots (`imggrabber`), motion events, PTZ, and the camera-side manage API on `:443`. |
+| `unifi_avclient_go` | Go | Control plane: L2/UDP discovery, WSS adoption/control, clock sync, snapshots (`unifi_snapshot`), motion events, PTZ, and the camera-side manage API on `:443`. |
+| `unifi_snapshot` | C++ | Snapshot tool for Protect's `GetRequest`: reads the ring's next keyframe, decodes it (FFmpeg) and writes a JPEG (libjpeg). Replaces yi-hack's `imggrabber`. |
 | `talkback_rx` | C | Talkback receiver: decodes ADTS AAC / RTP Opus from UDP `:7004` to 16 kHz PCM and drives the speaker + amp. |
 | `cpld_ctl` | C | CPLD / IR-LED / amp control helper for the `/dev/cpld_periph` ioctls. |
 | `mixer_set` | C | Sets the codec capture gain (ALSA) from Protect's Microphone Level. |
@@ -293,7 +294,7 @@ the **Audio** note under [Features](#features).
 project would not exist without his
 [**yi-hack-Allwinner-v2**](https://github.com/roleoroleo/yi-hack-Allwinner-v2):
 the SD-card boot hook, the per-model hardware bring-up scripts, and the helper
-binaries (`ipc_cmd`, `dropbear`, `imggrabber`, the patched `alsa-lib`) are all
+binaries (`ipc_cmd`, `dropbear`, the patched `alsa-lib`) are all
 built from his tree. The `fshare` shared-memory framing was reverse-engineered
 with reference to his **rRTSPServer**, and the on-device boot flow follows the
 yi-hack pattern. Thank you.
@@ -363,6 +364,6 @@ The project's own code is AGPL-3.0-or-later; the two vendored yi-hack scripts
 (`unifi/script/ethdhcp.sh`, `wifidhcp.sh`) remain GPL-3.0-or-later and are
 combined with it under GPLv3/AGPLv3 section 13. The compiled SD image bundles
 GPL/LGPL components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later, LGPL-2.1
-libasound, and FFmpeg/libjpeg-turbo statically linked into `imggrabber`); the
+libasound, and FFmpeg/libjpeg-turbo statically linked into `unifi_snapshot`); the
 release tarball includes `LICENSE`, `NOTICE` and `SOURCES.txt` with the
 corresponding source locations and a written offer. See [`NOTICE`](NOTICE).
