@@ -79,6 +79,10 @@ type Config struct {
 	// WebUIPort is the firmware settings page's HTTP port (unifi.cfg
 	// WEBUI_PORT, default 80; 0 disables it). See webui.go.
 	WebUIPort int
+	// ProtectSSH lets the controller's device credential log in over SSH
+	// (unifi.cfg PROTECT_SSH, default false: UpdateUsernamePassword is only
+	// acked). See ssh_credential.go.
+	ProtectSSH bool
 }
 
 // cfg.MAC/cfg.IP are last-resort fallbacks used only when detectNetworkIdentity
@@ -872,6 +876,7 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 	case "ChangeAnalyticsSettings":
 		return false, c.send(c.genResponse("ChangeAnalyticsSettings", m.MessageID, m.Payload))
 	case "UpdateUsernamePassword":
+		c.handleUpdateUsernamePassword(m)
 		return false, c.send(c.genResponse("UpdateUsernamePassword", m.MessageID, nil))
 	case "ChangeTalkbackSettings":
 		if raw, err := json.Marshal(m.Payload); err == nil {
@@ -2155,6 +2160,10 @@ func main() {
 	if v := unifiCfg["MEDIAD_3DNR"]; v != "" {
 		cfg.Mediad3DNR = isTruthy(v)
 		log.Printf("unifi.cfg: mediad_3dnr %q -> %v", v, cfg.Mediad3DNR)
+	}
+	if v := unifiCfg["PROTECT_SSH"]; v != "" {
+		cfg.ProtectSSH = isTruthy(v)
+		log.Printf("unifi.cfg: protect_ssh %q -> %v", v, cfg.ProtectSSH)
 	}
 	if v := unifiCfg["CONTROLLER"]; v != "" {
 		if h, p, err := net.SplitHostPort(v); err == nil {

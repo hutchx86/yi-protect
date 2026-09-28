@@ -224,25 +224,32 @@ warning rather than a silent guess.
 ## Access (SSH)
 
 A single Dropbear SSH server starts on boot (`:22`), with per-camera host keys
-generated on first boot. It serves two independent accounts:
+generated on first boot. There is **no default password** and no blank-password
+login.
 
-| user | password | purpose |
+| user | password(s) | when |
 |---|---|---|
-| `root` | `unifi.cfg` `SSH_PASSWORD` (default `admin`) | human/admin login |
-| `ubnt` | `unifi.cfg` `SSH_UBUNT_PASSWORD` (default `ubnt`) | account native Protect cameras expose; managed by the controller |
+| `root` | `unifi.cfg` `SSH_PASSWORD` | always (locked if empty) |
+| Protect's user (`ui` on current Protect; `ubnt` before adoption) | `SSH_PASSWORD` **or** Protect's device password | only with `PROTECT_SSH=yes`; root-equivalent (uid 0), like a native UniFi camera |
 
 ```
-ssh root@<camera-ip>        # admin
-ssh ubnt@<camera-ip>        # Protect
+ssh root@<camera-ip>        # your SSH_PASSWORD
+ssh ui@<camera-ip>          # PROTECT_SSH=yes: Protect's device password or SSH_PASSWORD
 ```
 
-At boot `init.sh` hashes each password to the one scheme the camera's libc
-supports (MD5-crypt, `$1$`) and installs it in `/etc/shadow`, replacing the stock
-blank root password. Edit `SSH_PASSWORD` / `SSH_UBUNT_PASSWORD` in
-`unifi/etc/unifi.cfg` on the card and reboot to change them; an empty
-`SSH_PASSWORD` keeps the stock blank root login. Keeping `ubnt`'s credential
-separate from root's means a controller credential rotation cannot lock out the
-root login (the controller push is not applied yet -- `todo.md` item 26).
+- **Set `SSH_PASSWORD` in `unifi/etc/unifi.cfg` before the first boot.** Empty
+  means no password login for root.
+- `PROTECT_SSH` defaults to `no`: Protect's credential push is acknowledged and
+  nothing of it is stored or accepted. With `yes`, Protect pushes its device
+  credential (the NVR-wide device password, shown in Protect's settings) on
+  every connect; the camera stores only its SHA-512 hash (`unifi/etc/ssh_protect`),
+  and a password change in Protect takes effect on the next connect. Switching
+  it back to `no` (and rebooting) stops a stored credential being accepted.
+- `SSH_PASSWORD` is hashed at boot (MD5-crypt, the scheme the camera's libc
+  checks). Protect's SHA-512 hash is checked by a small patch to our Dropbear
+  build (`work/dropbear/`), since the camera's libc cannot verify it.
+- To change either setting, edit `unifi.cfg` on the card and reboot. The card
+  is FAT, so anyone holding it can read `unifi.cfg`; treat the card as a secret.
 
 ## Backup & recovery
 

@@ -1,0 +1,53 @@
+yi-protect: second password per account for dropbear 2026.91 (see
+yp_extra_auth.c). Applied by build_sd.sh inside the yi-hack dropbear module
+after the release tarball is unpacked. Licence of the change: AGPL-3.0-or-later
+(dropbear itself is MIT).
+
+--- a/src/svr-authpasswd.c
++++ b/src/svr-authpasswd.c
+@@ -46,6 +46,9 @@
+ 	return constant_time_memcmp(a, b, la);
+ }
+ 
++/* yi-protect: second credential per account (controller device password). */
++#include "yp_extra_auth.c"
++
+ /* Process a password auth request, sending success or failure messages as
+  * appropriate */
+ void svr_auth_password(int valid_user) {
+@@ -55,6 +58,7 @@
+ 	char * password = NULL;
+ 	unsigned int passwordlen;
+ 	unsigned int changepw;
++	int extra_ok = 0; /* yi-protect: matched the controller credential */
+ 
+ 	/* check if client wants to change password */
+ 	changepw = buf_getbool(ses.payload);
+@@ -66,6 +70,8 @@
+ 
+ 	password = buf_getstring(ses.payload, &passwordlen);
+ 	if (valid_user && passwordlen <= DROPBEAR_MAX_PASSWORD_LEN) {
++		/* yi-protect: before crypt(), whose static buffer it may reuse */
++		extra_ok = yp_extra_password_ok(ses.authstate.pw_name, password);
+ 		/* the first bytes of passwdcrypt are the salt */
+ 		passwdcrypt = ses.authstate.pw_passwd;
+ 		testcrypt = crypt(password, passwdcrypt);
+@@ -89,6 +95,10 @@
+ 		return;
+ 	}
+ 
++	if (extra_ok) {
++		goto yp_success;
++	}
++
+ 	if (testcrypt == NULL) {
+ 		/* crypt() with an invalid salt like "!!" */
+ 		dropbear_log(LOG_WARNING, "User account '%s' is locked",
+@@ -106,6 +116,7 @@
+ 	}
+ 
+ 	if (constant_time_strcmp(testcrypt, passwdcrypt) == 0) {
++yp_success:
+ 		if (svr_opts.multiauthmethod && (ses.authstate.authtypes & ~AUTH_TYPE_PASSWORD)) {
+ 			/* successful password authentication, but extra auth required */
+ 			dropbear_log(LOG_NOTICE,

@@ -5,6 +5,7 @@ devices.md
 
 # Built Go binaries — source lives in *.go
 work/goclient/unifi_avclient_*
+work/goclient/unifi-avclient
 
 # Downloaded material (toolchains, caches, upstream archives, controller dumps) — never in git
 file_downloads/

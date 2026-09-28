@@ -165,41 +165,11 @@ for kt in ecdsa ed25519; do
     [ -f "$DBDIR/dropbear_${kt}_host_key" ] && DBKEYS="$DBKEYS -r $DBDIR/dropbear_${kt}_host_key"
 done
 
-# Root password from SSH_PASSWORD (stock shadow blank + dropbear -B = open login);
-# ubnt is separate so controller rotation can't lock root. Both hashed $1$ MD5-crypt.
-set_shadow() {
-    # $1 = user, $2 = md5-crypt hash; replace the entry, else append.
-    if grep -q "^$1:" /etc/shadow; then
-        sed -i "s|^$1:.*|$1:$2:1:0:99999:7:::|" /etc/shadow
-    else
-        printf '%s:%s:1:0:99999:7:::\n' "$1" "$2" >> /etc/shadow
-    fi
-}
-
-SSH_PASSWORD=$(get_cfg SSH_PASSWORD)
-if [ -n "$SSH_PASSWORD" ] && [ -x "$UNIFI_PREFIX/bin/mkpasswd" ]; then
-    SSH_HASH=$(printf '%s\n' "$SSH_PASSWORD" | "$UNIFI_PREFIX/bin/mkpasswd")
-    if [ -n "$SSH_HASH" ]; then
-        sed -i "s|^root::|root:${SSH_HASH}:|" /etc/shadow
-        sed -i "s|^root::|root:x:|" /etc/passwd
-    fi
-fi
-
-UBUNT_PASSWORD=$(get_cfg SSH_UBUNT_PASSWORD); [ -z "$UBUNT_PASSWORD" ] && UBUNT_PASSWORD=ubnt
-if [ -x "$UNIFI_PREFIX/bin/mkpasswd" ]; then
-    UBUNT_HASH=$(printf '%s\n' "$UBUNT_PASSWORD" | "$UNIFI_PREFIX/bin/mkpasswd")
-    if [ -n "$UBUNT_HASH" ]; then
-        grep -q '^ubnt:' /etc/passwd || \
-            echo 'ubnt:x:1000:1000:ubnt:/tmp:/bin/ash' >> /etc/passwd
-        grep -q '^ubnt:' /etc/group || echo 'ubnt:x:1000:' >> /etc/group
-        set_shadow ubnt "$UBUNT_HASH"
-    fi
-fi
-chmod 0600 /etc/shadow /etc/passwd 2>/dev/null
-
-# One dropbear on :22 serves both accounts (a second daemon cannot share the
-# port); each user has its own /etc/shadow hash.
-dropbearmulti dropbear -R $DBKEYS -B -p 0.0.0.0:22
+# Login accounts (root + the controller's user, uid 0): see ssh-accounts.sh.
+# No -B: the stock image ships a blank root password, and an empty
+# SSH_PASSWORD now means "locked", never "open".
+UNIFI_PREFIX="$UNIFI_PREFIX" sh "$UNIFI_PREFIX/script/ssh-accounts.sh"
+dropbearmulti dropbear -R $DBKEYS -p 0.0.0.0:22
 
 # Hide the stock Yi watermark: bind all-white blanks (the OSD's transparent
 # colour key) of the same size over every stock watermark bitmap.

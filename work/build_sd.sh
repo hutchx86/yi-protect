@@ -61,6 +61,17 @@ sed -i \
     "$YHB/src/ipc_cmd/ipc_cmd/ptz.c"
 sed -i 's|/tmp/sd/yi-hack|/tmp/sd/unifi|g' "$YHB/src/dropbear/localoptions.h"
 
+# dropbear: a second password per account (the controller's device credential,
+# SHA-512 crypt; work/dropbear/yp_extra_auth.c). Patched in right after
+# init.dropbear unpacks the release tarball.
+mkdir -p "$YHB/src/dropbear/yp"
+cp "$ROOT"/work/dropbear/yp_crypt_sha512.c "$ROOT"/work/dropbear/yp_extra_auth.c \
+   "$ROOT"/work/dropbear/svr-authpasswd.patch "$YHB/src/dropbear/yp/"
+sed -i 's#^cp ../localoptions.h ./ || exit 1$#&\ncp ../yp/yp_*.c src/ \&\& patch -p1 -s < ../yp/svr-authpasswd.patch || exit 1#' \
+    "$YHB/src/dropbear/init.dropbear"
+grep -q 'svr-authpasswd.patch' "$YHB/src/dropbear/init.dropbear" || \
+    { echo "ERROR: dropbear init.dropbear hook not applied"; exit 1; }
+
 build_module() {
     name="$1"
     d="$YHB/src/$name"
