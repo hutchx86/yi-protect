@@ -103,3 +103,7 @@ known_hosts
 # WireGuard configs.
 wg*.conf
 *.wg.conf
+
+# Static HTTPS downloader (binary + source): kept out of git until its source
+# and licence are settled; build_sd.sh still takes the local copy.
+work/downloader/
