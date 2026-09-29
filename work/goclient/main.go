@@ -171,6 +171,12 @@ type Client struct {
 	streamsMu sync.Mutex
 	streams   map[string]string // stream key (video1/2/3) -> assigned streamName, once a real destination is set
 
+	// Per-stream video codec the controller last asked for. Partial
+	// ChangeVideoSettings objects omit "type"; the value must persist so the
+	// codec is not reset to h264 (which would oscillate mediad/bridge).
+	vidCodecMu sync.Mutex
+	vidCodec   map[string]string
+
 	// Active FlvPush destination/token per video stream; an unconditional
 	// reconnect-per-message killed a healthy stream every ~10-15s while viewing.
 	videoMu                sync.Mutex
@@ -1092,6 +1098,26 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 	}
 }
 
+// streamCodecs returns the last codec requested per stream, defaulting to h264.
+func (c *Client) streamCodecs() map[string]string {
+	c.vidCodecMu.Lock()
+	defer c.vidCodecMu.Unlock()
+	m := map[string]string{"video1": "h264", "video2": "h264", "video3": "h264"}
+	for k, v := range c.vidCodec {
+		if v == "h264" || v == "h265" {
+			m[k] = v
+		}
+	}
+	return m
+}
+
+// storeStreamCodecs records the codec state for the next (partial) settings object.
+func (c *Client) storeStreamCodecs(m map[string]string) {
+	c.vidCodecMu.Lock()
+	c.vidCodec = m
+	c.vidCodecMu.Unlock()
+}
+
 // handleVideoSettings responds to ChangeVideoSettings. The client is the
 // authority: always return a complete hardcoded video1/2/3/mjpg schema.
 func (c *Client) handleVideoSettings(m Envelope) error {
@@ -1133,12 +1159,10 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		"video3": "file:///dev/null",
 	}
 	// Per-stream codec the controller requests ("h264" or "h265"); echoed in the
-	// reply and pushed to the bridge/encoder so the feed matches.
-	vidCodec := map[string]string{
-		"video1": "h264",
-		"video2": "h264",
-		"video3": "h264",
-	}
+	// reply and pushed to the bridge/encoder so the feed matches. Seeded from the
+	// last request: partial ChangeVideoSettings objects omit "type" and must not
+	// reset it, or mediad/bridge would oscillate codec.
+	vidCodec := c.streamCodecs()
 
 	// The HIGH (video1) resolution comes from the shipped per-model table, not
 	// from this binary.
@@ -1276,6 +1300,21 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			case "video3":
 				sendChannelCodec("medium", vidCodec[key])
 			}
+		}
+		c.storeStreamCodecs(vidCodec)
+
+		// Tell mediad which codec to encode when any stream asked for H.265
+		// (the encoder channel is per-box, not per-stream). Delta-gated with the
+		// rest of ChangeVideoSettings.
+		{
+			codec := 0
+			for _, k := range []string{"video1", "video2", "video3"} {
+				if vidCodec[k] == "h265" {
+					codec = 1
+					break
+				}
+			}
+			go mediadApplyControls([]mediadCtl{{key: "codec", value: codec}}, mediadVidDelta, true)
 		}
 	}
 
