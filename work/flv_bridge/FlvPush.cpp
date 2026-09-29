@@ -378,7 +378,8 @@ std::vector<unsigned char> buildNaluTag(const unsigned char *nal, size_t len, bo
     return tag;
 }
 
-// HEVCDecoderConfigurationRecord (HEVCPacketType=0), codecid 12. The PTL fields
+// HEVCDecoderConfigurationRecord (HEVCPacketType=0). UniFi's extendedFlv marks
+// HEVC with codec id 8 (observed on a native G5), not the standard 12. PTL fields
 // are copied from the SPS (sps[3..14] = profile byte, 4-byte compat flags,
 // 6-byte constraint flags, level_idc), so the record tracks the encoder's own
 // profile/level.
@@ -386,7 +387,7 @@ std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned ch
                                                     const std::vector<unsigned char> &sps,
                                                     const std::vector<unsigned char> &pps) {
     std::vector<unsigned char> tag;
-    put_u8(tag, 0x1c); // frametype=1 (key), codecid=12 (HEVC)
+    put_u8(tag, 0x18); // frametype=1 (key), codecid=8 (HEVC in UniFi's extendedFlv)
     put_u8(tag, 0x00); // HEVCPacketType=0 (seq header)
     put_u24(tag, 0);   // composition time = 0
 
@@ -435,7 +436,7 @@ std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned ch
 
 std::vector<unsigned char> buildHevcNaluTag(const unsigned char *nal, size_t len, bool isKey) {
     std::vector<unsigned char> tag;
-    put_u8(tag, isKey ? 0x1c : 0x2c); // frametype (1=key,2=inter), codecid=12 (HEVC)
+    put_u8(tag, isKey ? 0x18 : 0x28); // frametype (1=key,2=inter), codecid=8 (HEVC)
     put_u8(tag, 0x01); // HEVCPacketType=1 (NALU)
     put_u24(tag, 0);   // composition time
     put_u32(tag, (uint32_t)len); // 4-byte length prefix
