@@ -632,7 +632,7 @@ func featureFlags() map[string]interface{} {
 		// Copied from a real G3 Instant's features; their absence made Protect
 		// show empty codec lists and gated the talkback button.
 		"audioCodecs":     []string{"aac", "opus"},
-		"videoCodecs":     []string{"h264", "mjpg"},
+		"videoCodecs":     []string{"h264", "h265", "mjpg"},
 		"opusSampleRates": []int{16000},
 		// true on the spoofed G3 Instant (features_0xa590.json); talkback needs
 		// AEC armed, and false leaves the talkback button greyed out.
@@ -1132,6 +1132,13 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		"video2": "file:///dev/null",
 		"video3": "file:///dev/null",
 	}
+	// Per-stream codec the controller requests ("h264" or "h265"); echoed in the
+	// reply and pushed to the bridge/encoder so the feed matches.
+	vidCodec := map[string]string{
+		"video1": "h264",
+		"video2": "h264",
+		"video3": "h264",
+	}
 
 	// The HIGH (video1) resolution comes from the shipped per-model table, not
 	// from this binary.
@@ -1164,6 +1171,11 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			v, ok := video[key].(map[string]interface{})
 			if !ok {
 				continue
+			}
+			// The controller selects the codec per stream via "type" (the same
+			// field it uses to request "h265" on a native camera).
+			if t, ok := v["type"].(string); ok && (t == "h264" || t == "h265") {
+				vidCodec[key] = t
 			}
 			ser, ok := v["avSerializer"].(map[string]interface{})
 			if !ok {
@@ -1255,6 +1267,15 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			} else {
 				c.videoMu.Unlock()
 			}
+			// Tell the bridge which codec this channel carries (idempotent).
+			switch key {
+			case "video1":
+				sendChannelCodec("high", vidCodec[key])
+			case "video2":
+				sendChannelCodec("low", vidCodec[key])
+			case "video3":
+				sendChannelCodec("medium", vidCodec[key])
+			}
 		}
 	}
 
@@ -1314,7 +1335,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				"gopModel": 0, "height": video1Height, "horizontalFlip": false,
 				"isCbr": false, "maxFps": encoderFps, "minClientAdaptiveBitRate": 0,
 				"minMotionAdaptiveBitRate": 0, "nMultiplier": 6, "name": "video1",
-				"sourceId": 0, "streamId": 1, "streamOrdinal": 0, "type": "h264",
+				"sourceId": 0, "streamId": 1, "streamOrdinal": 0, "type": vidCodec["video1"],
 				"validBitrateRangeMax": 2800000, "validBitrateRangeMin": 32000,
 				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
@@ -1333,7 +1354,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": 360,
 				"horizontalFlip": false, "isCbr": false, "maxFps": encoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
-				"name": "video2", "sourceId": 1, "streamId": 2, "streamOrdinal": 1, "type": "h264",
+				"name": "video2", "sourceId": 1, "streamId": 2, "streamOrdinal": 1, "type": vidCodec["video2"],
 				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
 				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
@@ -1352,7 +1373,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": 360,
 				"horizontalFlip": false, "isCbr": false, "maxFps": encoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
-				"name": "video3", "sourceId": 2, "streamId": 4, "streamOrdinal": 2, "type": "h264",
+				"name": "video3", "sourceId": 2, "streamId": 4, "streamOrdinal": 2, "type": vidCodec["video3"],
 				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
 				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
@@ -1601,6 +1622,17 @@ func stopVideoStream(channel string) {
 	defer videoStreamMu.Unlock()
 	if err := writeFlvPushFifoLocked(fmt.Sprintf("DISCONNECT %s\n", channel)); err != nil {
 		log.Printf("stopVideoStream[%s]: failed to write FlvPush FIFO: %v", channel, err)
+	}
+}
+
+// sendChannelCodec tells unifi_flv_bridge which codec a channel carries, so it
+// muxes the matching FLV video tags (AVC codec 7 vs HEVC codec 12). Sent after
+// CONNECT and whenever the controller changes the requested codec.
+func sendChannelCodec(channel, codec string) {
+	videoStreamMu.Lock()
+	defer videoStreamMu.Unlock()
+	if err := writeFlvPushFifoLocked(fmt.Sprintf("CODEC %s %s\n", channel, codec)); err != nil {
+		log.Printf("sendChannelCodec[%s]: failed to write FlvPush FIFO: %v", channel, err)
 	}
 }
 
