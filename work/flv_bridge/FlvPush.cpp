@@ -390,7 +390,18 @@ std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned ch
     put_u8(tag, 0x00); // HEVCPacketType=0 (seq header)
     put_u24(tag, 0);   // composition time = 0
 
-    auto sp = [&](size_t i, unsigned char def) { return sps.size() > i ? sps[i] : def; };
+    // The PTL is byte-aligned right after the SPS NAL header, but the NAL's
+    // emulation-prevention bytes (00 00 03) sit inside it; strip them first or
+    // every field shifts (general_level_idc read as 0 -> ms rejects the record).
+    std::vector<unsigned char> s;
+    int zeros = 0;
+    for (size_t i = 0; i < sps.size(); i++) {
+        unsigned char b = sps[i];
+        if (zeros >= 2 && b == 0x03) { zeros = 0; continue; }
+        s.push_back(b);
+        zeros = (b == 0) ? zeros + 1 : 0;
+    }
+    auto sp = [&](size_t i, unsigned char def) { return s.size() > i ? s[i] : def; };
 
     std::vector<unsigned char> rec;
     put_u8(rec, 0x01);            // configurationVersion
