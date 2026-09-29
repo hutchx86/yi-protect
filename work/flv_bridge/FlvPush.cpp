@@ -378,59 +378,24 @@ std::vector<unsigned char> buildNaluTag(const unsigned char *nal, size_t len, bo
     return tag;
 }
 
-// HEVCDecoderConfigurationRecord (HEVCPacketType=0). UniFi's extendedFlv marks
-// HEVC with codec id 8 (observed on a native G5), not the standard 12. PTL fields
-// are copied from the SPS (sps[3..14] = profile byte, 4-byte compat flags,
-// 6-byte constraint flags, level_idc), so the record tracks the encoder's own
-// profile/level.
+// UniFi's extendedFlv marks the HEVC codec config with a video tag whose byte0
+// is 0x68 and byte1 is 0x01, followed by u16-length-prefixed VPS, SPS and PPS
+// (observed on a native G5's :7550 stream). It is NOT an ISO
+// HEVCDecoderConfigurationRecord: ms does not recognise an hvcC here and
+// reports videoCodec=VUNK with no recorder segments.
 std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned char> &vps,
                                                     const std::vector<unsigned char> &sps,
                                                     const std::vector<unsigned char> &pps) {
     std::vector<unsigned char> tag;
-    put_u8(tag, 0x18); // frametype=1 (key), codecid=8 (HEVC in UniFi's extendedFlv)
-    put_u8(tag, 0x00); // HEVCPacketType=0 (seq header)
-    put_u24(tag, 0);   // composition time = 0
-
-    // The PTL is byte-aligned right after the SPS NAL header, but the NAL's
-    // emulation-prevention bytes (00 00 03) sit inside it; strip them first or
-    // every field shifts (general_level_idc read as 0 -> ms rejects the record).
-    std::vector<unsigned char> s;
-    int zeros = 0;
-    for (size_t i = 0; i < sps.size(); i++) {
-        unsigned char b = sps[i];
-        if (zeros >= 2 && b == 0x03) { zeros = 0; continue; }
-        s.push_back(b);
-        zeros = (b == 0) ? zeros + 1 : 0;
-    }
-    auto sp = [&](size_t i, unsigned char def) { return s.size() > i ? s[i] : def; };
-
-    std::vector<unsigned char> rec;
-    put_u8(rec, 0x01);            // configurationVersion
-    put_u8(rec, sp(3, 0x01));     // profile_space|tier_flag|profile_idc
-    for (size_t i = 4; i < 8; i++) put_u8(rec, sp(i, 0));   // compatibility flags
-    for (size_t i = 8; i < 14; i++) put_u8(rec, sp(i, 0));  // constraint flags
-    put_u8(rec, sp(14, 0x7b));    // level_idc (123 = 4.1)
-    put_u16(rec, 0xf000);         // min_spatial_segmentation_idc (reserved 1111)
-    put_u8(rec, 0xfc);            // parallelismType (reserved 111111)
-    put_u8(rec, 0xfd);            // chromaFormat (reserved 111111 | 1 = 4:2:0)
-    put_u8(rec, 0xf8);            // bitDepthLumaMinus8 (reserved 11111)
-    put_u8(rec, 0xf8);            // bitDepthChromaMinus8
-    put_u16(rec, 0);              // avgFrameRate
-    put_u8(rec, 0x0f);            // constFrameRate(2)=0|numTemporalLayers(3)=1|temporalIdNested(1)=1|lengthSizeMinusOne(2)=3
-    unsigned count = (vps.empty() ? 0u : 1u) + (sps.empty() ? 0u : 1u) + (pps.empty() ? 0u : 1u);
-    put_u8(rec, (unsigned char)count);
-    auto arr = [&](unsigned char nalType, const std::vector<unsigned char> &n) {
-        if (n.empty()) return;
-        put_u8(rec, (unsigned char)nalType); // array_completeness=0 (as ffmpeg/UniFi send)
-        put_u16(rec, 1);
-        put_u16(rec, (uint16_t)n.size());
-        put_bytes(rec, n.data(), n.size());
+    put_u8(tag, 0x68); // frametype 6 (codec config) | codec 8 (HEVC)
+    put_u8(tag, 0x01);
+    auto add = [&](const std::vector<unsigned char> &n) {
+        put_u16(tag, (uint16_t)n.size());
+        put_bytes(tag, n.data(), n.size());
     };
-    arr(32, vps);
-    arr(33, sps);
-    arr(34, pps);
-
-    put_bytes(tag, rec.data(), rec.size());
+    add(vps);
+    add(sps);
+    add(pps);
     return tag;
 }
 
