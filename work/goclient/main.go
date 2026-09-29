@@ -1303,18 +1303,22 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		}
 		c.storeStreamCodecs(vidCodec)
 
-		// Tell mediad which codec to encode when any stream asked for H.265
-		// (the encoder channel is per-box, not per-stream). Delta-gated with the
-		// rest of ChangeVideoSettings.
+		// Tell mediad each channel's codec. Protect sets it per stream
+		// (video1 -> high; video2/video3 -> the shared low encoder), so map per
+		// channel and let each follow its own stream. A single "any h265 -> all
+		// channels" mapping made mixed settings objects churn the encoder.
 		{
-			codec := 0
-			for _, k := range []string{"video1", "video2", "video3"} {
-				if vidCodec[k] == "h265" {
-					codec = 1
-					break
-				}
+			codecHigh, codecLow := 0, 0
+			if vidCodec["video1"] == "h265" {
+				codecHigh = 1
 			}
-			go mediadApplyControls([]mediadCtl{{key: "codec", value: codec}}, mediadVidDelta, true)
+			if vidCodec["video2"] == "h265" || vidCodec["video3"] == "h265" {
+				codecLow = 1
+			}
+			go mediadApplyControls([]mediadCtl{
+				{key: "codec_high", value: codecHigh},
+				{key: "codec_low", value: codecLow},
+			}, mediadVidDelta, true)
 		}
 	}
 

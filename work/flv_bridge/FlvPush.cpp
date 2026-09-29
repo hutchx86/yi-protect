@@ -421,7 +421,7 @@ std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned ch
     put_u8(rec, (unsigned char)count);
     auto arr = [&](unsigned char nalType, const std::vector<unsigned char> &n) {
         if (n.empty()) return;
-        put_u8(rec, (unsigned char)(0x80 | nalType)); // array_completeness=1
+        put_u8(rec, (unsigned char)nalType); // array_completeness=0 (as ffmpeg/UniFi send)
         put_u16(rec, 1);
         put_u16(rec, (uint16_t)n.size());
         put_bytes(rec, n.data(), n.size());
@@ -993,10 +993,15 @@ static void *pushThreadMain(void *arg) {
             if (len == 0) continue;
             unsigned char hdr = nal[0];
             bool hevc = (channelCodec(channel) == FLV_CODEC_H265);
+            bool forceKey = false; // HEVC VPS/SPS/PPS are emitted inline as key NALs
             // A changed parameter set (e.g. mediad restarted with new geometry)
             // re-sends the sequence header; else the controller keeps decoding
             // with the old one.
             if (hevc) {
+                // Cache each parameter set for the hvcC, and ALSO emit it inline
+                // as a key NAL tag: ms identifies HEVC from the tag stream (a
+                // native G5 stores the VPS/SPS/PPS as raw NALs), and a replayed
+                // hvcC alone is not enough for it.
                 if (hevcNalIsVps(hdr)) {
                     if (haveVps && (vps.size() != len || memcmp(vps.data(), nal, len) != 0))
                         sentSeqHeader = false;
@@ -1005,9 +1010,8 @@ static void *pushThreadMain(void *arg) {
                     pthread_mutex_lock(&c.stateMutex);
                     c.cachedVps = vps;
                     pthread_mutex_unlock(&c.stateMutex);
-                    continue;
-                }
-                if (hevcNalIsSps(hdr)) {
+                    forceKey = true;
+                } else if (hevcNalIsSps(hdr)) {
                     if (haveSps && (sps.size() != len || memcmp(sps.data(), nal, len) != 0))
                         sentSeqHeader = false;
                     sps.assign(nal, nal + len);
@@ -1016,9 +1020,8 @@ static void *pushThreadMain(void *arg) {
                     c.cachedSps = sps;
                     c.haveCachedSpsPps = havePps;
                     pthread_mutex_unlock(&c.stateMutex);
-                    continue;
-                }
-                if (hevcNalIsPps(hdr)) {
+                    forceKey = true;
+                } else if (hevcNalIsPps(hdr)) {
                     if (havePps && (pps.size() != len || memcmp(pps.data(), nal, len) != 0))
                         sentSeqHeader = false;
                     pps.assign(nal, nal + len);
@@ -1027,7 +1030,7 @@ static void *pushThreadMain(void *arg) {
                     c.cachedPps = pps;
                     c.haveCachedSpsPps = haveSps;
                     pthread_mutex_unlock(&c.stateMutex);
-                    continue;
+                    forceKey = true;
                 }
             } else {
                 if (nalIsSps(hdr)) {
@@ -1116,7 +1119,7 @@ static void *pushThreadMain(void *arg) {
                 sentSeqHeader = true;
             }
 
-            bool key = hevc ? hevcNalIsIdr(hdr) : nalIsIdr(hdr);
+            bool key = forceKey || (hevc ? hevcNalIsIdr(hdr) : nalIsIdr(hdr));
             std::vector<unsigned char> tagData = hevc
                 ? buildHevcNaluTag(nal, len, key)
                 : buildNaluTag(nal, len, key);
