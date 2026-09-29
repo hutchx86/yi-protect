@@ -13,6 +13,12 @@
 
 enum { FLV_CH_HIGH = 0, FLV_CH_LOW = 1, FLV_CH_MED = 2, FLV_CH_COUNT = 3 };
 
+// Video codec a channel carries (from the Go client's "CODEC <ch> <codec>").
+enum { FLV_CODEC_H264 = 0, FLV_CODEC_H265 = 1 };
+
+// Select the codec for a channel (default H.264). Cheap; safe to call anytime.
+void flvPushSetChannelCodec(int channel, int codec);
+
 // Sets the HIGH-channel encoder geometry from the model table. Must be called
 // before flvPushInit(); values <= 0 are ignored (compiled default retained).
 void flvPushSetHighResolution(unsigned width, unsigned height);

@@ -72,9 +72,9 @@ struct ChannelState {
     int port;
     bool wantConnected;
 
-    // SPS/PPS cached across reconnects (stateMutex): the ingest drops the
-    // connection unless the AVC sequence header ships with onMetaData.
-    std::vector<unsigned char> cachedSps, cachedPps;
+    // SPS/PPS (and VPS for HEVC) cached across reconnects (stateMutex): the
+    // ingest drops the connection unless the sequence header ships with onMetaData.
+    std::vector<unsigned char> cachedSps, cachedPps, cachedVps;
     bool haveCachedSpsPps;
 
     double channelId, streamId, videoBandwidth, videoFps, videoWidth, videoHeight;
@@ -94,6 +94,29 @@ bool g_initDone = false;
 bool nalIsSps(unsigned char hdr) { return (hdr & 0x1f) == 7; }
 bool nalIsPps(unsigned char hdr) { return (hdr & 0x1f) == 8; }
 bool nalIsIdr(unsigned char hdr) { return (hdr & 0x1f) == 5; }
+
+// HEVC NAL header: forbidden_zero(1) | nal_unit_type(6) | layer_id_hi(1).
+static unsigned hevcNalType(unsigned char hdr) { return (hdr >> 1) & 0x3f; }
+static bool hevcNalIsVps(unsigned char hdr) { return hevcNalType(hdr) == 32; }
+static bool hevcNalIsSps(unsigned char hdr) { return hevcNalType(hdr) == 33; }
+static bool hevcNalIsPps(unsigned char hdr) { return hevcNalType(hdr) == 34; }
+static bool hevcNalIsIdr(unsigned char hdr) {
+    unsigned t = hevcNalType(hdr);
+    return t >= 16 && t <= 23;   // BLA..CRA/IDR (IRAP)
+}
+
+// Per-channel video codec (default H.264), set by the Go client's "CODEC" FIFO
+// command so the muxer emits the matching FLV tags (codec 7 vs 12).
+static int g_channelCodec[FLV_CH_COUNT] = { FLV_CODEC_H264, FLV_CODEC_H264, FLV_CODEC_H264 };
+static pthread_mutex_t g_codecMutex = PTHREAD_MUTEX_INITIALIZER;
+
+static int channelCodec(int channel) {
+    int c;
+    pthread_mutex_lock(&g_codecMutex);
+    c = (channel >= 0 && channel < FLV_CH_COUNT) ? g_channelCodec[channel] : FLV_CODEC_H264;
+    pthread_mutex_unlock(&g_codecMutex);
+    return c;
+}
 
 // True if the access unit carries an SPS or IDR. Stops at the first slice NAL,
 // so only the leading parameter sets are scanned, not the slice payload.
@@ -351,6 +374,60 @@ std::vector<unsigned char> buildNaluTag(const unsigned char *nal, size_t len, bo
     put_u8(tag, 0x01); // AVCPacketType=1 (NALU)
     put_u24(tag, 0);   // composition time
     put_u32(tag, (uint32_t)len); // AVCC 4-byte length prefix
+    put_bytes(tag, nal, len);
+    return tag;
+}
+
+// HEVCDecoderConfigurationRecord (HEVCPacketType=0), codecid 12. The PTL fields
+// are copied from the SPS (sps[3..14] = profile byte, 4-byte compat flags,
+// 6-byte constraint flags, level_idc), so the record tracks the encoder's own
+// profile/level.
+std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned char> &vps,
+                                                    const std::vector<unsigned char> &sps,
+                                                    const std::vector<unsigned char> &pps) {
+    std::vector<unsigned char> tag;
+    put_u8(tag, 0x1c); // frametype=1 (key), codecid=12 (HEVC)
+    put_u8(tag, 0x00); // HEVCPacketType=0 (seq header)
+    put_u24(tag, 0);   // composition time = 0
+
+    auto sp = [&](size_t i, unsigned char def) { return sps.size() > i ? sps[i] : def; };
+
+    std::vector<unsigned char> rec;
+    put_u8(rec, 0x01);            // configurationVersion
+    put_u8(rec, sp(3, 0x01));     // profile_space|tier_flag|profile_idc
+    for (size_t i = 4; i < 8; i++) put_u8(rec, sp(i, 0));   // compatibility flags
+    for (size_t i = 8; i < 14; i++) put_u8(rec, sp(i, 0));  // constraint flags
+    put_u8(rec, sp(14, 0x7b));    // level_idc (123 = 4.1)
+    put_u16(rec, 0xf000);         // min_spatial_segmentation_idc (reserved 1111)
+    put_u8(rec, 0xfc);            // parallelismType (reserved 111111)
+    put_u8(rec, 0xfd);            // chromaFormat (reserved 111111 | 1 = 4:2:0)
+    put_u8(rec, 0xf8);            // bitDepthLumaMinus8 (reserved 11111)
+    put_u8(rec, 0xf8);            // bitDepthChromaMinus8
+    put_u16(rec, 0);              // avgFrameRate
+    put_u8(rec, 0x0f);            // constFrameRate(2)=0|numTemporalLayers(3)=1|temporalIdNested(1)=1|lengthSizeMinusOne(2)=3
+    unsigned count = (vps.empty() ? 0u : 1u) + (sps.empty() ? 0u : 1u) + (pps.empty() ? 0u : 1u);
+    put_u8(rec, (unsigned char)count);
+    auto arr = [&](unsigned char nalType, const std::vector<unsigned char> &n) {
+        if (n.empty()) return;
+        put_u8(rec, (unsigned char)(0x80 | nalType)); // array_completeness=1
+        put_u16(rec, 1);
+        put_u16(rec, (uint16_t)n.size());
+        put_bytes(rec, n.data(), n.size());
+    };
+    arr(32, vps);
+    arr(33, sps);
+    arr(34, pps);
+
+    put_bytes(tag, rec.data(), rec.size());
+    return tag;
+}
+
+std::vector<unsigned char> buildHevcNaluTag(const unsigned char *nal, size_t len, bool isKey) {
+    std::vector<unsigned char> tag;
+    put_u8(tag, isKey ? 0x1c : 0x2c); // frametype (1=key,2=inter), codecid=12 (HEVC)
+    put_u8(tag, 0x01); // HEVCPacketType=1 (NALU)
+    put_u24(tag, 0);   // composition time
+    put_u32(tag, (uint32_t)len); // 4-byte length prefix
     put_bytes(tag, nal, len);
     return tag;
 }
@@ -637,6 +714,8 @@ static void *pushThreadMain(void *arg) {
     out.reserve(65536);
     bool haveSps = false, havePps = false, sentSeqHeader = false;
     std::vector<unsigned char> sps, pps;
+    bool haveVps = false;
+    std::vector<unsigned char> vps;
     // One AAC sequence header per connection, from the cached ASC if known.
     bool sentAacSeqHeader = false;
     unsigned char asc[2] = {0, 0};
@@ -719,17 +798,24 @@ static void *pushThreadMain(void *arg) {
     writeFlvTag(out, 18, csInit, (uint32_t)(elapsed * 1000.0));
     writeTimestampTrailer(out, false, elapsed);
 
-    // If SPS/PPS are cached from a prior connection, append the AVC sequence
-    // header here so it ships in the same write() as the FLV header/onMetaData.
+    // If the parameter sets are cached from a prior connection, append the
+    // sequence header here so it ships in the same write() as the FLV
+    // header/onMetaData. HEVC also needs its VPS.
     pthread_mutex_lock(&c.stateMutex);
     bool haveCached = c.haveCachedSpsPps;
     if (haveCached) { sps = c.cachedSps; pps = c.cachedPps; }
+    bool haveCachedVps = !c.cachedVps.empty();
+    if (haveCachedVps) vps = c.cachedVps;
     pthread_mutex_unlock(&c.stateMutex);
-    if (haveCached) {
-        std::vector<unsigned char> seq = buildAvcSequenceHeader(sps, pps);
+    bool hevcConn = (channelCodec(channel) == FLV_CODEC_H265);
+    if (haveCached && (!hevcConn || haveCachedVps)) {
+        std::vector<unsigned char> seq = hevcConn
+            ? buildHevcSequenceHeader(vps, sps, pps)
+            : buildAvcSequenceHeader(sps, pps);
         writeFlvTag(out, 9, seq, (uint32_t)(elapsed * 1000.0));
         writeTimestampTrailer(out, true, elapsed);
         haveSps = havePps = sentSeqHeader = true;
+        if (hevcConn) haveVps = true;
     }
 
     // Cached ASC; the AAC trailer marker is its sample rate (16000), not 90000.
@@ -894,31 +980,68 @@ static void *pushThreadMain(void *arg) {
             size_t len = spans[s].second - spans[s].first;
             if (len == 0) continue;
             unsigned char hdr = nal[0];
-            // A changed SPS/PPS (e.g. mediad restarted with new geometry) re-sends
-            // the AVC sequence header; else the controller decodes with the old one.
-            if (nalIsSps(hdr)) {
-                if (haveSps && (sps.size() != len || memcmp(sps.data(), nal, len) != 0)) {
-                    sentSeqHeader = false;
-                    fprintf(stderr, "FlvPush[%d]: SPS changed, re-sending sequence header\n", channel);
+            bool hevc = (channelCodec(channel) == FLV_CODEC_H265);
+            // A changed parameter set (e.g. mediad restarted with new geometry)
+            // re-sends the sequence header; else the controller keeps decoding
+            // with the old one.
+            if (hevc) {
+                if (hevcNalIsVps(hdr)) {
+                    if (haveVps && (vps.size() != len || memcmp(vps.data(), nal, len) != 0))
+                        sentSeqHeader = false;
+                    vps.assign(nal, nal + len);
+                    haveVps = true;
+                    pthread_mutex_lock(&c.stateMutex);
+                    c.cachedVps = vps;
+                    pthread_mutex_unlock(&c.stateMutex);
+                    continue;
                 }
-                sps.assign(nal, nal + len);
-                haveSps = true;
-                pthread_mutex_lock(&c.stateMutex);
-                c.cachedSps = sps;
-                c.haveCachedSpsPps = havePps;
-                pthread_mutex_unlock(&c.stateMutex);
-                continue;
-            }
-            if (nalIsPps(hdr)) {
-                if (havePps && (pps.size() != len || memcmp(pps.data(), nal, len) != 0))
-                    sentSeqHeader = false;
-                pps.assign(nal, nal + len);
-                havePps = true;
-                pthread_mutex_lock(&c.stateMutex);
-                c.cachedPps = pps;
-                c.haveCachedSpsPps = haveSps;
-                pthread_mutex_unlock(&c.stateMutex);
-                continue;
+                if (hevcNalIsSps(hdr)) {
+                    if (haveSps && (sps.size() != len || memcmp(sps.data(), nal, len) != 0))
+                        sentSeqHeader = false;
+                    sps.assign(nal, nal + len);
+                    haveSps = true;
+                    pthread_mutex_lock(&c.stateMutex);
+                    c.cachedSps = sps;
+                    c.haveCachedSpsPps = havePps;
+                    pthread_mutex_unlock(&c.stateMutex);
+                    continue;
+                }
+                if (hevcNalIsPps(hdr)) {
+                    if (havePps && (pps.size() != len || memcmp(pps.data(), nal, len) != 0))
+                        sentSeqHeader = false;
+                    pps.assign(nal, nal + len);
+                    havePps = true;
+                    pthread_mutex_lock(&c.stateMutex);
+                    c.cachedPps = pps;
+                    c.haveCachedSpsPps = haveSps;
+                    pthread_mutex_unlock(&c.stateMutex);
+                    continue;
+                }
+            } else {
+                if (nalIsSps(hdr)) {
+                    if (haveSps && (sps.size() != len || memcmp(sps.data(), nal, len) != 0)) {
+                        sentSeqHeader = false;
+                        fprintf(stderr, "FlvPush[%d]: SPS changed, re-sending sequence header\n", channel);
+                    }
+                    sps.assign(nal, nal + len);
+                    haveSps = true;
+                    pthread_mutex_lock(&c.stateMutex);
+                    c.cachedSps = sps;
+                    c.haveCachedSpsPps = havePps;
+                    pthread_mutex_unlock(&c.stateMutex);
+                    continue;
+                }
+                if (nalIsPps(hdr)) {
+                    if (havePps && (pps.size() != len || memcmp(pps.data(), nal, len) != 0))
+                        sentSeqHeader = false;
+                    pps.assign(nal, nal + len);
+                    havePps = true;
+                    pthread_mutex_lock(&c.stateMutex);
+                    c.cachedPps = pps;
+                    c.haveCachedSpsPps = haveSps;
+                    pthread_mutex_unlock(&c.stateMutex);
+                    continue;
+                }
             }
 
             // Capture time, forced strictly increasing: equal timestamps get a
@@ -945,7 +1068,8 @@ static void *pushThreadMain(void *arg) {
 
             // onClockSync before every IDR, as a G3 does: the recorder opens a
             // seekable index point there. 10 s fallback.
-            if (nalIsIdr(hdr) || nowSeconds() - lastSyncTime >= 10.0) {
+            if ((hevc ? hevcNalIsIdr(hdr) : nalIsIdr(hdr)) ||
+                nowSeconds() - lastSyncTime >= 10.0) {
                 lastSyncTime = nowSeconds();
                 double wallNow = epochMillis();
                 std::vector<unsigned char> sync;
@@ -963,8 +1087,14 @@ static void *pushThreadMain(void *arg) {
             }
 
             if (!sentSeqHeader) {
-                if (!haveSps || !havePps) continue; // wait for both before emitting anything
-                std::vector<unsigned char> seq = buildAvcSequenceHeader(sps, pps);
+                if (hevc) {
+                    if (!haveVps || !haveSps || !havePps) continue;
+                } else if (!haveSps || !havePps) {
+                    continue; // wait for the parameter sets before emitting anything
+                }
+                std::vector<unsigned char> seq = hevc
+                    ? buildHevcSequenceHeader(vps, sps, pps)
+                    : buildAvcSequenceHeader(sps, pps);
                 out.clear();
                 writeFlvTag(out, 9, seq, tagMs);
                 writeTimestampTrailer(out, true, tagElapsed);
@@ -974,8 +1104,10 @@ static void *pushThreadMain(void *arg) {
                 sentSeqHeader = true;
             }
 
-            bool key = nalIsIdr(hdr);
-            std::vector<unsigned char> tagData = buildNaluTag(nal, len, key);
+            bool key = hevc ? hevcNalIsIdr(hdr) : nalIsIdr(hdr);
+            std::vector<unsigned char> tagData = hevc
+                ? buildHevcNaluTag(nal, len, key)
+                : buildNaluTag(nal, len, key);
             out.clear();
             writeFlvTag(out, 9, tagData, tagMs);
             writeTimestampTrailer(out, true, tagElapsed);
@@ -1146,11 +1278,31 @@ static void *ctlThreadMain(void *) {
                     fprintf(stderr, "FlvPush: mic %s (controller audio volume)\n",
                             on ? "muted" : "unmuted");
                 }
+            } else if (strncmp(line, "CODEC ", 6) == 0) {
+                char chanStr[16], codecStr[16];
+                if (sscanf(line + 6, "%15s %15s", chanStr, codecStr) == 2) {
+                    int channel;
+                    if (parseChannel(chanStr, &channel)) {
+                        int codec = (strncasecmp(codecStr, "h265", 4) == 0)
+                                        ? FLV_CODEC_H265 : FLV_CODEC_H264;
+                        flvPushSetChannelCodec(channel, codec);
+                        fprintf(stderr, "FlvPush[%d]: CODEC %s\n", channel,
+                                codec == FLV_CODEC_H265 ? "h265" : "h264");
+                    }
+                }
             }
         }
         fclose(f);
     }
     return nullptr;
+}
+
+void flvPushSetChannelCodec(int channel, int codec) {
+    if (channel < 0 || channel >= FLV_CH_COUNT) return;
+    if (codec != FLV_CODEC_H264 && codec != FLV_CODEC_H265) return;
+    pthread_mutex_lock(&g_codecMutex);
+    g_channelCodec[channel] = codec;
+    pthread_mutex_unlock(&g_codecMutex);
 }
 
 void flvPushSetHighResolution(unsigned width, unsigned height) {
