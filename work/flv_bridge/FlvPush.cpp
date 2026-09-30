@@ -3,6 +3,10 @@
 
 // FlvPush implementation. See FlvPush.h.
 #include "FlvPush.h"
+#include "flvbytes.h"
+#include "hevc_flv.h"
+#include "keyframe.h"
+#include "tsutil.h"
 
 #include <cstdio>
 #include <cstring>
@@ -95,16 +99,6 @@ bool nalIsSps(unsigned char hdr) { return (hdr & 0x1f) == 7; }
 bool nalIsPps(unsigned char hdr) { return (hdr & 0x1f) == 8; }
 bool nalIsIdr(unsigned char hdr) { return (hdr & 0x1f) == 5; }
 
-// HEVC NAL header: forbidden_zero(1) | nal_unit_type(6) | layer_id_hi(1).
-static unsigned hevcNalType(unsigned char hdr) { return (hdr >> 1) & 0x3f; }
-static bool hevcNalIsVps(unsigned char hdr) { return hevcNalType(hdr) == 32; }
-static bool hevcNalIsSps(unsigned char hdr) { return hevcNalType(hdr) == 33; }
-static bool hevcNalIsPps(unsigned char hdr) { return hevcNalType(hdr) == 34; }
-static bool hevcNalIsIdr(unsigned char hdr) {
-    unsigned t = hevcNalType(hdr);
-    return t >= 16 && t <= 23;   // BLA..CRA/IDR (IRAP)
-}
-
 // Per-channel video codec (default H.264), set by the Go client's "CODEC" FIFO
 // command so the muxer emits the matching FLV tags (codec 7 vs 12).
 static int g_channelCodec[FLV_CH_COUNT] = { FLV_CODEC_H264, FLV_CODEC_H264, FLV_CODEC_H264 };
@@ -116,20 +110,6 @@ static int channelCodec(int channel) {
     c = (channel >= 0 && channel < FLV_CH_COUNT) ? g_channelCodec[channel] : FLV_CODEC_H264;
     pthread_mutex_unlock(&g_codecMutex);
     return c;
-}
-
-// True if the access unit carries an SPS or IDR. Stops at the first slice NAL,
-// so only the leading parameter sets are scanned, not the slice payload.
-bool frameIsKey(const std::vector<unsigned char> &buf) {
-    size_t n = buf.size();
-    for (size_t i = 0; i + 3 < n; i++) {
-        if (buf[i] != 0 || buf[i + 1] != 0 || buf[i + 2] != 1) continue;
-        unsigned char hdr = buf[i + 3];
-        if (nalIsSps(hdr) || nalIsIdr(hdr)) return true;
-        if ((hdr & 0x1f) == 1) return false;
-        i += 2;
-    }
-    return false;
 }
 
 // -------- byte buffer / socket write helpers --------
@@ -182,21 +162,6 @@ bool writeAll(int fd, const unsigned char *data, size_t len) {
         off += (size_t)n;
     }
     return true;
-}
-
-void put_u8(std::vector<unsigned char> &b, uint8_t v) { b.push_back(v); }
-void put_u16(std::vector<unsigned char> &b, uint16_t v) {
-    b.push_back((v >> 8) & 0xff); b.push_back(v & 0xff);
-}
-void put_u24(std::vector<unsigned char> &b, uint32_t v) {
-    b.push_back((v >> 16) & 0xff); b.push_back((v >> 8) & 0xff); b.push_back(v & 0xff);
-}
-void put_u32(std::vector<unsigned char> &b, uint32_t v) {
-    b.push_back((v >> 24) & 0xff); b.push_back((v >> 16) & 0xff);
-    b.push_back((v >> 8) & 0xff); b.push_back(v & 0xff);
-}
-void put_bytes(std::vector<unsigned char> &b, const unsigned char *p, size_t n) {
-    b.insert(b.end(), p, p + n);
 }
 
 // AMF0 string (0x02 + u16 length + bytes), for the top-level tag name.
@@ -378,37 +343,6 @@ std::vector<unsigned char> buildNaluTag(const unsigned char *nal, size_t len, bo
     return tag;
 }
 
-// UniFi's extendedFlv marks the HEVC codec config with a video tag whose byte0
-// is 0x68 and byte1 is 0x01, followed by u16-length-prefixed VPS, SPS and PPS
-// (observed on a native G5's :7550 stream). It is NOT an ISO
-// HEVCDecoderConfigurationRecord: ms does not recognise an hvcC here and
-// reports videoCodec=VUNK with no recorder segments.
-std::vector<unsigned char> buildHevcSequenceHeader(const std::vector<unsigned char> &vps,
-                                                    const std::vector<unsigned char> &sps,
-                                                    const std::vector<unsigned char> &pps) {
-    std::vector<unsigned char> tag;
-    put_u8(tag, 0x68); // frametype 6 (codec config) | codec 8 (HEVC)
-    put_u8(tag, 0x01);
-    auto add = [&](const std::vector<unsigned char> &n) {
-        put_u16(tag, (uint16_t)n.size());
-        put_bytes(tag, n.data(), n.size());
-    };
-    add(vps);
-    add(sps);
-    add(pps);
-    return tag;
-}
-
-std::vector<unsigned char> buildHevcNaluTag(const unsigned char *nal, size_t len, bool isKey) {
-    std::vector<unsigned char> tag;
-    put_u8(tag, isKey ? 0x18 : 0x28); // frametype (1=key,2=inter), codecid=8 (HEVC)
-    put_u8(tag, 0x01); // HEVCPacketType=1 (NALU)
-    put_u24(tag, 0);   // composition time
-    put_u32(tag, (uint32_t)len); // 4-byte length prefix
-    put_bytes(tag, nal, len);
-    return tag;
-}
-
 // -------- Audio: 7-byte ADTS header (no CRC) + raw AAC -> FLV tags --------
 // Rate/channels come from each ADTS header; object type is fixed AAC LC.
 
@@ -544,7 +478,7 @@ void flvPushEnqueue(int channel, const output_frame &f) {
     if (!flvPushActive(channel)) return;
     ChannelState &c = g_ch[channel];
     measureFps(c, channel);
-    bool key = frameIsKey(f.frame);
+    bool key = annexBFrameIsKey(f.frame, channelCodec(channel) == FLV_CODEC_H265);
     unsigned long dropped = 0;
     pthread_mutex_lock(&c.flvQueue.mutex);
     if (c.dropUntilKey && !key) {
@@ -811,11 +745,13 @@ static void *pushThreadMain(void *arg) {
 
     // Opus (type 10) config tag 0xcf 00 03 02 at connection start, as real
     // cameras send; the web/desktop live view is Opus-only.
+    uint32_t lastAacMs = 0, lastOpusMs = 0;   // per-track monotonic guard
     if (g_opusEnabled) {
         unsigned char opusCfg[4] = {0xcf, 0x00, 0x03, 0x02};
         std::vector<unsigned char> cfg(opusCfg, opusCfg + 4);
         writeFlvTag(out, 10, cfg, (uint32_t)(elapsed * 1000.0));
         writeTimestampTrailerClock(out, 0x00BB80, 48000.0, elapsed);
+        lastOpusMs = (uint32_t)(elapsed * 1000.0);
     }
 
     hexDump(channel, "initial write (header+onMetaData+onMpma+onClockSync[+seqHeader])", out.data(), out.size());
@@ -863,6 +799,7 @@ static void *pushThreadMain(void *arg) {
                 out.clear();
                 writeFlvTag(out, 8, aacSeq, (uint32_t)(seqElapsed * 1000.0));
                 writeTimestampTrailerClock(out, 0x003E80, 16000.0, seqElapsed);
+                lastAacMs = (uint32_t)(seqElapsed * 1000.0);
                 ok = writeAll(fd, out.data(), out.size());
                 if (!ok) break;
                 bytesWritten += out.size();
@@ -871,7 +808,8 @@ static void *pushThreadMain(void *arg) {
 
             // Same capture-time basis as video (shared anchor keeps A/V aligned).
             double aTagElapsed = captureElapsed(af.time);
-            uint32_t aTagMs = (uint32_t)(aTagElapsed * 1000.0);
+            uint32_t aTagMs = monotonicMs(lastAacMs, (uint32_t)(aTagElapsed * 1000.0));
+            if (aTagMs > (uint32_t)(aTagElapsed * 1000.0)) aTagElapsed = aTagMs / 1000.0;
 
             const unsigned char *rawAac = af.frame.data() + 7;
             size_t rawLen = af.frame.size() - 7;
@@ -922,7 +860,8 @@ static void *pushThreadMain(void *arg) {
                 oTagElapsed = (double)opusPtsIndex / 50.0;
                 opusPtsIndex++;
             }
-            uint32_t oTagMs = (uint32_t)(oTagElapsed * 1000.0);
+            uint32_t oTagMs = monotonicMs(lastOpusMs, (uint32_t)(oTagElapsed * 1000.0));
+            if (oTagMs > (uint32_t)(oTagElapsed * 1000.0)) oTagElapsed = oTagMs / 1000.0;
             out.clear();
             writeFlvTag(out, 10, ofr.frame, oTagMs);
             writeTimestampTrailerClock(out, 0x00BB80, 48000.0, oTagElapsed);

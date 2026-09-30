@@ -19,7 +19,7 @@ EXTRA_LIB = $(if $(FAAD2),$(FAAD2)/libfaad.a) $(if $(OPUS),$(OPUS)/.libs/libopus
 override CXXFLAGS += $(EXTRA_INC)
 override LDLIBS += $(EXTRA_LIB) -lm
 
-SRCS = main.cpp FlvPush.cpp FshareReader.cpp models.cpp
+SRCS = main.cpp FlvPush.cpp hevc_flv.cpp FshareReader.cpp models.cpp
 OBJS = $(SRCS:.cpp=.o)
 
 .PHONY: all clean test
@@ -29,15 +29,21 @@ all: unifi_flv_bridge
 unifi_flv_bridge: $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-%.o: %.cpp bridge.h FlvPush.h FshareReader.h
+%.o: %.cpp bridge.h FlvPush.h FshareReader.h keyframe.h tsutil.h flvbytes.h hevc_flv.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Host-only parser test (synthetic shm ring); always builds/runs native.
-test: test_fshare_reader.cpp FshareReader.cpp models.cpp
+test: test_fshare_reader.cpp test_keyframe.cpp test_hevc_flv.cpp hevc_flv.cpp hevc_flv.h flvbytes.h keyframe.h tsutil.h FshareReader.cpp models.cpp
 	$(CXX) -O1 -Wall -std=gnu++14 -I. -o test_fshare_reader \
 	    test_fshare_reader.cpp FshareReader.cpp models.cpp -lpthread
 	./test_fshare_reader
 	rm -f test_fshare_reader
+	$(CXX) -O1 -Wall -std=gnu++14 -I. -o test_keyframe test_keyframe.cpp
+	./test_keyframe
+	rm -f test_keyframe
+	$(CXX) -O1 -Wall -std=gnu++14 -I. -o test_hevc_flv test_hevc_flv.cpp hevc_flv.cpp
+	./test_hevc_flv
+	rm -f test_hevc_flv
 
 clean:
 	rm -f $(OBJS) unifi_flv_bridge test_fshare_reader

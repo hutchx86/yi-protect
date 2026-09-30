@@ -1102,6 +1102,12 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 func (c *Client) streamCodecs() map[string]string {
 	c.vidCodecMu.Lock()
 	defer c.vidCodecMu.Unlock()
+	if c.vidCodec == nil {
+		c.vidCodec = loadVidCodecs(vidCodecFilePath)
+		if len(c.vidCodec) > 0 {
+			log.Printf("stream codecs restored: %v", c.vidCodec)
+		}
+	}
 	m := map[string]string{"video1": "h264", "video2": "h264", "video3": "h264"}
 	for k, v := range c.vidCodec {
 		if v == "h264" || v == "h265" {
@@ -1114,8 +1120,17 @@ func (c *Client) streamCodecs() map[string]string {
 // storeStreamCodecs records the codec state for the next (partial) settings object.
 func (c *Client) storeStreamCodecs(m map[string]string) {
 	c.vidCodecMu.Lock()
+	changed := len(c.vidCodec) != len(m)
+	for k, v := range m {
+		if c.vidCodec[k] != v {
+			changed = true
+		}
+	}
 	c.vidCodec = m
 	c.vidCodecMu.Unlock()
+	if changed {
+		saveVidCodecs(vidCodecFilePath, m)
+	}
 }
 
 // handleVideoSettings responds to ChangeVideoSettings. The client is the
