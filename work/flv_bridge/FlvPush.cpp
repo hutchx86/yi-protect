@@ -628,6 +628,12 @@ static int connectTo(const std::string &host, int port) {
     freeaddrinfo(res);
     int one = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    // Bound each send: a peer that stops reading (a half-open TCP, ms restarted)
+    // otherwise blocks write() forever, the video queue overflows for hours and
+    // the Go client never re-CONNECTs. A timed-out write fails the push, which
+    // redials (observed live 2026-09-30).
+    struct timeval sndto = { 5, 0 };
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sndto, sizeof(sndto));
     return fd;
 }
 
