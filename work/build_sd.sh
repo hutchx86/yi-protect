@@ -106,9 +106,9 @@ if [ ! -f "$FFMPEG_DIR/libavcodec/libavcodec.a" ]; then
       ./configure --enable-cross-compile --cross-prefix="$TCBIN/$XP" \
           --arch=arm --target-os=linux --enable-thumb --enable-small \
           --disable-autodetect --disable-ffplay --disable-ffprobe --disable-doc \
-          --disable-decoders --enable-decoder=h264 --disable-encoders \
+          --disable-decoders --enable-decoder=h264,hevc --disable-encoders \
           --disable-demuxers --disable-muxers --disable-protocols \
-          --disable-parsers --enable-parser=h264 \
+          --disable-parsers --enable-parser=h264,hevc \
           --disable-filters --disable-bsfs --disable-indevs --disable-outdevs \
           --disable-swscale \
           --extra-cflags="-Os -ffunction-sections -fdata-sections" \

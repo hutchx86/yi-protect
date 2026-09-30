@@ -35,11 +35,24 @@ const unsigned kAlarmSeconds = 15;  // the client also bounds the exec
 
 struct Snap {
     int wantType = TYPE_HIGH;
-    std::vector<unsigned char> sps, pps, jpeg;
+    int codec = 0;                  // 0 = unknown, 1 = H.264, 2 = H.265
+    std::vector<unsigned char> vps, sps, pps, jpeg;
     bool done = false;
     AVCodecContext *dec = nullptr;
     AVFrame *frame = nullptr;
 };
+
+// Open the decoder once the ring's codec is known (the encoder may be either).
+bool openDecoder(Snap &s, int codec) {
+    const AVCodec *c = avcodec_find_decoder(codec == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264);
+    if (c == nullptr) return false;
+    s.codec = codec;
+    s.dec = avcodec_alloc_context3(c);
+    s.frame = av_frame_alloc();
+    if (s.dec == nullptr || s.frame == nullptr) return false;
+    s.dec->flags |= AV_CODEC_FLAG_UNALIGNED;
+    return avcodec_open2(s.dec, c, nullptr) >= 0;
+}
 
 // Next Annex-B start code at/after pos; start/scLen are its offset and length.
 bool nextStart(const unsigned char *p, size_t n, size_t &pos, size_t &start, size_t &scLen) {
@@ -54,9 +67,7 @@ bool nextStart(const unsigned char *p, size_t n, size_t &pos, size_t &start, siz
     return false;
 }
 
-int nalTypeAt(const unsigned char *p, size_t start, size_t scLen) {
-    return p[start + scLen] & 0x1f;
-}
+
 
 inline uint8_t clip8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v); }
 
@@ -145,20 +156,40 @@ bool onFrame(void *v, int frameType, std::vector<unsigned char> &&payload,
     bool hasIdr = false;
     size_t pos = 0, start, scLen;
     while (nextStart(payload.data(), payload.size(), pos, start, scLen)) {
-        int t = nalTypeAt(payload.data(), start, scLen);
-        if (t == 7) {
-            s->sps.assign(payload.begin() + start, payload.end());
-            break;  // SPS is the only NAL in its frame entry
-        }
-        if (t == 8) {
-            s->pps.assign(payload.begin() + start, payload.end());
-            break;
-        }
-        if (t == 5) hasIdr = true;
-    }
-    if (!hasIdr || s->sps.empty() || s->pps.empty()) return true;
+        const unsigned char *p = payload.data() + start + scLen;
+        int h264t = p[0] & 0x1f;             // H.264 nal_unit_type
+        int hevcT = (p[0] >> 1) & 0x3f;      // HEVC nal_unit_type
 
-    std::vector<unsigned char> au = s->sps;
+        // Parameter sets are the only NAL in their ring entry, so a match ends
+        // the scan. The codec is detected from the first recognised NAL.
+        if (s->codec == 0) {
+            if (h264t == 7 || h264t == 8 || h264t == 5) s->codec = 1;
+            else if (hevcT == 32 || hevcT == 33 || hevcT == 34 ||
+                     (hevcT >= 16 && hevcT <= 23)) s->codec = 2;
+            else continue;
+        }
+        if (s->codec == 2) {
+            if (hevcT == 32) { s->vps.assign(payload.begin() + start, payload.end()); break; }
+            if (hevcT == 33) { s->sps.assign(payload.begin() + start, payload.end()); break; }
+            if (hevcT == 34) { s->pps.assign(payload.begin() + start, payload.end()); break; }
+            if (hevcT >= 16 && hevcT <= 23) hasIdr = true;   // BLA..CRA/IDR (IRAP)
+        } else {
+            if (h264t == 7) { s->sps.assign(payload.begin() + start, payload.end()); break; }
+            if (h264t == 8) { s->pps.assign(payload.begin() + start, payload.end()); break; }
+            if (h264t == 5) hasIdr = true;
+        }
+    }
+    if (!hasIdr) return true;
+    if (s->codec == 2) {
+        if (s->vps.empty() || s->sps.empty() || s->pps.empty()) return true;
+    } else if (s->sps.empty() || s->pps.empty()) {
+        return true;
+    }
+    if (s->dec == nullptr && !openDecoder(*s, s->codec)) return true;
+
+    std::vector<unsigned char> au;
+    if (s->codec == 2) au.insert(au.end(), s->vps.begin(), s->vps.end());
+    au.insert(au.end(), s->sps.begin(), s->sps.end());
     au.insert(au.end(), s->pps.begin(), s->pps.end());
     au.insert(au.end(), payload.begin(), payload.end());
     decodeAu(*s, au);
@@ -221,25 +252,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    if (codec == nullptr) {
-        std::fprintf(stderr, "unifi_snapshot: no H.264 decoder\n");
-        return 1;
-    }
-
     Snap s;
     s.wantType = wantLow ? TYPE_LOW : TYPE_HIGH;
-    s.dec = avcodec_alloc_context3(codec);
-    s.frame = av_frame_alloc();
-    if (s.dec == nullptr || s.frame == nullptr) {
-        std::fprintf(stderr, "unifi_snapshot: decoder alloc failed\n");
-        return 1;
-    }
-    s.dec->flags |= AV_CODEC_FLAG_UNALIGNED;
-    if (avcodec_open2(s.dec, codec, nullptr) < 0) {
-        std::fprintf(stderr, "unifi_snapshot: avcodec_open2 failed\n");
-        return 1;
-    }
+    // The decoder is opened on the first keyframe, once the ring's codec
+    // (H.264 or H.265) is known - the encoder is switchable.
 
     FshareReader::Config cfg;
     cfg.size = (size_t)st.st_size;
