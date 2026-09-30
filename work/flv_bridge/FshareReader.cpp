@@ -142,6 +142,13 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
         if (endPrev >= buffer_ + size_) endPrev -= (size_ - offset_);
     }
 
+    // No frame emitted for this long while the loop spins -> hard-resync to the
+    // producer's current end. The writer laps us when the push path backs up (a
+    // stalled TCP peer + queue overflow), and a garbage header can then leave the
+    // cursor permanently off the frame boundary: without this the reader wedges
+    // and the video queues stay empty (observed live 2026-09-30).
+    long long lastEmitMs = nowMs();
+
     while (true) {
         uint32_t start = 0, len = 0, endOff = 0;
         std::memcpy(&start, buffer_ + 16, sizeof(start));
@@ -154,6 +161,15 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
         if (end != buffer_ + offset_ + endOff) {
             // Writer is mid-update; its fields don't agree yet.
             usleep(1000);
+            continue;
+        }
+        if (nowMs() - lastEmitMs > 5000) {
+            if (endPrev != end)
+                std::fprintf(stderr, "%lld: fshare: no frames for 5s, resyncing to producer end\n",
+                             nowMs());
+            endPrev = end;
+            lastEmitMs = nowMs();
+            usleep(10000);
             continue;
         }
         if (end == endPrev) {
@@ -171,8 +187,16 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
         unsigned char *cur = endPrev;
         int count = 0;
         bool sync = true;
+        /* Bound the walk: cycling a whole ring without reaching `end` means the
+         * cursor is off the frame boundary, not that the region is huge. */
+        unsigned long steps = 0;
+        unsigned long maxSteps = (size_ - offset_) / (size_t)(headerSize_ > 0 ? headerSize_ : 1) + 2u;
 
         while (cur != end) {
+            if (++steps > maxSteps) {
+                sync = false;
+                break;
+            }
             FrameHeader h = readHeader(cur);
             if (h.len > size_ - offset_ - (size_t)headerSize_) {
                 sync = false;
@@ -247,6 +271,7 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             }
         }
 
+        lastEmitMs = nowMs();
         usleep(10000);
     }
 }
