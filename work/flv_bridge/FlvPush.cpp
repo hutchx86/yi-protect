@@ -943,8 +943,22 @@ static void *pushThreadMain(void *arg) {
             got = true;
         }
         pthread_mutex_unlock(&c.flvQueue.mutex);
+        // Self-heal: a connected channel with no video for 20 s means the ring
+        // reader or the peer is wedged (audio can still flow, so the reader's
+        // own watchdog stays quiet). Exit so watchdog.sh restarts the bridge -
+        // without this the only recovery was a manual restart (hours of
+        // audio-only, 2026-09-30).
+        static double lastFrameSec[FLV_CH_COUNT] = {0};
         if (!got) {
             static int emptyPolls[FLV_CH_COUNT] = {0};
+            double nowS = nowSeconds();
+            if (lastFrameSec[channel] == 0) lastFrameSec[channel] = nowS;
+            if (nowS - lastFrameSec[channel] > 20.0) {
+                fprintf(stderr, "FlvPush[%d]: no video for 20s while connected, exiting for a restart\n",
+                        channel);
+                fflush(stderr);
+                exit(1);
+            }
             emptyPolls[channel]++;
             if (emptyPolls[channel] % 400 == 0) {
                 fprintf(stderr, "FlvPush[%d]: gen %u still waiting on empty queue (%d polls)\n",
@@ -953,6 +967,7 @@ static void *pushThreadMain(void *arg) {
             usleep(5000);
             continue;
         }
+        lastFrameSec[channel] = nowSeconds();
 
         std::vector<std::pair<size_t, size_t>> spans;
         splitAnnexB(f.frame, spans);
