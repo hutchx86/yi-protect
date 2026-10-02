@@ -21,6 +21,12 @@ TCBIN="$TCDIR/toolchain/bin"
 BUILD="$ROOT/work/build"
 YHB="$BUILD/yi-hack"
 
+# Optional clean-room mediad (sister project yi-mediad). When this dist exists it
+# is packaged into the image so a user can opt into the advanced encoder path
+# with unifi.cfg IS_MEDIAD=yes; without it the image is built rmm-only (still
+# fully functional, just no H.265/advanced picture controls).
+MEDIAD_DIST="${MEDIAD_DIST:-$ROOT/../sisters/yi-mediad/yi-mediad-git/dist}"
+
 mkdir -p "$BIN" "$LIB" "$ETC" "$UNIFI/script" "$BUILD"
 
 export PATH="$TCBIN:$HOME/.local/bin:$PATH"
@@ -223,6 +229,25 @@ cp "$I/dropbear/_install/dropbearmulti"           "$BIN/"
 cp "$I/alsa-lib/_install/lib/libasound.so.2.0.0"  "$LIB/libasound.so.2"
 "$STRIP" "$BIN/dropbearmulti" "$LIB/libasound.so.2" 2>/dev/null || true
 
+# 5b. Optional clean-room mediad (sister project yi-mediad): the advanced encoder
+#     path, selected at boot by unifi.cfg IS_MEDIAD=yes (init.sh/watchdog.sh
+#     already branch on it). Its libs are self-contained (no vendor .so fetch).
+echo "== 5b/7 mediad (optional advanced encoder) =="
+if [ -x "$MEDIAD_DIST/unifi/bin/mediad" ]; then
+    cp "$MEDIAD_DIST/unifi/bin/mediad" "$BIN/mediad"
+    cp "$MEDIAD_DIST/unifi/script/mediad.sh" "$UNIFI/script/mediad.sh"
+    [ -f "$MEDIAD_DIST/unifi/etc/mediad.conf" ] && cp "$MEDIAD_DIST/unifi/etc/mediad.conf" "$ETC/mediad.conf"
+    for env in "$MEDIAD_DIST"/unifi/etc/mediad.*.env; do
+        [ -f "$env" ] && cp "$env" "$ETC/$(basename "$env")"
+    done
+    for lib in "$MEDIAD_DIST"/unifi/lib/*.so; do
+        [ -f "$lib" ] && cp "$lib" "$LIB/"
+    done
+    echo "   mediad packaged from $MEDIAD_DIST"
+else
+    echo "   NOTE: no mediad dist at $MEDIAD_DIST; building an rmm-only image."
+fi
+
 # 6. Static assets: all-white blanks of the stock watermark size are bind-mounted
 #    over the stock bitmaps in init.sh; no vendor watermark bitmap is shipped.
 echo "== 6/6 assets =="
@@ -250,6 +275,10 @@ cp "$ROOT/LICENSE" "$SD/LICENSE"
 cp "$ROOT/NOTICE"  "$SD/NOTICE"
 rm -rf "$SD/licenses"
 cp -R "$ROOT/licenses" "$SD/licenses"
+# mediad's own third-party notices (AGPL clean-room, Terminus font, FAAC, ...).
+if [ -d "$MEDIAD_DIST/licenses" ]; then
+    cp -R "$MEDIAD_DIST/licenses" "$SD/licenses/mediad"
+fi
 cat > "$SD/SOURCES.txt" <<SOURCES_EOF
 Sources for the binaries in this image
 ======================================
@@ -291,12 +320,29 @@ this image, on physical media or by download, to anyone who requests it. This
 offer is valid for at least three years from the date of distribution.
 SOURCES_EOF
 
+# mediad is optional; when packaged, name its sources and the exact build commits
+# (the sister project writes its own authoritative SOURCE.txt into licenses/mediad).
+if [ -x "$BIN/mediad" ]; then
+    cat >> "$SD/SOURCES.txt" <<MEDIAD_EOF
+
+* mediad -- clean-room drop-in media daemon (H.264 + H.265), AGPL-3.0-only with
+  a section 7 linker exception (licenses/mediad/LICENSE-EXCEPTION). Its linked
+  clean-room tiers and FAAC; exact commits in licenses/mediad/SOURCE.txt:
+    yi-mediad   https://github.com/hutchx86/yi-mediad      (AGPL-3.0-only)
+    freewinner  https://github.com/hutchx86/freewinner     (AGPL-3.0-only)
+    freecodec   https://github.com/hutchx86/freecodec      (AGPL-3.0-only)
+    FAAC        https://github.com/knik0/faac              (LGPL-2.1-or-later)
+  Terminus Bold font, burned into mediad's OSD:
+    https://terminus-font.sourceforge.net                  (OFL-1.1)
+MEDIAD_EOF
+fi
+
 # 7. Package the whole SD layout as one tarball; extract to the card root.
 echo "== 7/7 packaging =="
 # bin/ and lib/ are gitignored and never emptied, so anything left there by
 # hand (e.g. a vendor-linked mediad from an old deploy) would ship. Refuse.
-SHIP_BIN="cpld_ctl downloader dropbearmulti ipc_cmd mixer_set mkpasswd set_tz_offset talkback_rx unifi_avclient_go unifi_flv_bridge unifi_snapshot"
-SHIP_LIB="ipc_multiplex.so libasound.so.2"
+SHIP_BIN="cpld_ctl downloader dropbearmulti ipc_cmd mediad mixer_set mkpasswd set_tz_offset talkback_rx unifi_avclient_go unifi_flv_bridge unifi_snapshot"
+SHIP_LIB="ipc_multiplex.so libasound.so.2 libvenc_base.so vin_crop_shim.so"
 stray=""
 for f in "$BIN"/* "$LIB"/*; do
     [ -e "$f" ] || continue
@@ -323,12 +369,18 @@ if [ -n "$links" ]; then
     exit 1
 fi
 
-ETC_ALLOW="configure_wifi.cfg.example model_table main_blank.bmp sub_blank.bmp unifi.cfg"
+ETC_ALLOW="configure_wifi.cfg.example model_table main_blank.bmp sub_blank.bmp unifi.cfg mediad.conf"
 for f in "$ETC"/*; do
     [ -e "$f" ] || continue
+    _bn=$(basename "$f")
     case " $ETC_ALLOW " in
-        *" $(basename "$f") "*) ;;
-        *) echo "ERROR: unexpected file in unifi/etc (per-camera identity leak?): $f"; exit 1 ;;
+        *" $_bn "*) ;;
+        *)
+            # Per-model/per-deploy mediad knobs (mediad.env, mediad.<model>.env).
+            case "$_bn" in mediad.env|mediad.*.env) ;; *)
+                echo "ERROR: unexpected file in unifi/etc (per-camera identity leak?): $f"; exit 1 ;;
+            esac
+            ;;
     esac
 done
 

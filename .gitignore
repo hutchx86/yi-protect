@@ -15,6 +15,11 @@ work/build/
 work/sd_root/unifi/bin/
 work/sd_root/unifi/lib/
 work/sd_root/unifi/script/lower_half/
+# mediad files copied in from sisters/yi-mediad/dist by build_sd.sh (generated).
+work/sd_root/unifi/script/mediad.sh
+work/sd_root/unifi/etc/mediad.conf
+work/sd_root/unifi/etc/mediad.env
+work/sd_root/unifi/etc/mediad.*.env
 # License files copied into the SD image by build_sd.sh (generated).
 work/sd_root/LICENSE
 work/sd_root/licenses/

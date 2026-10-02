@@ -61,10 +61,14 @@ controller. It is still a moving target — expect rough edges.
   YI app alongside Protect. It is **on by default**, except on `mediad` builds
   (`IS_MEDIAD=yes`) where it defaults off; set `yes`/`no` to force it. Off =
   local-only, no Yi cloud traffic.
-- **Optional mediad** — [yi-mediad](https://github.com/hutchx86/yi-mediad) can
-  replace the stock media daemon (`IS_MEDIAD=yes`). Only a vendor-linked mediad
-  build makes the camera fetch the vendor H.264 libs from GitHub at boot; the
-  default setup makes no such fetch.
+- **Selectable encoder** — the image ships two encoder paths: the stock Yi
+  `rmm`, and the clean-room [yi-mediad](https://github.com/hutchx86/yi-mediad)
+  daemon. `unifi.cfg IS_MEDIAD=yes` runs `mediad` (H.264 + H.265, advanced
+  picture controls); `no` keeps stock `rmm` (H.264 only). The two never run
+  together. H.265 "super encoding" is advertised to the controller **only** on
+  the `mediad` path, so Protect cannot pick a codec the active encoder cannot
+  produce. A vendor-linked mediad build fetches the vendor H.264 libs from
+  GitHub at boot; the shipped clean-room build makes no such fetch.
 - **Self-contained SD deploy** — everything in the image builds from source into
   `/tmp/sd/unifi/`; no yi-hack install required at runtime.
 - **One image, any supported camera** — the model is auto-detected at boot, so

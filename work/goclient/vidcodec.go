@@ -33,6 +33,18 @@ func loadVidCodecs(path string) map[string]string {
 	return m
 }
 
+// forceH264 rewrites any h265 entry to h264 in place. Used when the active
+// encoder path (the stock rmm encoder) cannot produce H.265, so a persisted or
+// controller-requested h265 is never forwarded to the bridge as HEVC over an
+// H.264 elementary stream (which latches the bridge's drop-until-keyframe).
+func forceH264(m map[string]string) {
+	for k, v := range m {
+		if v == "h265" {
+			m[k] = "h264"
+		}
+	}
+}
+
 func saveVidCodecs(path string, m map[string]string) {
 	var sb strings.Builder
 	for _, k := range []string{"video1", "video2", "video3"} {

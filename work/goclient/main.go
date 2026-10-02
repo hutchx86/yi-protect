@@ -618,6 +618,15 @@ const encoderFps = 20
 // featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
 // "truedaynight" is the real IR key, "ledStatus" the separate status LED.
 func featureFlags() map[string]interface{} {
+	// H.265 super-encoding is only real on the mediad path; the stock rmm
+	// encoder is H.264-only. Advertising h265 there lets Protect enable
+	// super-encoding, after which the bridge is told "CODEC h265" but receives
+	// H.264 frames -- HEVC keyframe detection never matches, dropUntilKey
+	// latches and video dies (observed live on y291ga, 2026-10-02).
+	videoCodecs := []string{"h264", "mjpg"}
+	if h265Capable() {
+		videoCodecs = []string{"h264", "h265", "mjpg"}
+	}
 	flags := map[string]interface{}{
 		"mic":          true,
 		"speaker":      true,
@@ -638,7 +647,7 @@ func featureFlags() map[string]interface{} {
 		// Copied from a real G3 Instant's features; their absence made Protect
 		// show empty codec lists and gated the talkback button.
 		"audioCodecs":     []string{"aac", "opus"},
-		"videoCodecs":     []string{"h264", "h265", "mjpg"},
+		"videoCodecs":     videoCodecs,
 		"opusSampleRates": []int{16000},
 		// true on the spoofed G3 Instant (features_0xa590.json); talkback needs
 		// AEC armed, and false leaves the talkback button greyed out.
@@ -1178,6 +1187,12 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	// last request: partial ChangeVideoSettings objects omit "type" and must not
 	// reset it, or mediad/bridge would oscillate codec.
 	vidCodec := c.streamCodecs()
+	// Never claim/emit H.265 on an encoder path that cannot produce it (rmm): a
+	// persisted or controller-sent h265 would otherwise be muxed over H.264
+	// frames and wedge video. See h265Capable().
+	if !h265Capable() {
+		forceH264(vidCodec)
+	}
 
 	// The HIGH (video1) resolution comes from the shipped per-model table, not
 	// from this binary.
@@ -1214,6 +1229,12 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			// The controller selects the codec per stream via "type" (the same
 			// field it uses to request "h265" on a native camera).
 			if t, ok := v["type"].(string); ok && (t == "h264" || t == "h265") {
+				if t == "h265" && !h265Capable() {
+					// rmm path: decline super-encoding rather than ship a
+					// mislabelled stream (see featureFlags).
+					log.Printf("codec: controller requested h265 on %s but the encoder path is h264-only; forcing h264", key)
+					t = "h264"
+				}
 				vidCodec[key] = t
 			}
 			ser, ok := v["avSerializer"].(map[string]interface{})

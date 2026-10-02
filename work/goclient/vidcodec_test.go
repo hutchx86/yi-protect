@@ -24,6 +24,17 @@ func TestVidCodecsRoundTrip(t *testing.T) {
 	}
 }
 
+// On an encoder path that cannot produce H.265 (the stock rmm encoder), every
+// h265 entry must be rewritten to h264 so the bridge is never told "CODEC h265"
+// over an H.264 elementary stream.
+func TestForceH264(t *testing.T) {
+	m := map[string]string{"video1": "h265", "video2": "h264", "video3": "h265"}
+	forceH264(m)
+	if m["video1"] != "h264" || m["video2"] != "h264" || m["video3"] != "h264" {
+		t.Fatalf("forceH264: %v", m)
+	}
+}
+
 func TestStreamCodecsRestored(t *testing.T) {
 	old := vidCodecFilePath
 	defer func() { vidCodecFilePath = old }()

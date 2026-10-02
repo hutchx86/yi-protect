@@ -162,6 +162,20 @@ func mediadEnabled() bool {
 	return mediadReady
 }
 
+// h265Capable reports whether the active encoder can produce H.265. Only the
+// clean-room mediad path can; the stock rmm encoder is H.264-only. This mirrors
+// init.sh's exact selection (IS_MEDIAD=yes and a mediad binary present). It is
+// deliberately NOT the live mediadEnabled() state: the encoder path is fixed at
+// boot by init.sh, so a momentary socket miss must not flip the decision (that
+// would oscillate Protect between h264 and h265 super-encoding).
+func h265Capable() bool {
+	if !cfg.IsMediad {
+		return false
+	}
+	_, installed := mediadInstalled()
+	return installed
+}
+
 // logMediadStatus logs the startup state once, so an IS_MEDIAD=yes deployment
 // against a missing/stopped mediad is visible rather than silent.
 func logMediadStatus() {
