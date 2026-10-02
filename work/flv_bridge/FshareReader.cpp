@@ -23,6 +23,12 @@ const unsigned kFrameOffsetTry2 = 368;
 const unsigned char kPpsStart[] = {0x00, 0x00, 0x00, 0x01, 0x68};
 const unsigned char kPpsMarker[] = {0x08, 0x00, 0x00, 0x00};
 
+// If the header-size marker never appears (an encoder revision this heuristic
+// does not recognise), stop waiting and use the known-good default so the
+// bridge still attaches instead of spinning forever.
+const int kHeaderSizeFallback = 28;
+const long long kHeaderAutodetectTimeoutMs = 5000;
+
 long long nowMs() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -118,12 +124,21 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
     if (offset_ == 0) offset_ = autodetectOffset();
 
     // Autodetect the frame header size before touching the ring: the format
-    // is only self-describing once we know where a frame begins.
-    while (headerSize_ == 0) {
-        headerSize_ = autodetectHeaderSize();
+    // is only self-describing once we know where a frame begins. Bounded: if
+    // the marker never appears, fall back to the known-good default.
+    if (headerSize_ == 0) {
+        const long long deadline = nowMs() + kHeaderAutodetectTimeoutMs;
+        while (headerSize_ == 0 && nowMs() < deadline) {
+            headerSize_ = autodetectHeaderSize();
+            if (headerSize_ == 0) {
+                if (debug_) std::fprintf(stderr, "%lld: fshare: waiting for header-size marker\n", nowMs());
+                usleep(10000);
+            }
+        }
         if (headerSize_ == 0) {
-            if (debug_) std::fprintf(stderr, "%lld: fshare: waiting for header-size marker\n", nowMs());
-            usleep(10000);
+            headerSize_ = kHeaderSizeFallback;
+            std::fprintf(stderr, "%lld: fshare: header-size autodetect timed out; using %d\n",
+                         nowMs(), headerSize_);
         }
     }
     if (debug_) {

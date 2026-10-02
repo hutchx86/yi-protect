@@ -170,6 +170,11 @@ device — adopt it like any UniFi camera. The model is auto-detected, so the sa
 card works in any supported camera. SSH is at `root@<camera-ip>`
 (see [Access](#access-ssh)).
 
+The package carries **no per-camera identity**: device-id, TLS cert/key, adopt
+state, dropbear host keys and the model token are generated on the camera at
+boot. `build_sd.sh` refuses to package symlinks (FAT32) or any such identity
+left in the tree, so one image is safe for every unit.
+
 To update later, overwrite the card contents with a newer package and reboot.
 
 ## WiFi provisioning

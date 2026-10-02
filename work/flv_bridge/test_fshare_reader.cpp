@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 #include <vector>
@@ -130,10 +131,27 @@ static int runScenario(size_t start) {
     return rc;
 }
 
+// A model absent from the table (or an empty/unknown name) must fall back to
+// ring autodetection, not a hardcoded offset/header.
+static int testModelFallback() {
+    setenv("UNIFI_MODEL_TABLE", "/nonexistent/model_table", 1);
+    ModelParams mp = modelParams("no-such-model");
+    ModelParams empty = modelParams("");
+    unsetenv("UNIFI_MODEL_TABLE");
+    if (mp.offset != 0 || mp.headerSize != 0 || empty.offset != 0 || empty.headerSize != 0) {
+        std::fprintf(stderr, "FAIL: unknown-model fallback should autodetect ring "
+                             "(got offset=%u/%u header=%d/%d)\n",
+                     mp.offset, empty.offset, mp.headerSize, empty.headerSize);
+        return 1;
+    }
+    return 0;
+}
+
 int main() {
     int rc = 0;
     rc |= runScenario(10);              // fully linear
     rc |= runScenario(kRing - kOffset - 100);  // straddles the wrap point
-    if (rc == 0) std::printf("PASS: linear + wrap scenarios\n");
+    rc |= testModelFallback();
+    if (rc == 0) std::printf("PASS: linear + wrap scenarios + model fallback\n");
     return rc;
 }

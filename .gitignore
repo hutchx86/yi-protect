@@ -23,6 +23,19 @@ work/sd_root/SOURCES.txt
 work/yi-protect-*.tar.gz
 work/SHA256SUMS
 
+# Runtime per-camera identity written onto the SD card by a booted camera.
+# Never tracked, never shipped (build_sd.sh refuses to package it).
+work/sd_root/unifi/etc/model_suffix
+work/sd_root/unifi/etc/unifi_client_go.device-id
+work/sd_root/unifi/etc/unifi_client_go.adoption-uuid
+work/sd_root/unifi/etc/unifi_client_go.adopted
+work/sd_root/unifi/etc/unifi_client_go.device-name
+work/sd_root/unifi/etc/unifi_client_go.inform-host*
+work/sd_root/unifi/etc/configure_wifi.cfg
+work/sd_root/unifi/etc/dropbear/
+work/sd_root/unifi/log/
+*.applied
+
 # Compiled build artifacts
 *.o
 *.d

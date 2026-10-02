@@ -18,10 +18,11 @@ namespace {
 // Same path the boot scripts use; UNIFI_PREFIX may be overridden for tests.
 const char *kDefaultTablePath = "/tmp/sd/unifi/etc/model_table";
 
-// Conservative fallback for a missing table or an unlisted model. Matches the
-// historical defaults (most families are 368/28; y623-class is 2304x1296).
+// Conservative fallback for a missing table or an unlisted model. Ring
+// offset/header 0 = autodetect (FshareReader falls back to 368/28 if it cannot
+// find the marker); geometry stays the historical y623-class default.
 const unsigned kDefaultHighBitrate = 2000000;
-const ModelParams kFallback = {368, 28, 2304, 1296, false, kDefaultHighBitrate};
+const ModelParams kFallback = {0, 0, 2304, 1296, false, kDefaultHighBitrate};
 
 }  // namespace
 
@@ -43,7 +44,7 @@ ModelParams modelParams(const char *name) {
     FILE *f = std::fopen(table, "r");
     if (f == nullptr) {
         std::fprintf(stderr, "unifi_flv_bridge: model table %s not readable; "
-                             "using defaults (368/28, 2304x1296, no PTZ)\n", table);
+                             "using defaults (autodetect ring, 2304x1296, no PTZ)\n", table);
         return kFallback;
     }
 
@@ -71,6 +72,6 @@ ModelParams modelParams(const char *name) {
     std::fclose(f);
 
     std::fprintf(stderr, "unifi_flv_bridge: model %s not in %s; using defaults "
-                         "(368/28, 2304x1296, no PTZ)\n", name, table);
+                         "(autodetect ring, 2304x1296, no PTZ)\n", name, table);
     return kFallback;
 }

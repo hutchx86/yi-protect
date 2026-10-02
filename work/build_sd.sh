@@ -310,6 +310,45 @@ if [ -n "$stray" ]; then
     for f in $stray; do echo "   $f"; done
     exit 1
 fi
+
+# The image must be camera-universal. No symlinks (FAT32 cannot store them), and
+# no per-camera identity: device-id, TLS cert/key, adopt state, dropbear host
+# keys and model_suffix are all generated on the camera at boot, so if one is
+# left in the tree (e.g. the card was booted before repackaging) it would clone
+# that unit's identity into every image.
+links=$(find "$SD" -type l 2>/dev/null)
+if [ -n "$links" ]; then
+    echo "ERROR: symlinks in the SD layout (FAT32 cannot hold them):"
+    for l in $links; do echo "   $l"; done
+    exit 1
+fi
+
+ETC_ALLOW="configure_wifi.cfg.example model_table main_blank.bmp sub_blank.bmp unifi.cfg"
+for f in "$ETC"/*; do
+    [ -e "$f" ] || continue
+    case " $ETC_ALLOW " in
+        *" $(basename "$f") "*) ;;
+        *) echo "ERROR: unexpected file in unifi/etc (per-camera identity leak?): $f"; exit 1 ;;
+    esac
+done
+
+for pat in unifi_client_go.device-id unifi_client_go.crt unifi_client_go.key \
+           unifi_client_go.adoption-uuid unifi_client_go.adopted \
+           unifi_client_go.device-name 'unifi_client_go.inform-host*' \
+           model_suffix configure_wifi.cfg '*.applied' 'dropbear_*_host_key'; do
+    found=$(find "$SD" -name "$pat" 2>/dev/null)
+    if [ -n "$found" ]; then
+        echo "ERROR: per-camera runtime identity present in the SD layout:"
+        for f in $found; do echo "   $f"; done
+        exit 1
+    fi
+done
+
+if [ -d "$SD/unifi/log" ]; then
+    echo "ERROR: $SD/unifi/log exists (runtime debug output); remove it before packaging"
+    exit 1
+fi
+
 REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
 PKG="$ROOT/work/yi-protect-$REV.tar.gz"
 rm -f "$PKG"
