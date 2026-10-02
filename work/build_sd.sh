@@ -237,6 +237,9 @@ if [ -x "$MEDIAD_DIST/unifi/bin/mediad" ]; then
     cp "$MEDIAD_DIST/unifi/bin/mediad" "$BIN/mediad"
     cp "$MEDIAD_DIST/unifi/script/mediad.sh" "$UNIFI/script/mediad.sh"
     [ -f "$MEDIAD_DIST/unifi/etc/mediad.conf" ] && cp "$MEDIAD_DIST/unifi/etc/mediad.conf" "$ETC/mediad.conf"
+    # The dist is the source of truth: drop stale env copies left in the
+    # gitignored sd_root by an earlier build, then copy the dist's (if any).
+    rm -f "$ETC"/mediad.env "$ETC"/mediad.*.env
     for env in "$MEDIAD_DIST"/unifi/etc/mediad.*.env; do
         [ -f "$env" ] && cp "$env" "$ETC/$(basename "$env")"
     done
