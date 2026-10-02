@@ -20,7 +20,7 @@
 # A row here means we own the hardware and can bring it up. No row = conservative
 # default (368/28, 2304x1296, no PTZ) + warning, never a silent guess.
 y623     gc3003  368  28  2304  1296  no  2800000
-h51ga    gc2053  368  28  2304  1296  yes
+h51ga    gc2053  368  28  1920  1080  yes
 h52ga    gc2053  368  28  1920  1080  yes
 r35gb    gc2053  0    0   1920  1080  yes
 y291ga   gc2053  368  28  1920  1080  no
