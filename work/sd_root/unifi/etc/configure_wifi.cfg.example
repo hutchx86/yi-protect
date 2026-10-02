@@ -6,11 +6,15 @@
 # The file is renamed to configure_wifi.cfg.applied afterwards; to re-provision,
 # rename it back, edit, and reboot.
 #
-# Rules (same as yi-hack):
-#   - one value per line, KEY=value, no quotes around the value
+# Rules:
+#   - one value per line, KEY=value
+#   - the value may be bare or wrapped in one pair of matching double or
+#     single quotes; the quotes are stripped before the value is written.
+#     Quotes are recommended so leading/trailing spaces and special
+#     characters are unambiguous.
 #   - spaces in the SSID/PSK are allowed
 #   - do not use a backslash
 #   - WPA2 max length is 63 characters
 
-wifi_ssid=My Network
-wifi_psk=my-password
+wifi_ssid="My Network"
+wifi_psk="my-password"

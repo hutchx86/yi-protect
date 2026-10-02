@@ -189,8 +189,11 @@ so yi-protect sets WiFi from a credentials file on the card:
   `configure_wifi.cfg`, edit it, drop it on the card, and reboot. `init.sh`
   applies it, reboots once, and renames it `.applied`.
 
-Format is plain `KEY=value` (spaces allowed, no quotes, no backslash, max 63
-chars); see the example file. `unifi/script/configure-wifi.sh` writes the SSID at
+Format is plain `KEY=value` (spaces allowed, no backslash, max 63 chars). The
+value may be bare or wrapped in one pair of matching double/single quotes; the
+quotes are stripped before writing, and are recommended so special characters and
+leading/trailing spaces are unambiguous. See the example file.
+`unifi/script/configure-wifi.sh` writes the SSID at
 offset 28 and the PSK at offset 92 of the conf partition (`/dev/mtdblock7`),
 after backing it up to the card. That is the same partition the stock WiFi stack
 reads, so it works without the Yi app or cloud.

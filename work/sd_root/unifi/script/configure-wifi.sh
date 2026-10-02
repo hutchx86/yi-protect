@@ -7,7 +7,8 @@
 #
 # Layout: off 24 4B flag (0 = associated), off 28 64B SSID, off 92 64B PSK (NUL-padded).
 #
-# Usage: configure-wifi.sh [cfgfile] (KEY=value wifi_ssid=/wifi_psk=, no quotes).
+# Usage: configure-wifi.sh [cfgfile] (KEY=value wifi_ssid=/wifi_psk=; the value
+# may be bare or wrapped in one pair of matching single/double quotes).
 # Exit: 0=written (reboot), 2=already current, 1=error.
 
 MTD="${MTD:-/dev/mtdblock7}"
@@ -15,11 +16,22 @@ CFG="${1:-/tmp/sd/unifi/etc/configure_wifi.cfg}"
 
 die() { echo "configure-wifi: $*" >&2; exit 1; }
 
+# Strip one pair of matching surrounding quotes, so both wifi_ssid=My Net and
+# wifi_ssid="My Net" (or 'My Net') are accepted. Bare values pass through.
+unquote() {
+    local v="$1"
+    case $v in
+        \"*\") v=${v#\"}; v=${v%\"} ;;
+        \'*\') v=${v#\'}; v=${v%\'} ;;
+    esac
+    printf '%s' "$v"
+}
+
 [ -e "$MTD" ] || die "$MTD not present"
 [ -f "$CFG" ] || die "config not found: $CFG"
 
-SSID=$(grep -E '^wifi_ssid=' "$CFG" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r')
-PSK=$(grep -E '^wifi_psk='  "$CFG" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r')
+SSID=$(unquote "$(grep -E '^wifi_ssid=' "$CFG" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r')")
+PSK=$(unquote "$(grep -E '^wifi_psk='  "$CFG" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r')")
 
 [ -n "$SSID" ] || die "wifi_ssid is empty in $CFG"
 [ -n "$PSK" ]  || die "wifi_psk is empty in $CFG"
