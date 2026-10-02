@@ -52,17 +52,28 @@ ModelParams modelParams(const char *name) {
     while (std::fgets(line, sizeof(line), f)) {
         if (char *hash = std::strchr(line, '#')) *hash = '\0';
         char m[64] = {0}, sensor[64] = {0}, ptz[16] = {0};
-        unsigned off = 0, hdr = 0, w = 0, h = 0, highBitrate = 0;
-        int n = std::sscanf(line, "%63s %63s %u %u %u %u %15s %u",
-                            m, sensor, &off, &hdr, &w, &h, ptz, &highBitrate);
+        unsigned off = 0, hdr = 0, w = 0, h = 0, highBitrate = 0, mw = 0, mh = 0;
+        int n = std::sscanf(line, "%63s %63s %u %u %u %u %15s %u %u %u",
+                            m, sensor, &off, &hdr, &w, &h, ptz, &highBitrate, &mw, &mh);
         if (n < 7) continue;                 // comment/blank/partial line
         if (strcasecmp(m, name) != 0) continue;
 
         ModelParams out;
         out.offset = off;
         out.headerSize = (int)hdr;
-        out.highWidth = w;
-        out.highHeight = h;
+        // Declare the geometry the ACTIVE encoder actually streams: the model
+        // row's mediad_w/h when the boot scripts selected the mediad path
+        // (UNIFI_ENCODER=mediad), else the stock-rmm high_w/h. Missing mediad
+        // columns fall back to high_w/h, so old cards keep working.
+        const char *enc = std::getenv("UNIFI_ENCODER");
+        bool mediadPath = (enc != nullptr && strcasecmp(enc, "mediad") == 0);
+        if (mediadPath && n >= 10 && mw > 0 && mh > 0) {
+            out.highWidth = mw;
+            out.highHeight = mh;
+        } else {
+            out.highWidth = w;
+            out.highHeight = h;
+        }
         out.ptz = (strcasecmp(ptz, "yes") == 0);
         // The 8th column is optional; absent/0 means "follow the controller".
         out.highBitrate = (n >= 8 && highBitrate > 0) ? highBitrate : kDefaultHighBitrate;

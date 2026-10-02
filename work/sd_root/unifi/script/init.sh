@@ -268,6 +268,9 @@ fi
 # stock rmm; both publish /dev/shm/fshare_frame_buf. Never run both at once.
 IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
 if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
+    # Tell the bridge/client which encoder is live so they declare the matching
+    # model_table geometry (h51ga: mediad streams native 1080p, rmm upscales to 2K).
+    export UNIFI_ENCODER=mediad
     # CABAC is the encoder default (cabac_init_idc=1); do not pin cabac=0.
     # overlay=1 enables the burned-in OSD overlay path.
     export FREECODEC_EXTRA="overlay=1"
@@ -276,6 +279,7 @@ if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI
     sleep 2
     [ "$YI_CLOUD" = "yes" ] && start_yi_cloud
 else
+    export UNIFI_ENCODER=rmm
     cd /home/app
     sleep 2
     # Load the SD-shipped patched libasound (the only one with the /tmp/audio_in_fifo

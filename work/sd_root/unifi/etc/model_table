@@ -10,17 +10,23 @@
 #   sensor       MIPI driver basename; used only when one row names it (gc2053 is shared)
 #   ring_offset  fshare ring control-header size (bytes); 0 = autodetect
 #   ring_header  per-frame header bytes before payload; 0 = autodetect
-#   high_w/h     real HIGH-channel (video1) encoder geometry, SPS-verified
+#   high_w/h     HIGH-channel (video1) geometry the STOCK rmm encoder streams
+#                (SPS-verified from rmm; may be an ISP upscale of the sensor)
 #   ptz          yes/no -- real motorized pan/tilt base
-#   high_bitrate HIGH-channel bitrate to pin (bps); 0/absent = follow the
-#                controller's target (a deliberate per-model policy override,
-#                e.g. y623's weak 2.4 GHz link). The encoder target and both
-#                declared bitrates (Go client + bridge) are pinned together.
+#   high_bitrate HIGH-channel bitrate to pin (bps); 0 = follow the controller's
+#                target (a deliberate per-model policy override, e.g. y623's weak
+#                2.4 GHz link). The encoder target and both declared bitrates
+#                (Go client + bridge) are pinned together.
+#   mediad_w/h   HIGH geometry the clean-room mediad streams; absent = same as
+#                high_w/h. The bridge/client pick this row whenever the camera is
+#                on the mediad path (unifi.cfg IS_MEDIAD=yes + installed), so the
+#                DECLARED geometry always matches the ACTIVE encoder. h51ga is the
+#                case that differs: rmm upscales to 2K, mediad streams native 1080p.
 #
 # A row here means we own the hardware and can bring it up. No row = conservative
 # default (368/28, 2304x1296, no PTZ) + warning, never a silent guess.
-y623     gc3003  368  28  2304  1296  no  2800000
-h51ga    gc2053  368  28  1920  1080  yes
-h52ga    gc2053  368  28  1920  1080  yes
-r35gb    gc2053  0    0   1920  1080  yes
-y291ga   gc2053  368  28  1920  1080  no
+y623     gc3003  368  28  2304  1296  no   2800000  2304  1296
+h51ga    gc2053  368  28  2304  1296  yes  0        1920  1080
+h52ga    gc2053  368  28  1920  1080  yes  0        1920  1080
+r35gb    gc2053  0    0   1920  1080  yes  0        1920  1080
+y291ga   gc2053  368  28  1920  1080  no   0        1920  1080

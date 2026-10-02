@@ -32,6 +32,15 @@ if [ -z "$YI_CLOUD" ]; then
     if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
 fi
 
+# Encoder path (must match init.sh): exported so the bridge/client it (re)starts
+# select the matching model_table geometry (mediad streams native geometry where
+# the stock rmm upscales).
+if [ "$(get_cfg IS_MEDIAD)" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
+    export UNIFI_ENCODER=mediad
+else
+    export UNIFI_ENCODER=rmm
+fi
+
 # PIDs whose argv[0] equals $1 or has the same basename (a substring grep would
 # also match e.g. `cat /tmp/unifi_flv_bridge.log`). Zombies are skipped.
 pids_of() {

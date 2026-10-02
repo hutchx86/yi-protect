@@ -301,10 +301,22 @@ const modelTablePath = unifiPrefix + "/etc/model_table"
 
 // modelDef is this client's slice of a model_table row.
 type modelDef struct {
-	highWidth   int
-	highHeight  int
-	ptz         bool
-	highBitrate int // HIGH-channel bitrate to pin (bps); 0 = follow controller
+	highWidth    int // HIGH geometry the stock rmm encoder streams
+	highHeight   int
+	mediadWidth  int // HIGH geometry mediad streams (0 = same as high)
+	mediadHeight int
+	ptz          bool
+	highBitrate  int // HIGH-channel bitrate to pin (bps); 0 = follow controller
+}
+
+// geometry returns the HIGH (video1) width/height for the active encoder path:
+// the mediad columns when the mediad path is selected (and present), else the
+// stock-rmm geometry. Keeps the declared geometry matching the encoder's stream.
+func (d modelDef) geometry(mediad bool) (int, int) {
+	if mediad && d.mediadWidth > 0 && d.mediadHeight > 0 {
+		return d.mediadWidth, d.mediadHeight
+	}
+	return d.highWidth, d.highHeight
 }
 
 // readModelDef returns the model_table row for `model`. ok is false when the
@@ -325,7 +337,8 @@ func readModelDef(model string) (def modelDef, ok bool) {
 }
 
 // parseModelDef finds `model`'s row: model sensor ring_offset ring_header high_w
-// high_h ptz [high_bitrate bps; 0/absent = follow the controller].
+// high_h ptz [high_bitrate bps; 0/absent = follow the controller] [mediad_w
+// mediad_h; absent = same as high_w/h].
 func parseModelDef(content, model string) (def modelDef, ok bool) {
 	def = modelDef{highWidth: 2304, highHeight: 1296}
 	for _, line := range strings.Split(content, "\n") {
@@ -347,6 +360,13 @@ func parseModelDef(content, model string) (def modelDef, ok bool) {
 				def.highBitrate = b
 			}
 		}
+		if len(f) >= 10 {
+			if w, e1 := strconv.Atoi(f[8]); e1 == nil {
+				if h, e2 := strconv.Atoi(f[9]); e2 == nil && w > 0 && h > 0 {
+					def.mediadWidth, def.mediadHeight = w, h
+				}
+			}
+		}
 		return def, true
 	}
 	return def, false
@@ -359,11 +379,11 @@ func modelHighBitrate() int {
 	return def.highBitrate
 }
 
-// readHighResolution returns the real HIGH-channel (video1) encoder geometry
-// for this physical camera, from the model table.
+// readHighResolution returns the HIGH-channel (video1) encoder geometry for the
+// ACTIVE encoder path, from the model table (see modelDef.geometry).
 func readHighResolution() (int, int) {
 	def, _ := readModelDef(readHardwareModel())
-	return def.highWidth, def.highHeight
+	return def.geometry(encoderIsMediad())
 }
 
 // flagSet reports whether the named flag was given on the command line, so an

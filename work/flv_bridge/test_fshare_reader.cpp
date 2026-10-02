@@ -147,11 +147,59 @@ static int testModelFallback() {
     return 0;
 }
 
+// The bridge must declare the geometry of the ACTIVE encoder: the model row's
+// mediad_w/h when UNIFI_ENCODER=mediad, else the stock-rmm high_w/h (and
+// high_w/h when a row has no mediad columns).
+static int testModelGeometry() {
+    const char *path = "/tmp/fsreader_model_table";
+    FILE *f = std::fopen(path, "w");
+    if (f == nullptr) return 1;
+    std::fprintf(f, "# test\n");
+    std::fprintf(f, "h51ga gc2053 368 28 2304 1296 yes 0 1920 1080\n");
+    std::fprintf(f, "h52ga gc2053 368 28 1920 1080 yes\n");  // no mediad columns
+    std::fclose(f);
+    setenv("UNIFI_MODEL_TABLE", path, 1);
+
+    setenv("UNIFI_ENCODER", "rmm", 1);
+    ModelParams r = modelParams("h51ga");
+    setenv("UNIFI_ENCODER", "mediad", 1);
+    ModelParams m = modelParams("h51ga");
+    ModelParams mFallback = modelParams("h52ga");  // mediad path, no columns
+    unsetenv("UNIFI_ENCODER");
+    ModelParams d = modelParams("h51ga");          // unset -> stock geometry
+    unsetenv("UNIFI_MODEL_TABLE");
+    std::remove(path);
+
+    int rc = 0;
+    if (r.highWidth != 2304 || r.highHeight != 1296) {
+        std::fprintf(stderr, "FAIL: rmm h51ga geometry %ux%u, want 2304x1296\n",
+                     r.highWidth, r.highHeight);
+        rc = 1;
+    }
+    if (m.highWidth != 1920 || m.highHeight != 1080) {
+        std::fprintf(stderr, "FAIL: mediad h51ga geometry %ux%u, want 1920x1080\n",
+                     m.highWidth, m.highHeight);
+        rc = 1;
+    }
+    if (mFallback.highWidth != 1920 || mFallback.highHeight != 1080) {
+        std::fprintf(stderr, "FAIL: mediad h52ga fallback %ux%u, want 1920x1080\n",
+                     mFallback.highWidth, mFallback.highHeight);
+        rc = 1;
+    }
+    if (d.highWidth != 2304 || d.highHeight != 1296) {
+        std::fprintf(stderr, "FAIL: unset encoder h51ga geometry %ux%u, want 2304x1296\n",
+                     d.highWidth, d.highHeight);
+        rc = 1;
+    }
+    return rc;
+}
+
 int main() {
     int rc = 0;
     rc |= runScenario(10);              // fully linear
     rc |= runScenario(kRing - kOffset - 100);  // straddles the wrap point
     rc |= testModelFallback();
-    if (rc == 0) std::printf("PASS: linear + wrap scenarios + model fallback\n");
+    rc |= testModelGeometry();
+    if (rc == 0) std::printf("PASS: linear + wrap scenarios + model fallback + geometry\n");
     return rc;
 }

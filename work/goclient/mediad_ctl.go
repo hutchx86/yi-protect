@@ -162,19 +162,28 @@ func mediadEnabled() bool {
 	return mediadReady
 }
 
-// h265Capable reports whether the active encoder can produce H.265. Only the
-// clean-room mediad path can; the stock rmm encoder is H.264-only. This mirrors
-// init.sh's exact selection (IS_MEDIAD=yes and a mediad binary present). It is
-// deliberately NOT the live mediadEnabled() state: the encoder path is fixed at
-// boot by init.sh, so a momentary socket miss must not flip the decision (that
-// would oscillate Protect between h264 and h265 super-encoding).
-func h265Capable() bool {
+// encoderIsMediad reports whether the ACTIVE encoder is mediad. The boot scripts
+// export UNIFI_ENCODER=mediad|rmm (authoritative, matching init.sh's selection);
+// when it is unset (a manual run) fall back to the unifi.cfg intent plus an
+// installed mediad binary. Deliberately NOT the live mediadEnabled() state: the
+// encoder path is fixed at boot, so a momentary socket miss must not flip it.
+func encoderIsMediad() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("UNIFI_ENCODER"))) {
+	case "mediad":
+		return true
+	case "rmm":
+		return false
+	}
 	if !cfg.IsMediad {
 		return false
 	}
 	_, installed := mediadInstalled()
 	return installed
 }
+
+// h265Capable reports whether the active encoder can produce H.265. Only the
+// clean-room mediad path can; the stock rmm encoder is H.264-only.
+func h265Capable() bool { return encoderIsMediad() }
 
 // logMediadStatus logs the startup state once, so an IS_MEDIAD=yes deployment
 // against a missing/stopped mediad is visible rather than silent.
