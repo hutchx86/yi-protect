@@ -36,19 +36,12 @@ CC="${XP}gcc"; CXX="${XP}g++"; AR="${XP}ar"; STRIP="${XP}strip"
 
 fetch() { [ -f "$2" ] || wget -q -O "$2" "$1"; }
 
-# 1. Pristine yi-hack tree + patches; `git archive HEAD` (not the working tree)
-#    keeps builds reproducible from the pinned commit + work/patches/*.
+# 1. Pristine yi-hack tree; `git archive HEAD` (not the working tree) keeps
+#    builds reproducible from the pinned commit.
 echo "== 1/6 preparing yi-hack build tree =="
 rm -rf "$YHB"
 mkdir -p "$YHB"
 git -C "$YH" archive HEAD src scripts | tar -x -C "$YHB"
-if [ -d "$ROOT/work/patches" ]; then
-    for p in "$ROOT"/work/patches/*.patch; do
-        [ -f "$p" ] || continue
-        echo "   applying $(basename "$p")"
-        patch -p1 -d "$YHB" -s < "$p"
-    done
-fi
 grep -rl "/opt/yi/toolchain-sunxi-musl" "$YHB" 2>/dev/null | while read -r f; do
     sed -i "s|/opt/yi/toolchain-sunxi-musl|$TCDIR|g" "$f"
 done

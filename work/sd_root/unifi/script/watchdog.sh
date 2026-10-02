@@ -77,7 +77,7 @@ proc_name() {
 start_svc() {
     case "$1" in
         bridge)
-            ( cd "$UNIFI_PREFIX/bin" && exec ./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -s -a "$AUDIO" \
+            ( cd "$UNIFI_PREFIX/bin" && exec ./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -a "$AUDIO" \
                 > /tmp/unifi_flv_bridge.log 2>&1 < /dev/null & ) ;;
         avclient)
             ( cd "$UNIFI_PREFIX/bin" && exec ./unifi_avclient_go \
@@ -155,7 +155,8 @@ restart_cmd() {
 case "$1" in
     restart)
         lock_take || { echo "watchdog: lock busy" >&2; exit 1; }
-        trap 'lock_drop' EXIT INT TERM
+        trap 'lock_drop' EXIT
+        trap 'exit 143' INT TERM
         restart_cmd "$2"; exit $?
         ;;
     status)
@@ -175,7 +176,8 @@ if ! try_create "$SINGLE"; then
     fi
     echo $$ > "$SINGLE"     # stale (owner gone / pid reused)
 fi
-trap '[ "$(cat "$SINGLE" 2>/dev/null)" = "$$" ] && rm -f "$SINGLE"; lock_drop' EXIT INT TERM
+trap '[ "$(cat "$SINGLE" 2>/dev/null)" = "$$" ] && rm -f "$SINGLE"; lock_drop' EXIT
+trap 'exit 143' INT TERM   # a trap alone would run its handler and keep looping
 
 RMM_FAILS=0
 MEDIAD_RESTARTS=0

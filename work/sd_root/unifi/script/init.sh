@@ -321,7 +321,7 @@ cd "$UNIFI_PREFIX/bin"
 
 # Video push daemon (reads rmm's shared-memory stream, pushes extendedFlv).
 AUDIO_OPT="-a $AUDIO"
-./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -s $AUDIO_OPT > /tmp/unifi_flv_bridge.log 2>&1 &
+./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" $AUDIO_OPT > /tmp/unifi_flv_bridge.log 2>&1 &
 
 # Adoption/control client; cert/key self-generated on first boot. PTZ and
 # per-model geometry come from model_table.

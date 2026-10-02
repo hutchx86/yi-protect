@@ -82,7 +82,11 @@ controller. It is still a moving target — expect rough edges.
 
 ## Supported hardware
 
-Allwinner **sun8iw19**, ~60 MB RAM, BusyBox userland. Developed against:
+Allwinner **sun8iw19** (`sun8iw19p1`), ~60 MB RAM, BusyBox userland. The SoC on
+these cameras is a **QG2101A/B** (齐感科技 / SensLab) — a rebadged Allwinner
+**V831**-class part: single Cortex-A7 (800 MHz-class), 0.2 TOPS NPU, 64 MB DDR2
+in-package, QFN88, 2-lane MIPI CSI. ("V831/V833" is Allwinner's own name for the
+family; project notes use the two loosely.) Developed against:
 
 - Yi **Pro 2k** (`y623`; PCB silkscreen may read `y621`)
 - Yi **Dome Camera U** (2K) (`h51ga`)

@@ -745,13 +745,15 @@ static void *pushThreadMain(void *arg) {
 
     // Opus (type 10) config tag 0xcf 00 03 02 at connection start, as real
     // cameras send; the web/desktop live view is Opus-only.
-    uint32_t lastAacMs = 0, lastOpusMs = 0;   // per-track monotonic guard
+    // ms orders the AAC and Opus tags of a connection as one audio sequence (a 1 ms
+    // step back between the tracks terminates it), so they share one guard.
+    uint32_t lastAudioMs = 0;
     if (g_opusEnabled) {
         unsigned char opusCfg[4] = {0xcf, 0x00, 0x03, 0x02};
         std::vector<unsigned char> cfg(opusCfg, opusCfg + 4);
         writeFlvTag(out, 10, cfg, (uint32_t)(elapsed * 1000.0));
         writeTimestampTrailerClock(out, 0x00BB80, 48000.0, elapsed);
-        lastOpusMs = (uint32_t)(elapsed * 1000.0);
+        lastAudioMs = (uint32_t)(elapsed * 1000.0);
     }
 
     hexDump(channel, "initial write (header+onMetaData+onMpma+onClockSync[+seqHeader])", out.data(), out.size());
@@ -796,10 +798,11 @@ static void *pushThreadMain(void *arg) {
                 pthread_mutex_unlock(&c.stateMutex);
                 std::vector<unsigned char> aacSeq = buildAacSequenceHeaderTag(asc);
                 double seqElapsed = nowSeconds() - connectionStart;
+                uint32_t seqMs = monotonicMs(lastAudioMs, (uint32_t)(seqElapsed * 1000.0));
+                if (seqMs > (uint32_t)(seqElapsed * 1000.0)) seqElapsed = seqMs / 1000.0;
                 out.clear();
-                writeFlvTag(out, 8, aacSeq, (uint32_t)(seqElapsed * 1000.0));
+                writeFlvTag(out, 8, aacSeq, seqMs);
                 writeTimestampTrailerClock(out, 0x003E80, 16000.0, seqElapsed);
-                lastAacMs = (uint32_t)(seqElapsed * 1000.0);
                 ok = writeAll(fd, out.data(), out.size());
                 if (!ok) break;
                 bytesWritten += out.size();
@@ -808,7 +811,7 @@ static void *pushThreadMain(void *arg) {
 
             // Same capture-time basis as video (shared anchor keeps A/V aligned).
             double aTagElapsed = captureElapsed(af.time);
-            uint32_t aTagMs = monotonicMs(lastAacMs, (uint32_t)(aTagElapsed * 1000.0));
+            uint32_t aTagMs = monotonicMs(lastAudioMs, (uint32_t)(aTagElapsed * 1000.0));
             if (aTagMs > (uint32_t)(aTagElapsed * 1000.0)) aTagElapsed = aTagMs / 1000.0;
 
             const unsigned char *rawAac = af.frame.data() + 7;
@@ -860,7 +863,7 @@ static void *pushThreadMain(void *arg) {
                 oTagElapsed = (double)opusPtsIndex / 50.0;
                 opusPtsIndex++;
             }
-            uint32_t oTagMs = monotonicMs(lastOpusMs, (uint32_t)(oTagElapsed * 1000.0));
+            uint32_t oTagMs = monotonicMs(lastAudioMs, (uint32_t)(oTagElapsed * 1000.0));
             if (oTagMs > (uint32_t)(oTagElapsed * 1000.0)) oTagElapsed = oTagMs / 1000.0;
             out.clear();
             writeFlvTag(out, 10, ofr.frame, oTagMs);

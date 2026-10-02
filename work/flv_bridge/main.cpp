@@ -36,7 +36,7 @@ static const char *modelName = "";
 namespace {
 
 int resolution = RESOLUTION_HIGH;
-int audio = 1;     // 0=off, 1=PCM fifo (unsupported), 2=AAC from the ring
+int audio = 0;     // 0=off, 2=AAC from the ring
 int debug = 0;
 
 // ---- Opus track transcode: web/desktop live view decodes only the type-10 Opus
@@ -263,8 +263,6 @@ void printUsage(const char *prog) {
                  "\t-m MODEL   camera model (y623, h52ga, r35gb, ...)\n"
                  "\t-r RES     resolution: low, high, both or none (default high)\n"
                  "\t-a AUDIO   audio: no, aac (aac = read AAC from the ring)\n"
-                 "\t-s         accepted for compatibility; no effect\n"
-                 "\t-p PORT    accepted for compatibility; no effect\n"
                  "\t-d DEBUG   debug bitmask (0 none)\n"
                  "\t-h         print this help\n",
                  prog);
@@ -279,16 +277,11 @@ int main(int argc, char **argv) {
             {"model", required_argument, nullptr, 'm'},
             {"resolution", required_argument, nullptr, 'r'},
             {"audio", required_argument, nullptr, 'a'},
-            {"audio_back_channel", required_argument, nullptr, 'b'},
-            {"port", required_argument, nullptr, 'p'},
-            {"sti", no_argument, nullptr, 's'},
-            {"user", required_argument, nullptr, 'u'},
-            {"password", required_argument, nullptr, 'w'},
             {"debug", required_argument, nullptr, 'd'},
             {"help", no_argument, nullptr, 'h'},
             {nullptr, 0, nullptr, 0},
         };
-        int c = getopt_long(argc, argv, "m:r:a:b:p:su:w:d:h", longOptions, nullptr);
+        int c = getopt_long(argc, argv, "m:r:a:d:h", longOptions, nullptr);
         if (c == -1) break;
 
         switch (c) {
@@ -302,18 +295,6 @@ int main(int argc, char **argv) {
         case 'a':
             if (strcasecmp("no", optarg) == 0) audio = 0;
             else if (strcasecmp("aac", optarg) == 0) audio = 2;
-            else if (strcasecmp("yes", optarg) == 0 ||
-                     strcasecmp("alaw", optarg) == 0 ||
-                     strcasecmp("ulaw", optarg) == 0 ||
-                     strcasecmp("pcm", optarg) == 0) audio = 1;
-            break;
-        case 'b':  // back channel (talkback) is handled by talkback_rx, not here
-            break;
-        case 'p':  // RTSP port; accepted for CLI compatibility
-        case 's':  // SPS timing info; accepted for CLI compatibility
-            break;
-        case 'u':  // RTSP credentials: ignored
-        case 'w':
             break;
         case 'd': debug = (int)strtol(optarg, nullptr, 10); break;
         case 'h':
@@ -339,17 +320,9 @@ int main(int argc, char **argv) {
     if (env != nullptr) {
         if (strcasecmp("no", env) == 0) audio = 0;
         else if (strcasecmp("aac", env) == 0) audio = 2;
-        else if (strcasecmp("yes", env) == 0) audio = 1;
     }
     env = getenv("RRTSP_DEBUG");
     if (env != nullptr) debug = (int)strtol(env, nullptr, 10);
-
-    if (audio == 1) {
-        // The old PCM/WAV path was dropped in this rewrite; UniFi uses AAC.
-        std::fprintf(stderr, "unifi_flv_bridge: PCM audio is no longer supported; "
-                             "disabling audio (use -a aac)\n");
-        audio = 0;
-    }
 
     struct stat st;
     if (stat(FSHARE_BUF_FILE, &st) != 0 || st.st_size <= 0) {
