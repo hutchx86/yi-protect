@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" width="960" height="380" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+      <path d="M0,0 L7.5,3 L0,6 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect width="960" height="380" fill="#ffffff"/>
+
+  <!-- UNVR -->
+  <rect x="330" y="16" width="300" height="52" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+  <text x="480" y="40" text-anchor="middle" font-weight="600" fill="#312e81">UniFi Protect console (UNVR)</text>
+  <text x="480" y="58" text-anchor="middle" fill="#4338ca">discovery . adoption . control . recording</text>
+
+  <!-- camera -->
+  <rect x="24" y="96" width="680" height="268" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="6 4"/>
+  <text x="42" y="120" font-weight="600" fill="#334155">Yi camera — stock firmware + kernel (only the app launch is replaced)</text>
+
+  <rect x="60" y="150" width="220" height="56" rx="7" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="170" y="174" text-anchor="middle" font-weight="600" fill="#1e3a8a">yi_protect_avclient_go</text>
+  <text x="170" y="192" text-anchor="middle" fill="#1d4ed8">Go control client</text>
+
+  <rect x="470" y="150" width="220" height="56" rx="7" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+  <text x="580" y="174" text-anchor="middle" font-weight="600" fill="#065f46">yi_protect_flv_bridge</text>
+  <text x="580" y="192" text-anchor="middle" fill="#047857">C++ extendedFlv muxer</text>
+
+  <rect x="60" y="286" width="220" height="56" rx="7" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="170" y="310" text-anchor="middle" font-weight="600" fill="#92400e">stock rmm  /  mediad</text>
+  <text x="170" y="328" text-anchor="middle" fill="#b45309">encoder</text>
+
+  <rect x="470" y="286" width="220" height="56" rx="7" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+  <text x="580" y="310" text-anchor="middle" font-weight="600" fill="#0f172a">fshare ring</text>
+  <text x="580" y="328" text-anchor="middle" fill="#475569">/dev/shm/fshare_frame_buf</text>
+
+  <!-- right column -->
+  <rect x="750" y="150" width="180" height="56" rx="7" fill="#fdf2f8" stroke="#db2777" stroke-width="1.5"/>
+  <text x="840" y="174" text-anchor="middle" font-weight="600" fill="#9d174d">yi_protect_snapshot</text>
+  <text x="840" y="192" text-anchor="middle" fill="#be185d">keyframe -> JPEG</text>
+
+  <rect x="750" y="286" width="180" height="56" rx="7" fill="#fdf2f8" stroke="#db2777" stroke-width="1.5"/>
+  <text x="840" y="310" text-anchor="middle" font-weight="600" fill="#9d174d">talkback_rx</text>
+  <text x="840" y="328" text-anchor="middle" fill="#be185d">speaker + amp</text>
+
+  <!-- arrows -->
+  <path d="M580,150 L580,70" fill="none" stroke="#10b981" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="588" y="112" fill="#047857">extendedFlv :7550</text>
+
+  <path d="M380,70 L170,70 L170,148" fill="none" stroke="#3b82f6" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="196" y="106" fill="#1d4ed8">WSS :7442 . discovery</text>
+
+  <path d="M170,206 L170,284" fill="none" stroke="#3b82f6" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="178" y="250" fill="#1d4ed8">control socket</text>
+
+  <path d="M280,314 L468,314" fill="none" stroke="#f59e0b" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="330" y="306" fill="#b45309">publish</text>
+
+  <path d="M580,286 L580,208" fill="none" stroke="#10b981" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="588" y="250" fill="#047857">read frames</text>
+
+  <path d="M630,42 L720,42 L720,178 L748,178" fill="none" stroke="#db2777" stroke-width="1.6" marker-end="url(#arr)"/>
+  <path d="M720,42 L720,314 L748,314" fill="none" stroke="#db2777" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="726" y="132" fill="#be185d">GetRequest . UDP :7004</text>
+</svg>
