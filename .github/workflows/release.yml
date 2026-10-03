@@ -33,15 +33,13 @@ jobs:
 
       # Build dependencies are not vendored. Clone them into REPOS_DIR: the
       # pinned yi-hack tree (dropbear/alsa/IPC helpers) and the cross-toolchain.
-      - name: Clone build dependencies
+      - name: Clone cross-toolchain
         run: |
           mkdir -p "$REPOS_DIR"
           git clone --depth 1 \
-            https://github.com/roleoroleo/yi-hack-Allwinner-v2 \
-            "$REPOS_DIR/yi-hack-Allwinner-v2"
-          git clone --depth 1 \
             https://github.com/lindenis-org/lindenis-v536-prebuilt \
             "$REPOS_DIR/toolchain-sunxi-musl"
+      # build_sd.sh clones and pins the yi-hack tree itself.
 
       - name: Build SD package
         run: sh build_sd.sh

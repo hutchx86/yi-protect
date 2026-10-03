@@ -14,6 +14,10 @@ LIB="$YIP/lib"
 ETC="$YIP/etc"
 REPOS_DIR="${REPOS_DIR:-$ROOT/../repos}"
 YH="$REPOS_DIR/yi-hack-Allwinner-v2"
+# Pinned upstream commit the dropbear patch / alsa / ipc_cmd build expects;
+# cloned automatically when the tree is absent.
+YH_REPO=https://github.com/roleoroleo/yi-hack-Allwinner-v2
+YH_REF="${YH_REF:-e156ca76703b43ae788433ee7682667c3c8a52a8}"
 # Generic armv7-a hard-float musl cross-toolchain: a clone of
 # lindenis-org/lindenis-v536-prebuilt (or -v833-prebuilt), which ships the
 # compiler under gcc/linux-x86/arm/toolchain-sunxi-musl. Point TOOLCHAIN_DIR at
@@ -45,7 +49,16 @@ export STAGING_DIR="$TCDIR"
 
 echo "== prerequisites =="
 [ -x "$TCBIN/arm-openwrt-linux-gcc" ] || { echo "ERROR: cross-toolchain missing ($TCBIN). Clone lindenis-org/lindenis-v536-prebuilt into $TOOLCHAIN_DIR (or set TOOLCHAIN_DIR)."; exit 1; }
-[ -d "$YH/src" ] || { echo "ERROR: yi-hack tree missing ($YH). Clone roleoroleo/yi-hack-Allwinner-v2 into $REPOS_DIR (or set REPOS_DIR)."; exit 1; }
+# Fetch the pinned yi-hack tree if absent, and pin it (the dropbear patch and
+# alsa/ipc_cmd build expect this commit).
+if [ ! -d "$YH/.git" ]; then
+    mkdir -p "$REPOS_DIR"
+    echo "== cloning yi-hack-Allwinner-v2 @ $YH_REF"
+    git clone -q "$YH_REPO" "$YH" || { echo "ERROR: could not clone $YH_REPO"; exit 1; }
+fi
+git -C "$YH" fetch -q origin "$YH_REF" 2>/dev/null || true
+git -C "$YH" checkout -q "$YH_REF" 2>/dev/null || echo "   WARN: could not pin yi-hack to $YH_REF"
+[ -d "$YH/src" ] || { echo "ERROR: yi-hack tree incomplete ($YH)."; exit 1; }
 command -v cmake >/dev/null 2>&1 || { echo "ERROR: cmake not found (needed for libjpeg-turbo). Try: python3 -m pip install --user cmake"; exit 1; }
 
 XP=arm-openwrt-linux-

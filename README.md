@@ -260,13 +260,13 @@ Full instructions for both starting points are in the yi-mediad repo:
 ## Build from source
 
 The build needs the pinned `yi-hack-Allwinner-v2` tree and a ~1.2 GB
-cross-toolchain. Neither is vendored: clone both into the project's shared
-`repos/` directory (a sibling of this repo; override with `REPOS_DIR`):
+cross-toolchain. Neither is vendored: `build_sd.sh` clones and pins the yi-hack
+tree itself, so only the toolchain must be cloned into the project's shared
+`repos/` directory (a sibling of this repo; override the location with
+`REPOS_DIR`):
 
 ```
 mkdir -p ../repos
-git clone https://github.com/roleoroleo/yi-hack-Allwinner-v2 \
-  ../repos/yi-hack-Allwinner-v2
 git clone https://github.com/lindenis-org/lindenis-v536-prebuilt \
   ../repos/lindenis-v536-prebuilt
 ```
