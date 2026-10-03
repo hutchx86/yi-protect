@@ -164,8 +164,13 @@ bool onFrame(void *v, int frameType, std::vector<unsigned char> &&payload,
         // the scan. The codec is detected from the first recognised NAL.
         if (s->codec == 0) {
             if (h264t == 7 || h264t == 8 || h264t == 5) s->codec = 1;
-            else if (hevcT == 32 || hevcT == 33 || hevcT == 34 ||
-                     (hevcT >= 16 && hevcT <= 23)) s->codec = 2;
+            // HEVC's first byte is nal_unit_type<<1 (even when nuh_layer_id==0);
+            // an H.264 non-IDR slice (type 1) is always odd. Without the parity
+            // guard the H.264 P-slice byte 0x41 reads as HEVC VPS (hevcT==32) and
+            // latches HEVC, after which no H.264 keyframe is ever seen.
+            else if ((p[0] & 1) == 0 &&
+                     (hevcT == 32 || hevcT == 33 || hevcT == 34 ||
+                      (hevcT >= 16 && hevcT <= 23))) s->codec = 2;
             else continue;
         }
         if (s->codec == 2) {
