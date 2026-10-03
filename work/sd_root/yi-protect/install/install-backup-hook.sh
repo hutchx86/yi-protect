@@ -29,9 +29,6 @@ sed -e 's/^source \/home\/app\/lower_half_init.sh//g' -i /tmp/init.sh
 
 cat >> /tmp/init.sh <<'EOF'
 
-# Running telnetd
-/usr/sbin/telnetd &
-
 if [ -f /tmp/sd/lower_half_init.sh ];then
     source /tmp/sd/lower_half_init.sh
 elif [ -f /home/app/lower_half_init.sh ];then

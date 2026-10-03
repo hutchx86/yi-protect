@@ -402,9 +402,12 @@ AGPL-3.0-or-later. See [LICENSE](LICENSE). This program can be run as a network
 service, so section 13 of the AGPL requires anyone running a modified version
 to offer its corresponding source to users interacting with it over a network.
 The project's own code is AGPL-3.0-or-later; the two vendored yi-hack scripts
-(`yi-protect/script/ethdhcp.sh`, `wifidhcp.sh`) remain GPL-3.0-or-later and are
-combined with it under GPLv3/AGPLv3 section 13. The compiled SD image bundles
-GPL/LGPL components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later, LGPL-2.1
-libasound, and FFmpeg/libjpeg-turbo statically linked into `yi_protect_snapshot`); the
-release tarball includes `LICENSE`, `NOTICE` and `SOURCES.txt` with the
-corresponding source locations and a written offer. See [`NOTICE`](NOTICE).
+(`yi-protect/script/ethdhcp.sh`, `wifidhcp.sh`) are modified from the MIT-licensed
+yi-hack-Allwinner-v2 scripts of the same name and are combined with our code under
+AGPL-3.0-or-later (upstream MIT notice:
+`licenses/yi-hack-Allwinner-v2-MIT.txt`). The compiled SD image additionally
+bundles GPL/LGPL components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later,
+LGPL-2.1 libasound, and FFmpeg/libjpeg-turbo statically linked into
+`yi_protect_snapshot`); the release tarball includes `LICENSE`, `NOTICE` and
+`SOURCES.txt` with the corresponding source locations and a written offer. See
+[`NOTICE`](NOTICE).
