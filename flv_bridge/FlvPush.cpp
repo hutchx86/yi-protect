@@ -743,26 +743,30 @@ static void *pushThreadMain(void *arg) {
         if (hevcConn) haveVps = true;
     }
 
+    uint32_t lastAudioMs = 0;
+    uint32_t lastOpusMs = 0;
+
     // Cached ASC; the AAC trailer marker is its sample rate (16000), not 90000.
     if (haveCachedAscLocal) {
         std::vector<unsigned char> aacSeq = buildAacSequenceHeaderTag(asc);
-        writeFlvTag(out, 8, aacSeq, (uint32_t)(elapsed * 1000.0));
-        writeTimestampTrailerClock(out, 0x003E80, 16000.0, elapsed);
+        uint32_t ms = monotonicMs(lastAudioMs, (uint32_t)(elapsed * 1000.0));
+        writeFlvTag(out, 8, aacSeq, ms);
+        writeTimestampTrailerClock(out, 0x003E80, 16000.0, ms / 1000.0);
         sentAacSeqHeader = true;
     }
 
     // Opus (type 10) config tag 0xcf 00 03 02 at connection start, as real
     // cameras send; the web/desktop live view is Opus-only.
     // ms orders the AAC and Opus tags of a connection as one audio sequence (a 1 ms
-    // step back between the tracks terminates it), so they share one guard.
-    uint32_t lastAudioMs = 0;
-    uint32_t lastOpusMs = 0;
+    // step back between the tracks terminates it), so they share one guard and the
+    // initial tags are whole-ms through it too.
     if (g_opusEnabled) {
         unsigned char opusCfg[4] = {0xcf, 0x00, 0x03, 0x02};
         std::vector<unsigned char> cfg(opusCfg, opusCfg + 4);
-        writeFlvTag(out, 10, cfg, (uint32_t)(elapsed * 1000.0));
-        writeTimestampTrailerClock(out, 0x00BB80, 48000.0, elapsed);
-        lastAudioMs = (uint32_t)(elapsed * 1000.0);
+        uint32_t ms = monotonicMs(lastAudioMs, (uint32_t)(elapsed * 1000.0));
+        writeFlvTag(out, 10, cfg, ms);
+        writeTimestampTrailerClock(out, 0x00BB80, 48000.0, ms / 1000.0);
+        lastAudioMs = ms;
     }
 
     hexDump(channel, "initial write (header+onMetaData+onMpma+onClockSync[+seqHeader])", out.data(), out.size());
