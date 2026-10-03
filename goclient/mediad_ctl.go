@@ -221,7 +221,7 @@ func h265Capable() bool {
 	return ok && def.h265
 }
 
-// logMediadStatus logs the startup state once, so an IS_MEDIAD=yes deployment
+// logMediadStatus logs the startup state once, so an IS_MEDIAD deployment
 // against a missing/stopped mediad is visible rather than silent.
 func logMediadStatus() {
 	if !cfg.IsMediad {

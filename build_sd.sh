@@ -38,7 +38,7 @@ YHB="$BUILD/yi-hack"
 
 # Optional clean-room mediad (sister project yi-mediad). When this dist exists it
 # is packaged into the image so a user can opt into the advanced encoder path
-# with yi-protect.cfg IS_MEDIAD=yes; without it the image is built rmm-only (still
+# with yi-protect.cfg IS_MEDIAD=auto (default) or yes; without it the image is built rmm-only (still
 # fully functional, just no H.265/advanced picture controls).
 MEDIAD_DIST="${MEDIAD_DIST:-$ROOT/../sisters/yi-mediad/yi-mediad-git/dist}"
 
@@ -254,7 +254,7 @@ cp "$I/alsa-lib/_install/lib/libasound.so.2.0.0"  "$LIB/libasound.so.2"
 "$STRIP" "$BIN/dropbearmulti" "$LIB/libasound.so.2" 2>/dev/null || true
 
 # 5b. Optional clean-room mediad (sister project yi-mediad): the advanced encoder
-#     path, selected at boot by yi-protect.cfg IS_MEDIAD=yes (init.sh/watchdog.sh
+#     path, selected at boot by yi-protect.cfg IS_MEDIAD (auto/yes/no; script/encoder.sh)
 #     already branch on it). Its libs are self-contained (no vendor .so fetch).
 echo "== 5b/7 mediad (optional advanced encoder) =="
 if [ -x "$MEDIAD_DIST/yi-protect/bin/mediad" ]; then

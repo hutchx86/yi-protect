@@ -19,7 +19,7 @@
 #                (Go client + bridge) are pinned together.
 #   mediad_w/h   HIGH geometry the clean-room mediad streams; absent = same as
 #                high_w/h. The bridge/client pick this row whenever the camera is
-#                on the mediad path (yi-protect.cfg IS_MEDIAD=yes + installed), so the
+#                on the mediad path (IS_MEDIAD auto/yes + installed), so the
 #                DECLARED geometry always matches the ACTIVE encoder. h51ga is the
 #                case that differs: rmm upscales to 2K, mediad streams native 1080p.
 #   h265         yes/no -- this model's encoder produces valid H.265 (super
