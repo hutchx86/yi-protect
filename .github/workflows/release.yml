@@ -1,14 +1,17 @@
 name: release
 
-# Builds the SD package from source and attaches it to a GitHub release. Manual
-# only (tags do not trigger it): Actions tab or `gh workflow run release.yml -f tag=v0.1.0`.
+# Builds the SD package plus its corresponding source and attaches them to a
+# GitHub release. Manual, or on a v* tag: Actions tab, or
+#   gh workflow run release.yml -f tag=v0.2.0
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to create/update (e.g. v0.1.0)"
+        description: "Release tag to create/update (e.g. v0.2.0)"
         required: true
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -31,32 +34,55 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake wget patch build-essential
 
-      # Build dependencies are not vendored. Clone them into REPOS_DIR: the
-      # pinned yi-hack tree (dropbear/alsa/IPC helpers) and the cross-toolchain.
+      # Build dependencies are not vendored: clone the cross-toolchain here;
+      # build_sd.sh clones and pins the yi-hack tree itself.
       - name: Clone cross-toolchain
         run: |
           mkdir -p "$REPOS_DIR"
           git clone --depth 1 \
             https://github.com/lindenis-org/lindenis-v536-prebuilt \
             "$REPOS_DIR/toolchain-sunxi-musl"
-      # build_sd.sh clones and pins the yi-hack tree itself.
 
-      - name: Build SD package
-        run: sh build_sd.sh
+      - name: Resolve tag
+        run: |
+          TAG="${{ inputs.tag }}"; [ -n "$TAG" ] || TAG="${GITHUB_REF_NAME}"
+          TAG=$(printf '%s' "$TAG" | tr '/' '-')
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
-      - name: Checksum
-        run: sha256sum yi-protect-*.tar.gz > SHA256SUMS
+      # Builds the image and the corresponding-source bundle and writes
+      # SHA256SUMS, all named yi-protect-<tag>... (NAME is threaded through
+      # build_sd.sh so the package carries the tag, not the git revision).
+      - name: Build package + source
+        run: NAME="$TAG" sh release.sh
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag }}
+          tag_name: ${{ env.TAG }}
+          name: yi-protect
+          body: |
+            yi-protect SD-card image for Yi cameras presented as native UniFi
+            Protect hardware (`${{ env.TAG }}`). The camera keeps its stock
+            firmware; this is a self-contained stack installed from the SD card.
+
+            - `yi-protect-${{ env.TAG }}.tar.gz` — the SD package. Extract the
+              contents to the FAT32 root of the card and boot the camera (see
+              the README, "Install (prebuilt)").
+            - `yi-protect-${{ env.TAG }}-src.tar.gz` — complete corresponding
+              source for our AGPL code and the bundled GPL/LGPL components.
+            - `SHA256SUMS` — verify with `sha256sum -c SHA256SUMS`.
+
+            The base image runs the stock Yi `rmm` encoder. The optional
+            clean-room `mediad` encoder (H.264 + H.265) ships as a separate
+            overlay release in the yi-mediad repo.
           files: |
-            yi-protect-*.tar.gz
+            yi-protect-${{ env.TAG }}.tar.gz
+            yi-protect-${{ env.TAG }}-src.tar.gz
             SHA256SUMS
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: yi-protect-sd
-          path: yi-protect-*.tar.gz
+          path: |
+            yi-protect-*.tar.gz
+            SHA256SUMS

@@ -429,7 +429,10 @@ if [ -d "$SD/yi-protect/log" ]; then
 fi
 
 REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
-PKG="$ROOT/yi-protect-$REV.tar.gz"
+# NAME lets the release pipeline label the package with the release tag instead
+# of the git revision (release.sh exports NAME).
+NAME="${NAME:-$REV}"
+PKG="$ROOT/yi-protect-$NAME.tar.gz"
 rm -f "$PKG"
 ( cd "$SD" && tar czf "$PKG" . )
 echo "   $PKG ($(du -h "$PKG" | cut -f1))"
