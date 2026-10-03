@@ -37,6 +37,10 @@ fi
 
 if [ -d "$YIP_PREFIX/etc" ]; then
     printf '%s\n' "$model" > "$OUT" 2>/dev/null
+    # Flush immediately: the caller (lower_half_init -> init.sh -> mediad) reads
+    # this within the same boot, and a lost write must not strand the encoder on
+    # the sensor default.
+    sync 2>/dev/null
 fi
 
 # A model with no table row is worth seeing: general code then falls back to

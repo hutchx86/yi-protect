@@ -7,7 +7,14 @@
 
 YIP_PREFIX="/tmp/sd/yi-protect"
 CONF="$YIP_PREFIX/etc/yi-protect.cfg"
-MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
+# model_suffix is boot-generated (detect-model.sh). Regenerate if a fresh card or
+# a lost write left it empty, so the app never starts on the wrong model.
+MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null)
+if [ -z "$MODEL_SUFFIX" ] && [ -x "$YIP_PREFIX/script/detect-model.sh" ]; then
+    MODEL_SUFFIX=$("$YIP_PREFIX/script/detect-model.sh")
+    sync 2>/dev/null
+fi
+[ -z "$MODEL_SUFFIX" ] && MODEL_SUFFIX=y623
 
 # Emergency flash backup (idempotent; skips once a complete set exists).
 if [ -x "$YIP_PREFIX/script/backup-flash.sh" ]; then

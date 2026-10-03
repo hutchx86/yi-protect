@@ -17,7 +17,14 @@
 # bridge is otherwise never re-driven and stays video-less.
 
 YIP_PREFIX="${YIP_PREFIX:-/tmp/sd/yi-protect}"
-MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
+# Regenerate model_suffix if it is missing/empty (see init.sh), so a restart the
+# watchdog drives never uses the wrong model.
+MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null)
+if [ -z "$MODEL_SUFFIX" ] && [ -x "$YIP_PREFIX/script/detect-model.sh" ]; then
+    MODEL_SUFFIX=$("$YIP_PREFIX/script/detect-model.sh")
+    sync 2>/dev/null
+fi
+[ -z "$MODEL_SUFFIX" ] && MODEL_SUFFIX=y623
 CONF="$YIP_PREFIX/etc/yi-protect.cfg"
 get_cfg() { grep -E "^$1=" "$CONF" 2>/dev/null | cut -d= -f2-; }
 
