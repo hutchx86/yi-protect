@@ -673,6 +673,14 @@ static void *pushThreadMain(void *arg) {
         return e;
     };
 
+    // Opus PTS clock: the transcoder's own 20 ms sample grid, mapped through the
+    // shared capture anchor. It must NOT go through captureElapsed()'s wall-clock
+    // clamp: when the Opus PTS leads nowE that returned one identical nowE for
+    // every packet, collapsing a whole 64 ms AAC window onto a single stamp,
+    // which garbled Protect's low-latency live audio.
+    bool opusAnchored = false;
+    double opusPrevElapsed = 0.0;
+
     // FLV header: version 1, flags 0x07 (real UniFi cameras set both bits even
     // video-only), header size 9, PreviousTagSize0=0.
     put_bytes(out, (const unsigned char *)"FLV", 3);
@@ -748,6 +756,7 @@ static void *pushThreadMain(void *arg) {
     // ms orders the AAC and Opus tags of a connection as one audio sequence (a 1 ms
     // step back between the tracks terminates it), so they share one guard.
     uint32_t lastAudioMs = 0;
+    uint32_t lastOpusMs = 0;
     if (g_opusEnabled) {
         unsigned char opusCfg[4] = {0xcf, 0x00, 0x03, 0x02};
         std::vector<unsigned char> cfg(opusCfg, opusCfg + 4);
@@ -812,7 +821,7 @@ static void *pushThreadMain(void *arg) {
             // Same capture-time basis as video (shared anchor keeps A/V aligned).
             double aTagElapsed = captureElapsed(af.time);
             uint32_t aTagMs = monotonicMs(lastAudioMs, (uint32_t)(aTagElapsed * 1000.0));
-            if (aTagMs > (uint32_t)(aTagElapsed * 1000.0)) aTagElapsed = aTagMs / 1000.0;
+            aTagElapsed = aTagMs / 1000.0;   // whole-ms trailer: AAC and Opus never cross
 
             const unsigned char *rawAac = af.frame.data() + 7;
             size_t rawLen = af.frame.size() - 7;
@@ -850,9 +859,14 @@ static void *pushThreadMain(void *arg) {
             pthread_mutex_unlock(&c.opusQueue.mutex);
             if (!gotOpus) break;
             double oTagElapsed;
-            if (ofr.time != 0) {
-                // Capture PTS from the transcoder's sample clock (20 ms steps).
-                oTagElapsed = captureElapsed(ofr.time);
+            if (ofr.time != 0 && ptsAnchored) {
+                // Steady 20 ms grid from the transcoder's PTS, through the shared
+                // capture anchor; deliberately not wall-clamped so the packets of
+                // one AAC window keep distinct, increasing stamps.
+                oTagElapsed = ptsBaseElapsed + (double)(int32_t)(ofr.time - ptsBase) / 1000.0;
+                if (!opusAnchored) { opusAnchored = true; opusPrevElapsed = oTagElapsed; }
+                if (oTagElapsed < opusPrevElapsed) oTagElapsed = opusPrevElapsed;
+                opusPrevElapsed = oTagElapsed;
             } else {
                 double nowE = nowSeconds() - connectionStart;
                 if (opusPtsIndex < 0) {
@@ -863,8 +877,17 @@ static void *pushThreadMain(void *arg) {
                 oTagElapsed = (double)opusPtsIndex / 50.0;
                 opusPtsIndex++;
             }
-            uint32_t oTagMs = monotonicMs(lastAudioMs, (uint32_t)(oTagElapsed * 1000.0));
-            if (oTagMs > (uint32_t)(oTagElapsed * 1000.0)) oTagElapsed = oTagMs / 1000.0;
+            // The transcode lags the ring by ~one 64 ms AAC window, so a plain
+            // monotonic guard against the (already-sent) AAC stamp pinned every
+            // Opus packet of a window to one timestamp - bunchy stamps that
+            // garble Protect's low-latency live audio. Keep the Opus ahead of the
+            // AAC but advance it on its own steady 20 ms grid.
+            uint32_t oTagMs = (uint32_t)(oTagElapsed * 1000.0);
+            if (oTagMs < lastAudioMs) oTagMs = lastAudioMs;
+            if (lastOpusMs && oTagMs < lastOpusMs + 20) oTagMs = lastOpusMs + 20;
+            lastOpusMs = oTagMs;
+            lastAudioMs = oTagMs;
+            oTagElapsed = oTagMs / 1000.0;
             out.clear();
             writeFlvTag(out, 10, ofr.frame, oTagMs);
             writeTimestampTrailerClock(out, 0x00BB80, 48000.0, oTagElapsed);
