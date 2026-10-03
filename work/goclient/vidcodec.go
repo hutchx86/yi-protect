@@ -15,7 +15,7 @@ import (
 // Without it a fresh client starts from h264 and its first (partial) settings
 // object tells mediad to drop a channel that is really on h265; the resulting
 // switch reconnects every stream and races the controller's stream bookkeeping.
-var vidCodecFilePath = unifiPrefix + "/etc/unifi_client_go.vidcodec"
+var vidCodecFilePath = yipPrefix + "/etc/yi_protect_client_go.vidcodec"
 
 func loadVidCodecs(path string) map[string]string {
 	b, err := os.ReadFile(path)

@@ -134,10 +134,10 @@ static int runScenario(size_t start) {
 // A model absent from the table (or an empty/unknown name) must fall back to
 // ring autodetection, not a hardcoded offset/header.
 static int testModelFallback() {
-    setenv("UNIFI_MODEL_TABLE", "/nonexistent/model_table", 1);
+    setenv("YIP_MODEL_TABLE", "/nonexistent/model_table", 1);
     ModelParams mp = modelParams("no-such-model");
     ModelParams empty = modelParams("");
-    unsetenv("UNIFI_MODEL_TABLE");
+    unsetenv("YIP_MODEL_TABLE");
     if (mp.offset != 0 || mp.headerSize != 0 || empty.offset != 0 || empty.headerSize != 0) {
         std::fprintf(stderr, "FAIL: unknown-model fallback should autodetect ring "
                              "(got offset=%u/%u header=%d/%d)\n",
@@ -148,7 +148,7 @@ static int testModelFallback() {
 }
 
 // The bridge must declare the geometry of the ACTIVE encoder: the model row's
-// mediad_w/h when UNIFI_ENCODER=mediad, else the stock-rmm high_w/h (and
+// mediad_w/h when YIP_ENCODER=mediad, else the stock-rmm high_w/h (and
 // high_w/h when a row has no mediad columns).
 static int testModelGeometry() {
     const char *path = "/tmp/fsreader_model_table";
@@ -158,16 +158,16 @@ static int testModelGeometry() {
     std::fprintf(f, "h51ga gc2053 368 28 2304 1296 yes 0 1920 1080\n");
     std::fprintf(f, "h52ga gc2053 368 28 1920 1080 yes\n");  // no mediad columns
     std::fclose(f);
-    setenv("UNIFI_MODEL_TABLE", path, 1);
+    setenv("YIP_MODEL_TABLE", path, 1);
 
-    setenv("UNIFI_ENCODER", "rmm", 1);
+    setenv("YIP_ENCODER", "rmm", 1);
     ModelParams r = modelParams("h51ga");
-    setenv("UNIFI_ENCODER", "mediad", 1);
+    setenv("YIP_ENCODER", "mediad", 1);
     ModelParams m = modelParams("h51ga");
     ModelParams mFallback = modelParams("h52ga");  // mediad path, no columns
-    unsetenv("UNIFI_ENCODER");
+    unsetenv("YIP_ENCODER");
     ModelParams d = modelParams("h51ga");          // unset -> stock geometry
-    unsetenv("UNIFI_MODEL_TABLE");
+    unsetenv("YIP_MODEL_TABLE");
     std::remove(path);
 
     int rc = 0;

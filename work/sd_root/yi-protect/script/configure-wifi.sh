@@ -12,7 +12,7 @@
 # Exit: 0=written (reboot), 2=already current, 1=error.
 
 MTD="${MTD:-/dev/mtdblock7}"
-CFG="${1:-/tmp/sd/unifi/etc/configure_wifi.cfg}"
+CFG="${1:-/tmp/sd/yi-protect/etc/configure_wifi.cfg}"
 
 die() { echo "configure-wifi: $*" >&2; exit 1; }
 

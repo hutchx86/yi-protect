@@ -4,22 +4,22 @@ devices.md
 *.key
 
 # Built Go binaries — source lives in *.go
-work/goclient/unifi_avclient_*
-work/goclient/unifi-avclient
+work/goclient/yi_protect_avclient_*
+work/goclient/yi-protect-avclient
 
 # Downloaded material (toolchains, caches, upstream archives, controller dumps) — never in git
 file_downloads/
 
 # SD-card build output (assembled by work/build_sd.sh)
 work/build/
-work/sd_root/unifi/bin/
-work/sd_root/unifi/lib/
-work/sd_root/unifi/script/lower_half/
+work/sd_root/yi-protect/bin/
+work/sd_root/yi-protect/lib/
+work/sd_root/yi-protect/script/lower_half/
 # mediad files copied in from sisters/yi-mediad/dist by build_sd.sh (generated).
-work/sd_root/unifi/script/mediad.sh
-work/sd_root/unifi/etc/mediad.conf
-work/sd_root/unifi/etc/mediad.env
-work/sd_root/unifi/etc/mediad.*.env
+work/sd_root/yi-protect/script/mediad.sh
+work/sd_root/yi-protect/etc/mediad.conf
+work/sd_root/yi-protect/etc/mediad.env
+work/sd_root/yi-protect/etc/mediad.*.env
 # License files copied into the SD image by build_sd.sh (generated).
 work/sd_root/LICENSE
 work/sd_root/licenses/
@@ -30,15 +30,15 @@ work/SHA256SUMS
 
 # Runtime per-camera identity written onto the SD card by a booted camera.
 # Never tracked, never shipped (build_sd.sh refuses to package it).
-work/sd_root/unifi/etc/model_suffix
-work/sd_root/unifi/etc/unifi_client_go.device-id
-work/sd_root/unifi/etc/unifi_client_go.adoption-uuid
-work/sd_root/unifi/etc/unifi_client_go.adopted
-work/sd_root/unifi/etc/unifi_client_go.device-name
-work/sd_root/unifi/etc/unifi_client_go.inform-host*
-work/sd_root/unifi/etc/configure_wifi.cfg
-work/sd_root/unifi/etc/dropbear/
-work/sd_root/unifi/log/
+work/sd_root/yi-protect/etc/model_suffix
+work/sd_root/yi-protect/etc/yi_protect_client_go.device-id
+work/sd_root/yi-protect/etc/yi_protect_client_go.adoption-uuid
+work/sd_root/yi-protect/etc/yi_protect_client_go.adopted
+work/sd_root/yi-protect/etc/yi_protect_client_go.device-name
+work/sd_root/yi-protect/etc/yi_protect_client_go.inform-host*
+work/sd_root/yi-protect/etc/configure_wifi.cfg
+work/sd_root/yi-protect/etc/dropbear/
+work/sd_root/yi-protect/log/
 *.applied
 
 # Compiled build artifacts
@@ -47,8 +47,8 @@ work/sd_root/unifi/log/
 *.a
 *.so
 __pycache__/
-work/flv_bridge/unifi_flv_bridge
-work/snapshot/unifi_snapshot
+work/flv_bridge/yi_protect_flv_bridge
+work/snapshot/yi_protect_snapshot
 
 # local agent settings (may contain pasted credentials)
 .claude/settings.local.json
@@ -64,7 +64,7 @@ fw_picked/
 
 # Console/controller dumps and captures (vendor ds.json, pcaps, trace logs).
 # Kept on disk only.
-/work/unifi/
+/work/yi-protect/
 
 # Local-only third-party reference clones (not submodules).
 repos/allwinner-isp6xx/

@@ -50,27 +50,27 @@ controller. It is still a moving target — expect rough edges.
 - **Snapshots**, **motion events**, **PTZ** (models with a motorized base), and
   rudimentary **IR / night-vision** control.
 - **Two-way audio (talkback)** — from the Protect mobile/web app to the speaker.
-- **SSH access** — a Dropbear server for `root` (password from `unifi.cfg`
+- **SSH access** — a Dropbear server for `root` (password from `yi-protect.cfg`
   `SSH_PASSWORD`). Protect's own account (`ui`; `ubnt` before adoption) is
   accepted only with `PROTECT_SSH=yes`. See [Access](#access-ssh).
-- **Settings page** — a small HTTP page on `:80` (`unifi.cfg` `WEBUI_PORT`,
+- **Settings page** — a small HTTP page on `:80` (`yi-protect.cfg` `WEBUI_PORT`,
   `0` = off) for pinning the optional mediad's image settings. It is
   **unauthenticated**: anyone on the LAN can change them.
-- **Optional Yi cloud** — the `unifi.cfg` key `YI_CLOUD` also runs the stock Yi
+- **Optional Yi cloud** — the `yi-protect.cfg` key `YI_CLOUD` also runs the stock Yi
   cloud daemons (`cloud`, `p2p_tnp`, `oss`) so the camera still appears in the
   YI app alongside Protect. It is **on by default**, except on `mediad` builds
   (`IS_MEDIAD=yes`) where it defaults off; set `yes`/`no` to force it. Off =
   local-only, no Yi cloud traffic.
 - **Selectable encoder** — the image ships two encoder paths: the stock Yi
   `rmm`, and the clean-room [yi-mediad](https://github.com/hutchx86/yi-mediad)
-  daemon. `unifi.cfg IS_MEDIAD=yes` runs `mediad` (H.264 + H.265, advanced
+  daemon. `yi-protect.cfg IS_MEDIAD=yes` runs `mediad` (H.264 + H.265, advanced
   picture controls); `no` keeps stock `rmm` (H.264 only). The two never run
   together. H.265 "super encoding" is advertised to the controller **only** on
   the `mediad` path, so Protect cannot pick a codec the active encoder cannot
   produce. A vendor-linked mediad build fetches the vendor H.264 libs from
   GitHub at boot; the shipped clean-room build makes no such fetch.
 - **Self-contained SD deploy** — everything in the image builds from source into
-  `/tmp/sd/unifi/`; no yi-hack install required at runtime.
+  `/tmp/sd/yi-protect/`; no yi-hack install required at runtime.
 - **One image, any supported camera** — the model is auto-detected at boot, so
   the same SD card works across models with no per-camera edits.
 - **Safety net** — first boot dumps the camera's full raw flash to the SD card
@@ -104,21 +104,21 @@ native product to these sensors.
 ## How it works
 
 The camera keeps its stock vendor firmware and kernel; this project adds a
-self-contained stack on the SD card (`/tmp/sd/unifi/`). A patched
+self-contained stack on the SD card (`/tmp/sd/yi-protect/`). A patched
 `/backup/init.sh` sources our `lower_half_init.sh`. On every boot it builds the
 bring-up script from the camera's own stock `lower_half_init.sh`
-(`unifi/script/gen-lower-half.sh`): the stock hardware bring-up runs unchanged,
+(`yi-protect/script/gen-lower-half.sh`): the stock hardware bring-up runs unchanged,
 and the vendor app launch is replaced by ours, which hands off to
-`unifi/script/init.sh`. That brings up our binaries and leaves the stock
+`yi-protect/script/init.sh`. That brings up our binaries and leaves the stock
 low-level daemons (sensor/ISP/encoder) in place. If the stock script is not in a
 shape the generator recognises, it runs unmodified (the camera boots without our
 app) and `/tmp/lower_half.log` says why.
 
 | Component | Language | Role |
 | --- | --- | --- |
-| `unifi_flv_bridge` | C++ | Reads the stock encoder's shared-memory ring (`fshare`) directly, muxes UniFi's `extendedFlv` (video, native AAC, and a transcoded Opus track) and pushes it over a self-dialled TCP socket. No RTSP, no LIVE555. |
-| `unifi_avclient_go` | Go | Control plane: L2/UDP discovery, WSS adoption/control, clock sync, snapshots (`unifi_snapshot`), motion events, PTZ, and the camera-side manage API on `:443`. |
-| `unifi_snapshot` | C++ | Snapshot tool for Protect's `GetRequest`: reads the ring's next keyframe, decodes it (FFmpeg) and writes a JPEG (libjpeg). Replaces yi-hack's `imggrabber`. |
+| `yi_protect_flv_bridge` | C++ | Reads the stock encoder's shared-memory ring (`fshare`) directly, muxes UniFi's `extendedFlv` (video, native AAC, and a transcoded Opus track) and pushes it over a self-dialled TCP socket. No RTSP, no LIVE555. |
+| `yi_protect_avclient_go` | Go | Control plane: L2/UDP discovery, WSS adoption/control, clock sync, snapshots (`yi_protect_snapshot`), motion events, PTZ, and the camera-side manage API on `:443`. |
+| `yi_protect_snapshot` | C++ | Snapshot tool for Protect's `GetRequest`: reads the ring's next keyframe, decodes it (FFmpeg) and writes a JPEG (libjpeg). Replaces yi-hack's `imggrabber`. |
 | `talkback_rx` | C | Talkback receiver: decodes ADTS AAC / RTP Opus from UDP `:7004` to 16 kHz PCM and drives the speaker + amp. |
 | `cpld_ctl` | C | CPLD / IR-LED / amp control helper for the `/dev/cpld_periph` ioctls. |
 | `mixer_set` | C | Sets the codec capture gain (ALSA) from Protect's Microphone Level. |
@@ -156,7 +156,7 @@ tar xzf yi-protect-<rev>.tar.gz -C /mnt
 sync && sudo umount /mnt
 ```
 
-The card root should now contain `lower_half_init.sh`, `Factory/` and `unifi/`.
+The card root should now contain `lower_half_init.sh`, `Factory/` and `yi-protect/`.
 
 ### 3. First boot (install)
 
@@ -194,7 +194,7 @@ so yi-protect sets WiFi from a credentials file on the card:
 - **First boot (fresh card):** rename `Factory/configure_wifi.cfg.ori` to
   `Factory/configure_wifi.cfg`, edit `wifi_ssid=` / `wifi_psk=`, then power on.
   The installer writes the credentials, then reboots once.
-- **Later:** rename `unifi/etc/configure_wifi.cfg.example` to
+- **Later:** rename `yi-protect/etc/configure_wifi.cfg.example` to
   `configure_wifi.cfg`, edit it, drop it on the card, and reboot. `init.sh`
   applies it, reboots once, and renames it `.applied`.
 
@@ -202,7 +202,7 @@ Format is plain `KEY=value` (spaces allowed, no backslash, max 63 chars). The
 value may be bare or wrapped in one pair of matching double/single quotes; the
 quotes are stripped before writing, and are recommended so special characters and
 leading/trailing spaces are unambiguous. See the example file.
-`unifi/script/configure-wifi.sh` writes the SSID at
+`yi-protect/script/configure-wifi.sh` writes the SSID at
 offset 28 and the PSK at offset 92 of the conf partition (`/dev/mtdblock7`),
 after backing it up to the card. That is the same partition the stock WiFi stack
 reads, so it works without the Yi app or cloud.
@@ -239,10 +239,10 @@ work/build_sd.sh
 work/release.sh
 ```
 
-Config lives in `work/sd_root/unifi/etc/unifi.cfg` (resolution, audio, optional
+Config lives in `work/sd_root/yi-protect/etc/yi-protect.cfg` (resolution, audio, optional
 static controller override, PTZ auto-detect, optional Yi cloud).
 
-Per-model **facts** live in `work/sd_root/unifi/etc/model_table` — one row per
+Per-model **facts** live in `work/sd_root/yi-protect/etc/model_table` — one row per
 camera (sensor, fshare ring geometry, HIGH-channel resolution, PTZ, an optional
 pinned HIGH bitrate). The bridge,
 the client, the boot scripts, `detect-model.sh` and `build_sd.sh` all read that
@@ -259,7 +259,7 @@ login.
 
 | user | password(s) | when |
 |---|---|---|
-| `root` | `unifi.cfg` `SSH_PASSWORD` | always (locked if empty) |
+| `root` | `yi-protect.cfg` `SSH_PASSWORD` | always (locked if empty) |
 | Protect's user (`ui` on current Protect; `ubnt` before adoption) | `SSH_PASSWORD` **or** Protect's device password | only with `PROTECT_SSH=yes`; root-equivalent (uid 0), like a native UniFi camera |
 
 ```
@@ -267,19 +267,19 @@ ssh root@<camera-ip>        # your SSH_PASSWORD
 ssh ui@<camera-ip>          # PROTECT_SSH=yes: Protect's device password or SSH_PASSWORD
 ```
 
-- **Set `SSH_PASSWORD` in `unifi/etc/unifi.cfg` before the first boot.** Empty
+- **Set `SSH_PASSWORD` in `yi-protect/etc/yi-protect.cfg` before the first boot.** Empty
   means no password login for root.
 - `PROTECT_SSH` defaults to `no`: Protect's credential push is acknowledged and
   nothing of it is stored or accepted. With `yes`, Protect pushes its device
   credential (the NVR-wide device password, shown in Protect's settings) on
-  every connect; the camera stores only its SHA-512 hash (`unifi/etc/ssh_protect`),
+  every connect; the camera stores only its SHA-512 hash (`yi-protect/etc/ssh_protect`),
   and a password change in Protect takes effect on the next connect. Switching
   it back to `no` (and rebooting) stops a stored credential being accepted.
 - `SSH_PASSWORD` is hashed at boot (MD5-crypt, the scheme the camera's libc
   checks). Protect's SHA-512 hash is checked by a small patch to our Dropbear
   build (`work/dropbear/`), since the camera's libc cannot verify it.
-- To change either setting, edit `unifi.cfg` on the card and reboot. The card
-  is FAT, so anyone holding it can read `unifi.cfg`; treat the card as a secret.
+- To change either setting, edit `yi-protect.cfg` on the card and reboot. The card
+  is FAT, so anyone holding it can read `yi-protect.cfg`; treat the card as a secret.
 
 ## Backup & recovery
 
@@ -340,9 +340,9 @@ attribution is in [`NOTICE`](NOTICE).
   repository; supply your own. This repo is our own source, scripts and
   documentation, plus a few helper scripts vendored from
   [yi-hack-Allwinner-v2](https://github.com/roleoroleo/yi-hack-Allwinner-v2)
-  (`unifi/script/ethdhcp.sh`, `wifidhcp.sh`); other third-party code is
+  (`yi-protect/script/ethdhcp.sh`, `wifidhcp.sh`); other third-party code is
   fetched from upstream at build time. See [`NOTICE`](NOTICE).
-- **This project exists to ensure interoperability between Unifi Protect and
+- **This project exists to ensure interoperability between UniFi Protect and
   other cameras.** This interoperability goal is recognised under EU law:
   Directive 2009/24/EC (the Software Directive), **Art. 6**, which permits
   decompilation and reverse engineering to achieve interoperability with an
@@ -377,9 +377,9 @@ AGPL-3.0-or-later. See [LICENSE](LICENSE). This program can be run as a network
 service, so section 13 of the AGPL requires anyone running a modified version
 to offer its corresponding source to users interacting with it over a network.
 The project's own code is AGPL-3.0-or-later; the two vendored yi-hack scripts
-(`unifi/script/ethdhcp.sh`, `wifidhcp.sh`) remain GPL-3.0-or-later and are
+(`yi-protect/script/ethdhcp.sh`, `wifidhcp.sh`) remain GPL-3.0-or-later and are
 combined with it under GPLv3/AGPLv3 section 13. The compiled SD image bundles
 GPL/LGPL components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later, LGPL-2.1
-libasound, and FFmpeg/libjpeg-turbo statically linked into `unifi_snapshot`); the
+libasound, and FFmpeg/libjpeg-turbo statically linked into `yi_protect_snapshot`); the
 release tarball includes `LICENSE`, `NOTICE` and `SOURCES.txt` with the
 corresponding source locations and a written offer. See [`NOTICE`](NOTICE).

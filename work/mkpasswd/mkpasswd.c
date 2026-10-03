@@ -5,8 +5,8 @@
  *
  * The camera's musl 1.1.16 libc implements only DES and MD5 crypt, and the
  * dropbear sshd verifies /etc/shadow through that same crypt(), so $1$ is the
- * one scheme guaranteed to round-trip there. unifi/script/ssh-accounts.sh pipes
- * unifi.cfg's SSH_PASSWORD through this and installs the result as the shadow
+ * one scheme guaranteed to round-trip there. yi-protect/script/ssh-accounts.sh pipes
+ * yi-protect.cfg's SSH_PASSWORD through this and installs the result as the shadow
  * entry of root and the Protect user (the stock image ships an empty root
  * password). The controller's SHA-512 credential is checked separately by our
  * dropbear patch (work/dropbear/).

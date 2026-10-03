@@ -7,7 +7,7 @@
 #
 #   if [ -f /tmp/sd/Factory/factory_test.sh ]; then /tmp/sd/Factory/config.sh; exit; fi
 
-exec >/tmp/sd/unifi-install.log 2>&1
+exec >/tmp/sd/yi-protect-install.log 2>&1
 echo "=== yi-protect install $(date) ==="
 
 if [ ! -f /tmp/sd/lower_half_init.sh ]; then
@@ -18,8 +18,8 @@ if [ ! -f /tmp/sd/lower_half_init.sh ]; then
 fi
 
 # Emergency flash backup before we touch the boot. Abort if it fails.
-if [ -x /tmp/sd/unifi/script/backup-flash.sh ]; then
-    /tmp/sd/unifi/script/backup-flash.sh || {
+if [ -x /tmp/sd/yi-protect/script/backup-flash.sh ]; then
+    /tmp/sd/yi-protect/script/backup-flash.sh || {
         echo "ERROR: flash backup failed; not patching boot"
         sync
         exit 1
@@ -28,9 +28,9 @@ fi
 
 # Optional WiFi creds in Factory/configure_wifi.cfg (wifi_ssid/wifi_psk):
 # written into the conf partition (mtd7) before reboot; failure is non-fatal.
-if [ -f /tmp/sd/Factory/configure_wifi.cfg ] && [ -x /tmp/sd/unifi/script/configure-wifi.sh ]; then
+if [ -f /tmp/sd/Factory/configure_wifi.cfg ] && [ -x /tmp/sd/yi-protect/script/configure-wifi.sh ]; then
     echo "provisioning wifi from Factory/configure_wifi.cfg"
-    /tmp/sd/unifi/script/configure-wifi.sh /tmp/sd/Factory/configure_wifi.cfg || \
+    /tmp/sd/yi-protect/script/configure-wifi.sh /tmp/sd/Factory/configure_wifi.cfg || \
         echo "WARN: wifi provisioning failed; continuing install"
 fi
 
@@ -38,7 +38,7 @@ if grep -q "/tmp/sd/lower_half_init.sh" /backup/init.sh 2>/dev/null; then
     echo "boot hook already present, skipping patch"
 else
     echo "patching /backup/init.sh"
-    sh /tmp/sd/unifi/install/install-backup-hook.sh
+    sh /tmp/sd/yi-protect/install/install-backup-hook.sh
 fi
 
 # Rename ourselves away so the stock factory hook doesn't halt every boot.

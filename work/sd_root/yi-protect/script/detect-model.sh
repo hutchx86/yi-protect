@@ -3,11 +3,11 @@
 # Copyright (C) 2026 yi-protect contributors
 #
 # detect-model: resolve the camera model from the OS alone and record it in
-# $UNIFI_PREFIX/etc/model_suffix. Sources: $1/$SUFFIX, unique MIPI sensor, OTA URL, default y623.
+# $YIP_PREFIX/etc/model_suffix. Sources: $1/$SUFFIX, unique MIPI sensor, OTA URL, default y623.
 
-UNIFI_PREFIX="${UNIFI_PREFIX:-/tmp/sd/unifi}"
-OUT="$UNIFI_PREFIX/etc/model_suffix"
-TABLE="$UNIFI_PREFIX/etc/model_table"
+YIP_PREFIX="${YIP_PREFIX:-/tmp/sd/yi-protect}"
+OUT="$YIP_PREFIX/etc/model_suffix"
+TABLE="$YIP_PREFIX/etc/model_table"
 
 model="$1"
 [ -z "$model" ] && model="$SUFFIX"
@@ -35,7 +35,7 @@ fi
 
 [ -z "$model" ] && model=y623
 
-if [ -d "$UNIFI_PREFIX/etc" ]; then
+if [ -d "$YIP_PREFIX/etc" ]; then
     printf '%s\n' "$model" > "$OUT" 2>/dev/null
 fi
 

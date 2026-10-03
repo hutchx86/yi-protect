@@ -9,7 +9,7 @@
 
 #include "bridge.h"
 
-#define FLV_PUSH_FIFO "/tmp/unifi_flv_bridge_ctl"
+#define FLV_PUSH_FIFO "/tmp/yi_protect_flv_bridge_ctl"
 
 enum { FLV_CH_HIGH = 0, FLV_CH_LOW = 1, FLV_CH_MED = 2, FLV_CH_COUNT = 3 };
 

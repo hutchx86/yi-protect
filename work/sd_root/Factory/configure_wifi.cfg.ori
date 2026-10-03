@@ -2,9 +2,9 @@
 #
 # Rename this file to configure_wifi.cfg (same directory) and edit the two lines
 # before the first power-on. Factory/config.sh writes them into the camera's conf
-# partition (mtd7), then installs unifi and reboots, so the first post-install
+# partition (mtd7), then installs yi-protect and reboots, so the first post-install
 # boot comes up associated. To change WiFi later, use
-# unifi/etc/configure_wifi.cfg instead.
+# yi-protect/etc/configure_wifi.cfg instead.
 #
 # Rules:
 #   - one value per line, KEY=value

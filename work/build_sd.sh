@@ -8,10 +8,10 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SD="$ROOT/work/sd_root"
-UNIFI="$SD/unifi"
-BIN="$UNIFI/bin"
-LIB="$UNIFI/lib"
-ETC="$UNIFI/etc"
+YIP="$SD/yi-protect"
+BIN="$YIP/bin"
+LIB="$YIP/lib"
+ETC="$YIP/etc"
 YH="$ROOT/repos/yi-hack-Allwinner-v2"
 # Generic armv7-a hard-float musl cross-toolchain; the lindenis v536 and v833
 # prebuilts ship the same compiler. Point TOOLCHAIN_DIR at a clone of either.
@@ -23,11 +23,11 @@ YHB="$BUILD/yi-hack"
 
 # Optional clean-room mediad (sister project yi-mediad). When this dist exists it
 # is packaged into the image so a user can opt into the advanced encoder path
-# with unifi.cfg IS_MEDIAD=yes; without it the image is built rmm-only (still
+# with yi-protect.cfg IS_MEDIAD=yes; without it the image is built rmm-only (still
 # fully functional, just no H.265/advanced picture controls).
 MEDIAD_DIST="${MEDIAD_DIST:-$ROOT/../sisters/yi-mediad/yi-mediad-git/dist}"
 
-mkdir -p "$BIN" "$LIB" "$ETC" "$UNIFI/script" "$BUILD"
+mkdir -p "$BIN" "$LIB" "$ETC" "$YIP/script" "$BUILD"
 
 export PATH="$TCBIN:$HOME/.local/bin:$PATH"
 export STAGING_DIR="$TCDIR"
@@ -55,10 +55,10 @@ done
 # Repath compiled-in yi-hack paths so the shipped binaries never read
 # /tmp/sd/yi-hack: ipc_cmd (model_suffix) and dropbear's host-key paths.
 sed -i \
-    -e 's|"/home/yi-hack/model_suffix"|"/tmp/sd/unifi/etc/model_suffix"|' \
-    -e 's|"/tmp/sd/yi-hack/model_suffix"|"/tmp/sd/unifi/etc/model_suffix"|' \
+    -e 's|"/home/yi-hack/model_suffix"|"/tmp/sd/yi-protect/etc/model_suffix"|' \
+    -e 's|"/tmp/sd/yi-hack/model_suffix"|"/tmp/sd/yi-protect/etc/model_suffix"|' \
     "$YHB/src/ipc_cmd/ipc_cmd/ptz.c"
-sed -i 's|/tmp/sd/yi-hack|/tmp/sd/unifi|g' "$YHB/src/dropbear/localoptions.h"
+sed -i 's|/tmp/sd/yi-hack|/tmp/sd/yi-protect|g' "$YHB/src/dropbear/localoptions.h"
 
 # dropbear: second per-account password (controller device credential, SHA-512
 # crypt; work/dropbear/yp_extra_auth.c), patched in after the tarball unpacks.
@@ -88,7 +88,7 @@ build_module set_tz_offset
 build_module dropbear
 build_module alsa-lib
 
-# 2b. Snapshot decode/encode deps for our own unifi_snapshot: FFmpeg (H.264
+# 2b. Snapshot decode/encode deps for our own yi_protect_snapshot: FFmpeg (H.264
 #     decoder) + libjpeg-turbo, built from upstream (no yi-hack imggrabber).
 echo "== 2b/6 snapshot deps (ffmpeg, libjpeg-turbo) =="
 SNAPD="$BUILD/snapshot-deps"
@@ -167,15 +167,15 @@ if [ ! -f "$OPUS_DIR/.libs/libopus.a" ]; then
 fi
 
 # 4. This project's own code.
-echo "== 4/6 our components (unifi_avclient_go, cpld_ctl, talkback_rx, unifi_flv_bridge, downloader) =="
+echo "== 4/6 our components (yi_protect_avclient_go, cpld_ctl, talkback_rx, yi_protect_flv_bridge, downloader) =="
 ( cd "$ROOT/work/goclient"
   CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 CC="$CC" \
-      go build -trimpath -ldflags="-s -w" -o "$BIN/unifi_avclient_go" . )
+      go build -trimpath -ldflags="-s -w" -o "$BIN/yi_protect_avclient_go" . )
 
 "$CC" -O2 -o "$BIN/cpld_ctl" "$ROOT/work/cpld_ctl/cpld_ctl.c"
 "$STRIP" "$BIN/cpld_ctl"
 
-# mkpasswd: MD5-crypt helper for unifi.cfg SSH_PASSWORD; the camera libc has
+# mkpasswd: MD5-crypt helper for yi-protect.cfg SSH_PASSWORD; the camera libc has
 # no cryptpw applet/openssl, so init.sh needs our own crypt() call.
 "$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/work/mkpasswd/mkpasswd.c"
 "$STRIP" "$BIN/mkpasswd"
@@ -198,9 +198,9 @@ FAAD2="$BUILD/faad2-$FAAD2_VER"
 ( cd "$ROOT/work/flv_bridge"
   make -s clean
   make -s CXX="$CXX" CXXFLAGS="-O2 -Wall -std=gnu++14" \
-      FAAD2="$FAAD2" OPUS="$OPUS_DIR" unifi_flv_bridge
-  "$STRIP" unifi_flv_bridge
-  cp unifi_flv_bridge "$BIN/unifi_flv_bridge" )
+      FAAD2="$FAAD2" OPUS="$OPUS_DIR" yi_protect_flv_bridge
+  "$STRIP" yi_protect_flv_bridge
+  cp yi_protect_flv_bridge "$BIN/yi_protect_flv_bridge" )
 
 ( cd "$ROOT/work/talkback/rx"
   "$CC" -O2 -o "$BIN/talkback_rx" talkback_rx.c \
@@ -208,15 +208,15 @@ FAAD2="$BUILD/faad2-$FAAD2_VER"
       "$FAAD2/libfaad.a" "$OPUS_DIR/.libs/libopus.a" -lm )
 "$STRIP" "$BIN/talkback_rx"
 
-# unifi_snapshot: Protect GetRequest JPEG from the ring's keyframe (our own
+# yi_protect_snapshot: Protect GetRequest JPEG from the ring's keyframe (our own
 # replacement for yi-hack's imggrabber); reuses the bridge's ring reader.
 ( cd "$ROOT/work/snapshot"
   make -s clean
   make -s CXX="$CXX" CXXFLAGS="-O2 -Wall -std=gnu++14" \
       FLV="$ROOT/work/flv_bridge" FFMPEG_DIR="$FFMPEG_DIR" JPEG_DIR="$JPEG_DIR" \
-      unifi_snapshot
-  "$STRIP" unifi_snapshot
-  cp unifi_snapshot "$BIN/unifi_snapshot" )
+      yi_protect_snapshot
+  "$STRIP" yi_protect_snapshot
+  cp yi_protect_snapshot "$BIN/yi_protect_snapshot" )
 
 # 5. Collect yi-hack-built artifacts into the SD layout (from _install/).
 echo "== 5/6 installing built artifacts =="
@@ -230,20 +230,20 @@ cp "$I/alsa-lib/_install/lib/libasound.so.2.0.0"  "$LIB/libasound.so.2"
 "$STRIP" "$BIN/dropbearmulti" "$LIB/libasound.so.2" 2>/dev/null || true
 
 # 5b. Optional clean-room mediad (sister project yi-mediad): the advanced encoder
-#     path, selected at boot by unifi.cfg IS_MEDIAD=yes (init.sh/watchdog.sh
+#     path, selected at boot by yi-protect.cfg IS_MEDIAD=yes (init.sh/watchdog.sh
 #     already branch on it). Its libs are self-contained (no vendor .so fetch).
 echo "== 5b/7 mediad (optional advanced encoder) =="
-if [ -x "$MEDIAD_DIST/unifi/bin/mediad" ]; then
-    cp "$MEDIAD_DIST/unifi/bin/mediad" "$BIN/mediad"
-    cp "$MEDIAD_DIST/unifi/script/mediad.sh" "$UNIFI/script/mediad.sh"
-    [ -f "$MEDIAD_DIST/unifi/etc/mediad.conf" ] && cp "$MEDIAD_DIST/unifi/etc/mediad.conf" "$ETC/mediad.conf"
+if [ -x "$MEDIAD_DIST/yi-protect/bin/mediad" ]; then
+    cp "$MEDIAD_DIST/yi-protect/bin/mediad" "$BIN/mediad"
+    cp "$MEDIAD_DIST/yi-protect/script/mediad.sh" "$YIP/script/mediad.sh"
+    [ -f "$MEDIAD_DIST/yi-protect/etc/mediad.conf" ] && cp "$MEDIAD_DIST/yi-protect/etc/mediad.conf" "$ETC/mediad.conf"
     # The dist is the source of truth: drop stale env copies left in the
     # gitignored sd_root by an earlier build, then copy the dist's (if any).
     rm -f "$ETC"/mediad.env "$ETC"/mediad.*.env
-    for env in "$MEDIAD_DIST"/unifi/etc/mediad.*.env; do
+    for env in "$MEDIAD_DIST"/yi-protect/etc/mediad.*.env; do
         [ -f "$env" ] && cp "$env" "$ETC/$(basename "$env")"
     done
-    for lib in "$MEDIAD_DIST"/unifi/lib/*.so; do
+    for lib in "$MEDIAD_DIST"/yi-protect/lib/*.so; do
         [ -f "$lib" ] && cp "$lib" "$LIB/"
     done
     echo "   mediad packaged from $MEDIAD_DIST"
@@ -265,7 +265,7 @@ MODEL_TABLE="$ETC/model_table"
 if [ ! -f "$MODEL_TABLE" ]; then
     echo "ERROR: $MODEL_TABLE missing (it defines the supported models)"; exit 1
 fi
-LHDIR="${UNIFI:?}/script/lower_half"
+LHDIR="${YIP:?}/script/lower_half"
 for m in default $(awk '!/^[[:space:]]*#/ && NF {print $1}' "$MODEL_TABLE"); do
     rm -f "$LHDIR/$m.sh"
 done
@@ -296,13 +296,13 @@ https://github.com/hutchx86/yi-protect . Components shipped in this image:
   https://github.com/roleoroleo/yi-hack-Allwinner-v2          (MIT / GPL-3.0)
 * libipc (ipc_cmd, ipc_multiplex.so)
   https://github.com/TheCrypt0/libipc                         (GPL-3.0)
-* FFmpeg 8.1.1 (static in unifi_snapshot)
+* FFmpeg 8.1.1 (static in yi_protect_snapshot)
   https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.bz2            (LGPL-2.1)
-* libjpeg-turbo 3.1.4.1 (static in unifi_snapshot)
+* libjpeg-turbo 3.1.4.1 (static in yi_protect_snapshot)
   https://github.com/libjpeg-turbo/libjpeg-turbo              (BSD-3-Clause / IJG)
-* FAAD2 ${FAAD2_VER} (static in unifi_flv_bridge, talkback_rx)
+* FAAD2 ${FAAD2_VER} (static in yi_protect_flv_bridge, talkback_rx)
   https://github.com/knik0/faad2/releases/tag/${FAAD2_VER}    (GPL-2.0-or-later)
-* libopus ${OPUS_VER} (static in unifi_flv_bridge, talkback_rx)
+* libopus ${OPUS_VER} (static in yi_protect_flv_bridge, talkback_rx)
   https://downloads.xiph.org/releases/opus/opus-${OPUS_VER}.tar.gz (BSD-3-Clause)
 * alsa-lib 1.1.4.1 + yi-hack audio-FIFO patch (libasound.so.2)
   https://www.alsa-project.org/files/pub/lib/alsa-lib-1.1.4.1.tar.bz2 (LGPL-2.1)
@@ -312,9 +312,9 @@ https://github.com/hutchx86/yi-protect . Components shipped in this image:
   https://musl.libc.org/                                      (MIT)
 * Mbed TLS 2.28.8 (static in downloader)
   https://github.com/Mbed-TLS/mbedtls/releases/tag/v2.28.8    (Apache-2.0)
-* gorilla/websocket v1.5.3 (in unifi_avclient_go)
+* gorilla/websocket v1.5.3 (in yi_protect_avclient_go)
   https://github.com/gorilla/websocket                        (BSD-2-Clause)
-* Go runtime/standard library (in unifi_avclient_go; go.mod go 1.23.4,
+* Go runtime/standard library (in yi_protect_avclient_go; go.mod go 1.23.4,
   release CI builds with Go 1.23.x)  https://go.dev/            (BSD-3-Clause)
 
 Written offer: the yi-protect maintainers (https://github.com/hutchx86/yi-protect)
@@ -344,7 +344,7 @@ fi
 echo "== 7/7 packaging =="
 # bin/ and lib/ are gitignored and never emptied, so anything left there by
 # hand (e.g. a vendor-linked mediad from an old deploy) would ship. Refuse.
-SHIP_BIN="cpld_ctl downloader dropbearmulti ipc_cmd mediad mixer_set mkpasswd set_tz_offset talkback_rx unifi_avclient_go unifi_flv_bridge unifi_snapshot"
+SHIP_BIN="cpld_ctl downloader dropbearmulti ipc_cmd mediad mixer_set mkpasswd set_tz_offset talkback_rx yi_protect_avclient_go yi_protect_flv_bridge yi_protect_snapshot"
 SHIP_LIB="ipc_multiplex.so libasound.so.2 libvenc_base.so vin_crop_shim.so"
 stray=""
 for f in "$BIN"/* "$LIB"/*; do
@@ -372,7 +372,7 @@ if [ -n "$links" ]; then
     exit 1
 fi
 
-ETC_ALLOW="configure_wifi.cfg.example model_table main_blank.bmp sub_blank.bmp unifi.cfg mediad.conf"
+ETC_ALLOW="configure_wifi.cfg.example model_table main_blank.bmp sub_blank.bmp yi-protect.cfg mediad.conf"
 for f in "$ETC"/*; do
     [ -e "$f" ] || continue
     _bn=$(basename "$f")
@@ -381,15 +381,15 @@ for f in "$ETC"/*; do
         *)
             # Per-model/per-deploy mediad knobs (mediad.env, mediad.<model>.env).
             case "$_bn" in mediad.env|mediad.*.env) ;; *)
-                echo "ERROR: unexpected file in unifi/etc (per-camera identity leak?): $f"; exit 1 ;;
+                echo "ERROR: unexpected file in yi-protect/etc (per-camera identity leak?): $f"; exit 1 ;;
             esac
             ;;
     esac
 done
 
-for pat in unifi_client_go.device-id unifi_client_go.crt unifi_client_go.key \
-           unifi_client_go.adoption-uuid unifi_client_go.adopted \
-           unifi_client_go.device-name 'unifi_client_go.inform-host*' \
+for pat in yi_protect_client_go.device-id yi_protect_client_go.crt yi_protect_client_go.key \
+           yi_protect_client_go.adoption-uuid yi_protect_client_go.adopted \
+           yi_protect_client_go.device-name 'yi_protect_client_go.inform-host*' \
            model_suffix configure_wifi.cfg '*.applied' 'dropbear_*_host_key'; do
     found=$(find "$SD" -name "$pat" 2>/dev/null)
     if [ -n "$found" ]; then
@@ -399,8 +399,8 @@ for pat in unifi_client_go.device-id unifi_client_go.crt unifi_client_go.key \
     fi
 done
 
-if [ -d "$SD/unifi/log" ]; then
-    echo "ERROR: $SD/unifi/log exists (runtime debug output); remove it before packaging"
+if [ -d "$SD/yi-protect/log" ]; then
+    echo "ERROR: $SD/yi-protect/log exists (runtime debug output); remove it before packaging"
     exit 1
 fi
 

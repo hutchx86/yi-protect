@@ -10,11 +10,11 @@
 # If the stock script is not in a shape we recognise, the stock script runs
 # unmodified: the camera boots, without our app.
 
-UNIFI_PREFIX=/tmp/sd/unifi
+YIP_PREFIX=/tmp/sd/yi-protect
 LH_LOG=/tmp/lower_half.log
 
 # $SUFFIX is the stock ROM's model token; detect-model prefers it, else hardware.
-MODEL=$("$UNIFI_PREFIX/script/detect-model.sh" "$SUFFIX")
+MODEL=$("$YIP_PREFIX/script/detect-model.sh" "$SUFFIX")
 SUFFIX="$MODEL"
 export SUFFIX
 
@@ -23,11 +23,11 @@ STOCK_LH=/home/app/lower_half_init.sh
 [ -f "$STOCK_LH" ] || STOCK_LH=/backup/lower_half_init.sh
 
 GEN_LH=/tmp/lower_half_init.sh
-if sh "$UNIFI_PREFIX/script/gen-lower-half.sh" "$STOCK_LH" "$GEN_LH"; then
+if sh "$YIP_PREFIX/script/gen-lower-half.sh" "$STOCK_LH" "$GEN_LH"; then
     echo "lower_half: $MODEL: generated from $STOCK_LH" >> "$LH_LOG"
     # Reference copy for debugging only; never read back at boot.
-    cmp -s "$GEN_LH" "$UNIFI_PREFIX/log/lower_half_init.generated.sh" 2>/dev/null ||
-        { mkdir -p "$UNIFI_PREFIX/log" && cp "$GEN_LH" "$UNIFI_PREFIX/log/lower_half_init.generated.sh"; } 2>/dev/null
+    cmp -s "$GEN_LH" "$YIP_PREFIX/log/lower_half_init.generated.sh" 2>/dev/null ||
+        { mkdir -p "$YIP_PREFIX/log" && cp "$GEN_LH" "$YIP_PREFIX/log/lower_half_init.generated.sh"; } 2>/dev/null
     . "$GEN_LH"
 else
     echo "lower_half: $MODEL: $STOCK_LH not recognised; running it unmodified (no yi-protect app)" >> "$LH_LOG"

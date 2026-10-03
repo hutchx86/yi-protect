@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
  *
- * Per-model facts are data, not code: read from unifi/etc/model_table. This
+ * Per-model facts are data, not code: read from yi-protect/etc/model_table. This
  * file only knows how to find a model's row; it contains no model names or
  * per-model branches.
  */
@@ -15,8 +15,8 @@
 
 namespace {
 
-// Same path the boot scripts use; UNIFI_PREFIX may be overridden for tests.
-const char *kDefaultTablePath = "/tmp/sd/unifi/etc/model_table";
+// Same path the boot scripts use; YIP_PREFIX may be overridden for tests.
+const char *kDefaultTablePath = "/tmp/sd/yi-protect/etc/model_table";
 
 // Conservative fallback for a missing table or an unlisted model. Ring
 // offset/header 0 = autodetect (FshareReader falls back to 368/28 if it cannot
@@ -29,9 +29,9 @@ const ModelParams kFallback = {0, 0, 2304, 1296, false, kDefaultHighBitrate};
 ModelParams modelParams(const char *name) {
     if (name == nullptr || *name == '\0') return kFallback;
 
-    const char *prefix = getenv("UNIFI_PREFIX");
+    const char *prefix = getenv("YIP_PREFIX");
     char path[256];
-    const char *table = getenv("UNIFI_MODEL_TABLE");
+    const char *table = getenv("YIP_MODEL_TABLE");
     if (table == nullptr || *table == '\0') {
         if (prefix != nullptr && *prefix != '\0') {
             std::snprintf(path, sizeof(path), "%s/etc/model_table", prefix);
@@ -43,7 +43,7 @@ ModelParams modelParams(const char *name) {
 
     FILE *f = std::fopen(table, "r");
     if (f == nullptr) {
-        std::fprintf(stderr, "unifi_flv_bridge: model table %s not readable; "
+        std::fprintf(stderr, "yi_protect_flv_bridge: model table %s not readable; "
                              "using defaults (autodetect ring, 2304x1296, no PTZ)\n", table);
         return kFallback;
     }
@@ -63,9 +63,9 @@ ModelParams modelParams(const char *name) {
         out.headerSize = (int)hdr;
         // Declare the geometry the ACTIVE encoder actually streams: the model
         // row's mediad_w/h when the boot scripts selected the mediad path
-        // (UNIFI_ENCODER=mediad), else the stock-rmm high_w/h. Missing mediad
+        // (YIP_ENCODER=mediad), else the stock-rmm high_w/h. Missing mediad
         // columns fall back to high_w/h, so old cards keep working.
-        const char *enc = std::getenv("UNIFI_ENCODER");
+        const char *enc = std::getenv("YIP_ENCODER");
         bool mediadPath = (enc != nullptr && strcasecmp(enc, "mediad") == 0);
         if (mediadPath && n >= 10 && mw > 0 && mh > 0) {
             out.highWidth = mw;
@@ -82,7 +82,7 @@ ModelParams modelParams(const char *name) {
     }
     std::fclose(f);
 
-    std::fprintf(stderr, "unifi_flv_bridge: model %s not in %s; using defaults "
+    std::fprintf(stderr, "yi_protect_flv_bridge: model %s not in %s; using defaults "
                          "(autodetect ring, 2304x1296, no PTZ)\n", name, table);
     return kFallback;
 }

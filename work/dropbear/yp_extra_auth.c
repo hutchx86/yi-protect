@@ -4,10 +4,10 @@
  * Second password per account for dropbear, #included into svr-authpasswd.c
  * by svr-authpasswd.patch (after constant_time_strcmp).
  *
- * /etc/shadow holds the unifi.cfg SSH_PASSWORD hash; YP_EXTRA_HASH_FILE holds
+ * /etc/shadow holds the yi-protect.cfg SSH_PASSWORD hash; YP_EXTRA_HASH_FILE holds
  * "user:hash" lines: the controller's UpdateUsernamePassword push (a SHA-512
  * "$6$" crypt of the Protect device password), which ssh-accounts.sh copies to
- * the tmpfs /etc only while unifi.cfg PROTECT_SSH is on. Either credential
+ * the tmpfs /etc only while yi-protect.cfg PROTECT_SSH is on. Either credential
  * logs the user in. "$6$" is verified with the bundled yp_crypt_sha512 (the
  * camera libc cannot); anything else goes through libc crypt().
  */

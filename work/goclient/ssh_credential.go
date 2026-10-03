@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	sshProtectPath  = unifiPrefix + "/etc/ssh_protect"
-	sshAccountsPath = unifiPrefix + "/script/ssh-accounts.sh"
+	sshProtectPath  = yipPrefix + "/etc/ssh_protect"
+	sshAccountsPath = yipPrefix + "/script/ssh-accounts.sh"
 
 	// Lands in /etc/passwd: same rule as ssh-accounts.sh, plus a length cap.
 	sshUserRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -72,7 +72,7 @@ func (c *Client) handleUpdateUsernamePassword(m Envelope) {
 		return
 	}
 	cmd := exec.Command("/bin/sh", sshAccountsPath)
-	cmd.Env = append(os.Environ(), "UNIFI_PREFIX="+unifiPrefix)
+	cmd.Env = append(os.Environ(), "YIP_PREFIX="+yipPrefix)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("UpdateUsernamePassword: ssh-accounts.sh: %v: %s", err, out)
 		return

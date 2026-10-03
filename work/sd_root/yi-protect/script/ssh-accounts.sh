@@ -3,9 +3,9 @@
 # Copyright (C) 2026 yi-protect contributors
 #
 # (Re)build the SSH login accounts in the tmpfs /etc. Run by init.sh at boot
-# and by unifi_avclient_go after the controller pushes a device credential.
+# and by yi_protect_avclient_go after the controller pushes a device credential.
 #
-#   root            unifi.cfg SSH_PASSWORD
+#   root            yi-protect.cfg SSH_PASSWORD
 #   Protect user    only with PROTECT_SSH=yes: the controller's user
 #                   (etc/ssh_protect, "ubnt" until adoption), uid 0 like a real
 #                   UniFi camera. SSH_PASSWORD, and also the controller's device
@@ -17,9 +17,9 @@
 # blank login. PROTECT_SSH defaults to off: /etc/ssh_protect is then left
 # empty, so a credential stored earlier on the card is not honoured.
 
-UNIFI_PREFIX="${UNIFI_PREFIX:-/tmp/sd/unifi}"
-CONF="$UNIFI_PREFIX/etc/unifi.cfg"
-PROTECT="$UNIFI_PREFIX/etc/ssh_protect"
+YIP_PREFIX="${YIP_PREFIX:-/tmp/sd/yi-protect}"
+CONF="$YIP_PREFIX/etc/yi-protect.cfg"
+PROTECT="$YIP_PREFIX/etc/ssh_protect"
 LIVE=/etc/ssh_protect
 
 get_cfg() {
@@ -37,8 +37,8 @@ set_shadow() {
 
 HASH='!'
 SSH_PASSWORD=$(get_cfg SSH_PASSWORD)
-if [ -n "$SSH_PASSWORD" ] && [ -x "$UNIFI_PREFIX/bin/mkpasswd" ]; then
-    h=$(printf '%s\n' "$SSH_PASSWORD" | "$UNIFI_PREFIX/bin/mkpasswd")
+if [ -n "$SSH_PASSWORD" ] && [ -x "$YIP_PREFIX/bin/mkpasswd" ]; then
+    h=$(printf '%s\n' "$SSH_PASSWORD" | "$YIP_PREFIX/bin/mkpasswd")
     [ -n "$h" ] && HASH="$h"
 fi
 

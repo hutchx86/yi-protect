@@ -16,9 +16,9 @@
 # the bridge also restarts the avclient: the client dedups CONNECT, so a fresh
 # bridge is otherwise never re-driven and stays video-less.
 
-UNIFI_PREFIX="${UNIFI_PREFIX:-/tmp/sd/unifi}"
-MODEL_SUFFIX=$(cat "$UNIFI_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
-CONF="$UNIFI_PREFIX/etc/unifi.cfg"
+YIP_PREFIX="${YIP_PREFIX:-/tmp/sd/yi-protect}"
+MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
+CONF="$YIP_PREFIX/etc/yi-protect.cfg"
 get_cfg() { grep -E "^$1=" "$CONF" 2>/dev/null | cut -d= -f2-; }
 
 INTERVAL=${WATCHDOG_INTERVAL:-$(get_cfg WATCHDOG_INTERVAL)}
@@ -35,14 +35,14 @@ fi
 # Encoder path (must match init.sh): exported so the bridge/client it (re)starts
 # select the matching model_table geometry (mediad streams native geometry where
 # the stock rmm upscales).
-if [ "$(get_cfg IS_MEDIAD)" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
-    export UNIFI_ENCODER=mediad
+if [ "$(get_cfg IS_MEDIAD)" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PREFIX/script/mediad.sh" ]; then
+    export YIP_ENCODER=mediad
 else
-    export UNIFI_ENCODER=rmm
+    export YIP_ENCODER=rmm
 fi
 
 # PIDs whose argv[0] equals $1 or has the same basename (a substring grep would
-# also match e.g. `cat /tmp/unifi_flv_bridge.log`). Zombies are skipped.
+# also match e.g. `cat /tmp/yi_protect_flv_bridge.log`). Zombies are skipped.
 pids_of() {
     ps | awk -v n="$1" 'NR > 1 && $4 !~ /^Z/ { c = $5; b = c; sub(/.*\//, "", b); m = n; sub(/.*\//, "", m)
         if (c == n || b == m) print $1 }'
@@ -53,7 +53,7 @@ log() { echo "$(date +'%H:%M:%S') $*"; }
 
 # ---- lock: serialises every start/stop (loop and CLI) ----
 # Lock files (atomic create via noclobber); the camera's busybox has no rmdir.
-LOCKF=/tmp/unifi_wd.lk
+LOCKF=/tmp/yi_protect_wd.lk
 try_create() { ( set -C; echo $$ > "$1" ) 2>/dev/null; }
 lock_take() {
     _i=0
@@ -75,8 +75,8 @@ lock_drop() { [ "$(cat "$LOCKF" 2>/dev/null)" = "$$" ] && rm -f "$LOCKF"; return
 # ---- per-service primitives ----
 proc_name() {
     case "$1" in
-        bridge) echo unifi_flv_bridge ;;
-        avclient) echo unifi_avclient_go ;;
+        bridge) echo yi_protect_flv_bridge ;;
+        avclient) echo yi_protect_avclient_go ;;
         talkback) echo talkback_rx ;;
     esac
 }
@@ -86,15 +86,15 @@ proc_name() {
 start_svc() {
     case "$1" in
         bridge)
-            ( cd "$UNIFI_PREFIX/bin" && exec ./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -a "$AUDIO" \
-                > /tmp/unifi_flv_bridge.log 2>&1 < /dev/null & ) ;;
+            ( cd "$YIP_PREFIX/bin" && exec ./yi_protect_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" -a "$AUDIO" \
+                > /tmp/yi_protect_flv_bridge.log 2>&1 < /dev/null & ) ;;
         avclient)
-            ( cd "$UNIFI_PREFIX/bin" && exec ./unifi_avclient_go \
-                -cert "$UNIFI_PREFIX/etc/unifi_client_go.crt" \
-                -key  "$UNIFI_PREFIX/etc/unifi_client_go.key" \
+            ( cd "$YIP_PREFIX/bin" && exec ./yi_protect_avclient_go \
+                -cert "$YIP_PREFIX/etc/yi_protect_client_go.crt" \
+                -key  "$YIP_PREFIX/etc/yi_protect_client_go.key" \
                 > /tmp/avclient.log 2>&1 < /dev/null & ) ;;
         talkback)
-            ( cd "$UNIFI_PREFIX/bin" && exec ./talkback_rx \
+            ( cd "$YIP_PREFIX/bin" && exec ./talkback_rx \
                 > /tmp/talkback_rx.log 2>&1 < /dev/null & ) ;;
     esac
     log "started $1"
@@ -177,7 +177,7 @@ case "$1" in
 esac
 
 # ---- singleton: a second supervisor exits instead of double-starting ----
-SINGLE=/tmp/unifi_wd.pid
+SINGLE=/tmp/yi_protect_wd.pid
 if ! try_create "$SINGLE"; then
     _o=$(cat "$SINGLE" 2>/dev/null)
     if [ -n "$_o" ] && [ "$_o" != "$$" ] && grep -q watchdog "/proc/$_o/cmdline" 2>/dev/null; then
@@ -197,8 +197,8 @@ while true; do
     # Encoder: mediad (drop-in) if opted in/installed, else stock rmm. Match the
     # daemon binary path, not "mediad" (mediad.sh's launcher line also contains it).
     IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
-    if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
-        if alive "$UNIFI_PREFIX/bin/mediad"; then
+    if [ "$IS_MEDIAD" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PREFIX/script/mediad.sh" ]; then
+        if alive "$YIP_PREFIX/bin/mediad"; then
             [ "$RMM_FAILS" -ne 0 ] && log "mediad present again (was $RMM_FAILS fails)"
             RMM_FAILS=0
             MEDIAD_RESTARTS=0
@@ -209,7 +209,7 @@ while true; do
                 MEDIAD_RESTARTS=$((MEDIAD_RESTARTS+1))
                 if [ "$MEDIAD_RESTARTS" -le 3 ]; then
                     log "restarting mediad (attempt $MEDIAD_RESTARTS/3)"
-                    "$UNIFI_PREFIX/script/mediad.sh" restart
+                    "$YIP_PREFIX/script/mediad.sh" restart
                     RMM_FAILS=0
                 else
                     log "REBOOT: mediad missing after 3 restarts"

@@ -1,4 +1,4 @@
-module unifi-avclient
+module yi-protect-avclient
 
 go 1.23.4
 

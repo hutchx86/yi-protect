@@ -32,10 +32,10 @@ func mediadSockPath() string {
 // mediadBinaryCandidates are the install locations a mediad build may land at,
 // used only to classify "installed but not running" in the logs.
 var mediadBinaryCandidates = []string{
-	unifiPrefix + "/bin/mediad",
-	unifiPrefix + "/bin/mediad_2019",
-	unifiPrefix + "/bin/mediad_rtos_v",
-	unifiPrefix + "/bin/mediad_rtos",
+	yipPrefix + "/bin/mediad",
+	yipPrefix + "/bin/mediad_2019",
+	yipPrefix + "/bin/mediad_rtos_v",
+	yipPrefix + "/bin/mediad_rtos",
 	"/home/app/mediad",
 	"/home/app/mediad_2019",
 	"/home/app/mediad_rtos_v",
@@ -163,12 +163,12 @@ func mediadEnabled() bool {
 }
 
 // encoderIsMediad reports whether the ACTIVE encoder is mediad. The boot scripts
-// export UNIFI_ENCODER=mediad|rmm (authoritative, matching init.sh's selection);
-// when it is unset (a manual run) fall back to the unifi.cfg intent plus an
+// export YIP_ENCODER=mediad|rmm (authoritative, matching init.sh's selection);
+// when it is unset (a manual run) fall back to the yi-protect.cfg intent plus an
 // installed mediad binary. Deliberately NOT the live mediadEnabled() state: the
 // encoder path is fixed at boot, so a momentary socket miss must not flip it.
 func encoderIsMediad() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("UNIFI_ENCODER"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("YIP_ENCODER"))) {
 	case "mediad":
 		return true
 	case "rmm":

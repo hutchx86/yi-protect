@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
  *
- * unifi_snapshot: read the stock encoder's shared-memory frame ring, take the
+ * yi_protect_snapshot: read the stock encoder's shared-memory frame ring, take the
  * next keyframe on a channel, decode it and write one JPEG to stdout. Our own
  * replacement for the vendored yi-hack imggrabber (Protect "GetRequest").
  */
@@ -77,7 +77,7 @@ bool frameToJpeg(Snap &s, std::vector<unsigned char> &out) {
     int w = f->width, h = f->height;
     if (w <= 0 || h <= 0) return false;
     if (f->format != AV_PIX_FMT_YUV420P && f->format != AV_PIX_FMT_YUVJ420P) {
-        std::fprintf(stderr, "unifi_snapshot: unsupported pixel format %d\n", f->format);
+        std::fprintf(stderr, "yi_protect_snapshot: unsupported pixel format %d\n", f->format);
         return false;
     }
 
@@ -197,8 +197,8 @@ bool onFrame(void *v, int frameType, std::vector<unsigned char> &&payload,
 }
 
 std::string readModelSuffix() {
-    const char *prefix = std::getenv("UNIFI_PREFIX");
-    std::string base = (prefix != nullptr && *prefix != '\0') ? prefix : "/tmp/sd/unifi";
+    const char *prefix = std::getenv("YIP_PREFIX");
+    std::string base = (prefix != nullptr && *prefix != '\0') ? prefix : "/tmp/sd/yi-protect";
     std::string path = base + "/etc/model_suffix";
     FILE *fp = std::fopen(path.c_str(), "r");
     if (fp == nullptr) return "";
@@ -248,7 +248,7 @@ int main(int argc, char **argv) {
 
     struct stat st;
     if (stat(FSHARE_BUF_FILE, &st) != 0 || st.st_size <= 0) {
-        std::fprintf(stderr, "unifi_snapshot: %s unavailable\n", FSHARE_BUF_FILE);
+        std::fprintf(stderr, "yi_protect_snapshot: %s unavailable\n", FSHARE_BUF_FILE);
         return 1;
     }
 
@@ -262,7 +262,7 @@ int main(int argc, char **argv) {
     cfg.offset = mp.offset;
     cfg.headerSize = mp.headerSize;
     if (debug) {
-        std::fprintf(stderr, "unifi_snapshot: model=%s res=%s ring=%zu offset=%u header=%d\n",
+        std::fprintf(stderr, "yi_protect_snapshot: model=%s res=%s ring=%zu offset=%u header=%d\n",
                      model.empty() ? "(default)" : model.c_str(),
                      wantLow ? "low" : "high", cfg.size, cfg.offset, cfg.headerSize);
     }
@@ -272,11 +272,11 @@ int main(int argc, char **argv) {
     reader.run(cfg, onFrame, &s);
 
     if (!s.done || s.jpeg.empty()) {
-        std::fprintf(stderr, "unifi_snapshot: no keyframe\n");
+        std::fprintf(stderr, "yi_protect_snapshot: no keyframe\n");
         return 1;
     }
     if (std::fwrite(s.jpeg.data(), 1, s.jpeg.size(), stdout) != s.jpeg.size()) {
-        std::fprintf(stderr, "unifi_snapshot: short write\n");
+        std::fprintf(stderr, "yi_protect_snapshot: short write\n");
         return 1;
     }
     return 0;

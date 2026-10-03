@@ -39,7 +39,7 @@ var awaitingManage atomic.Bool
 
 // manageAwaitFilePath persists awaitingManage across the ResetToDefaults
 // reboot; main() checks it on startup.
-var manageAwaitFilePath = unifiPrefix + "/etc/unifi_client_go.awaiting-manage"
+var manageAwaitFilePath = yipPrefix + "/etc/yi_protect_client_go.awaiting-manage"
 
 // enterAwaitingManage flips the in-memory flag and persists it.
 func enterAwaitingManage(reason string) {

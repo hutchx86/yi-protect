@@ -3,15 +3,15 @@
 # Copyright (C) 2026 yi-protect contributors
 
 # UniFi Protect emulation -- app init, launched by lower_half_init.sh. Starts the
-# encoder (mediad if installed, else stock rmm) plus our stack, reading unifi.cfg.
+# encoder (mediad if installed, else stock rmm) plus our stack, reading yi-protect.cfg.
 
-UNIFI_PREFIX="/tmp/sd/unifi"
-CONF="$UNIFI_PREFIX/etc/unifi.cfg"
-MODEL_SUFFIX=$(cat "$UNIFI_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
+YIP_PREFIX="/tmp/sd/yi-protect"
+CONF="$YIP_PREFIX/etc/yi-protect.cfg"
+MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null || echo y623)
 
 # Emergency flash backup (idempotent; skips once a complete set exists).
-if [ -x "$UNIFI_PREFIX/script/backup-flash.sh" ]; then
-    "$UNIFI_PREFIX/script/backup-flash.sh" >>/tmp/sd/unifi-backup.log 2>&1 &
+if [ -x "$YIP_PREFIX/script/backup-flash.sh" ]; then
+    "$YIP_PREFIX/script/backup-flash.sh" >>/tmp/sd/yi-protect-backup.log 2>&1 &
 fi
 
 get_cfg() {
@@ -29,8 +29,8 @@ if [ -z "$YI_CLOUD" ]; then
     if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
 fi
 
-export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/home/base/tools:/home/app/localbin:/home/base:$UNIFI_PREFIX/bin
-export LD_LIBRARY_PATH=/lib:/usr/lib:/home/lib:/home/qigan/lib:/home/app/locallib:/tmp/sd:$UNIFI_PREFIX/lib
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/home/base/tools:/home/app/localbin:/home/base:$YIP_PREFIX/bin
+export LD_LIBRARY_PATH=/lib:/usr/lib:/home/lib:/home/qigan/lib:/home/app/locallib:/tmp/sd:$YIP_PREFIX/lib
 ulimit -s 1024
 
 # MTU (stock cameras want 1500 on both interfaces)
@@ -77,7 +77,7 @@ net_monitor() {
             if [ "$state" != "eth" ]; then
                 echo "$(date +%H:%M:%S) eth0 link+lease -> Ethernet preferred (wlan0 stays up, metric 100)" >> /tmp/network.log
                 state=eth
-                killall unifi_avclient_go 2>/dev/null
+                killall yi_protect_avclient_go 2>/dev/null
             fi
             set_default_metric eth0 "$(cat /tmp/gw0 2>/dev/null)" 0
             set_default_metric wlan0 "$(cat /tmp/gw1 2>/dev/null)" 100
@@ -101,7 +101,7 @@ net_monitor() {
                 fi
                 ifconfig eth0 up 2>/dev/null
                 state=wifi
-                killall unifi_avclient_go 2>/dev/null
+                killall yi_protect_avclient_go 2>/dev/null
             fi
             # Re-assert WiFi as metric 0 in case a prior Ethernet pass raised it.
             set_default_metric wlan0 "$(cat /tmp/gw1 2>/dev/null)" 0
@@ -139,11 +139,11 @@ if mount 2>/dev/null | grep -q "/tmp/sd "; then
     echo 15 > /proc/sys/vm/swappiness 2>/dev/null
 fi
 
-# WiFi provisioning (SD config): drop unifi/etc/configure_wifi.cfg (wifi_ssid=/
+# WiFi provisioning (SD config): drop yi-protect/etc/configure_wifi.cfg (wifi_ssid=/
 # wifi_psk=) and reboot; init.sh writes mtd7 and reboots once, renaming to .applied.
-WCFG="$UNIFI_PREFIX/etc/configure_wifi.cfg"
-if [ -f "$WCFG" ] && [ -x "$UNIFI_PREFIX/script/configure-wifi.sh" ]; then
-    "$UNIFI_PREFIX/script/configure-wifi.sh" "$WCFG"
+WCFG="$YIP_PREFIX/etc/configure_wifi.cfg"
+if [ -f "$WCFG" ] && [ -x "$YIP_PREFIX/script/configure-wifi.sh" ]; then
+    "$YIP_PREFIX/script/configure-wifi.sh" "$WCFG"
     rc=$?
     case $rc in
         0) mv "$WCFG" "$WCFG.applied"; sync; echo "init: wifi credentials applied; rebooting"; reboot ;;
@@ -154,7 +154,7 @@ fi
 
 # SSH (dropbear) started before the video pipeline so a failure there can't lock
 # us out. Generate ecdsa+ed25519 host keys up front (missing keys failed the KEX).
-DBDIR="$UNIFI_PREFIX/etc/dropbear"
+DBDIR="$YIP_PREFIX/etc/dropbear"
 mkdir -p "$DBDIR"
 for kt in ecdsa ed25519; do
     [ -f "$DBDIR/dropbear_${kt}_host_key" ] || \
@@ -167,18 +167,18 @@ done
 
 # Accounts: ssh-accounts.sh. No -B: stock root has a blank password, and an
 # empty SSH_PASSWORD means "locked", never "open".
-UNIFI_PREFIX="$UNIFI_PREFIX" sh "$UNIFI_PREFIX/script/ssh-accounts.sh"
+YIP_PREFIX="$YIP_PREFIX" sh "$YIP_PREFIX/script/ssh-accounts.sh"
 dropbearmulti dropbear -R $DBKEYS -p 0.0.0.0:22
 
 # Hide the stock Yi watermark: bind all-white blanks (the OSD's transparent
 # colour key) of the same size over every stock watermark bitmap.
-[ -f "$UNIFI_PREFIX/etc/main_blank.bmp" ] && mount --bind "$UNIFI_PREFIX/etc/main_blank.bmp" /home/app/main.bmp
-[ -f "$UNIFI_PREFIX/etc/main_blank.bmp" ] && mount --bind "$UNIFI_PREFIX/etc/main_blank.bmp" /home/app/main_kami.bmp
-[ -f "$UNIFI_PREFIX/etc/sub_blank.bmp" ]  && mount --bind "$UNIFI_PREFIX/etc/sub_blank.bmp"  /home/app/sub.bmp
-[ -f "$UNIFI_PREFIX/etc/sub_blank.bmp" ]  && mount --bind "$UNIFI_PREFIX/etc/sub_blank.bmp"  /home/app/sub_kami.bmp
+[ -f "$YIP_PREFIX/etc/main_blank.bmp" ] && mount --bind "$YIP_PREFIX/etc/main_blank.bmp" /home/app/main.bmp
+[ -f "$YIP_PREFIX/etc/main_blank.bmp" ] && mount --bind "$YIP_PREFIX/etc/main_blank.bmp" /home/app/main_kami.bmp
+[ -f "$YIP_PREFIX/etc/sub_blank.bmp" ]  && mount --bind "$YIP_PREFIX/etc/sub_blank.bmp"  /home/app/sub.bmp
+[ -f "$YIP_PREFIX/etc/sub_blank.bmp" ]  && mount --bind "$YIP_PREFIX/etc/sub_blank.bmp"  /home/app/sub_kami.bmp
 
-# Controller override is read by unifi_avclient_go from unifi.cfg; the
-# unifi_client_go.inform-host* files are runtime state only.
+# Controller override is read by yi_protect_avclient_go from yi-protect.cfg; the
+# yi_protect_client_go.inform-host* files are runtime state only.
 
 # Speaker/talkback FIFO: rmm opens /tmp/audio_in_fifo for speaker playback. The
 # stock firmware creates it from the .requested marker; our init must mknod it.
@@ -200,11 +200,11 @@ start_yi_cloud() {
 
 # The vendor H.264 libs (libvenc_codec.so, libVE.so) are needed only by a
 # vendor-linked mediad build; the default build links its own encoder.
-if grep -q 'libvenc_codec.so' "$UNIFI_PREFIX/bin/mediad" 2>/dev/null; then
+if grep -q 'libvenc_codec.so' "$YIP_PREFIX/bin/mediad" 2>/dev/null; then
     # From the pinned lindenis SDK; no CA store on the camera, so -k (md5-checked).
-    UNIFI_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
-    [ -n "$UNIFI_DIR" ] && [ -d "$UNIFI_DIR/script" ] || UNIFI_DIR="$UNIFI_PREFIX"
-    FETCH_BIN="$UNIFI_DIR/bin/downloader"
+    YIP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+    [ -n "$YIP_DIR" ] && [ -d "$YIP_DIR/script" ] || YIP_DIR="$YIP_PREFIX"
+    FETCH_BIN="$YIP_DIR/bin/downloader"
     LIBFETCH_LOG=/tmp/libfetch.log
     SDK_URL="https://raw.githubusercontent.com/lindenis-org/lindenis-v833-softwinner/834a5afe83ec037a38ed0dbed522ff65439eabdf/eyesee-mpp/middleware/sun8iw19p1/media/LIBRARY/libcedarc/library"
 
@@ -233,7 +233,7 @@ if grep -q 'libvenc_codec.so' "$UNIFI_PREFIX/bin/mediad" 2>/dev/null; then
     # ensure_lib: skip if md5 matches, else download to .tmp and verify. WiFi resets
     # mid-body, so the downloader resumes .tmp via Range; keep it across the 12 tries.
     ensure_lib() {
-        dst="$UNIFI_DIR/lib/$1"
+        dst="$YIP_DIR/lib/$1"
         [ "$(md5sum "$dst" 2>/dev/null | awk '{print $1}')" = "$2" ] && return 0
         if [ ! -x "$FETCH_BIN" ]; then
             echo "libfetch: $FETCH_BIN missing; cannot fetch $1" >> "$LIBFETCH_LOG"
@@ -260,31 +260,31 @@ if grep -q 'libvenc_codec.so' "$UNIFI_PREFIX/bin/mediad" 2>/dev/null; then
     ensure_lib libvenc_codec.so 8888f9a820021484e1cea01efd8142e6
     ensure_lib libVE.so          096259a6c6178dee25e9dda61b01b715
     for l in libvenc_codec.so libVE.so; do
-        [ -f "$UNIFI_DIR/lib/$l" ] || echo "libfetch: WARNING: $l still missing; mediad will fail to load the H.264 encoder" >> "$LIBFETCH_LOG"
+        [ -f "$YIP_DIR/lib/$l" ] || echo "libfetch: WARNING: $l still missing; mediad will fail to load the H.264 encoder" >> "$LIBFETCH_LOG"
     done
 fi
 
 # Media daemon: mediad (sister project's rmm replacement) if installed, else
 # stock rmm; both publish /dev/shm/fshare_frame_buf. Never run both at once.
 IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
-if [ "$IS_MEDIAD" = "yes" ] && [ -x "$UNIFI_PREFIX/bin/mediad" ] && [ -x "$UNIFI_PREFIX/script/mediad.sh" ]; then
+if [ "$IS_MEDIAD" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PREFIX/script/mediad.sh" ]; then
     # Tell the bridge/client which encoder is live so they declare the matching
     # model_table geometry (h51ga: mediad streams native 1080p, rmm upscales to 2K).
-    export UNIFI_ENCODER=mediad
+    export YIP_ENCODER=mediad
     # CABAC is the encoder default (cabac_init_idc=1); do not pin cabac=0.
     # overlay=1 enables the burned-in OSD overlay path.
     export FREECODEC_EXTRA="overlay=1"
     echo "init: starting mediad (FREECODEC_EXTRA=$FREECODEC_EXTRA)"
-    "$UNIFI_PREFIX/script/mediad.sh" start
+    "$YIP_PREFIX/script/mediad.sh" start
     sleep 2
     [ "$YI_CLOUD" = "yes" ] && start_yi_cloud
 else
-    export UNIFI_ENCODER=rmm
+    export YIP_ENCODER=rmm
     cd /home/app
     sleep 2
     # Load the SD-shipped patched libasound (the only one with the /tmp/audio_in_fifo
     # listener talkback needs, else talkback fails ENXIO); prepend its lib dir.
-    LD_LIBRARY_PATH="$UNIFI_PREFIX/lib:$LD_LIBRARY_PATH" ./rmm > /tmp/rmm.log 2>&1 &
+    LD_LIBRARY_PATH="$YIP_PREFIX/lib:$LD_LIBRARY_PATH" ./rmm > /tmp/rmm.log 2>&1 &
     RMM_PID=$!
     # Keep rmm off the OOM killer's list (60MB box; snapshots are the victims).
     echo -1000 > "/proc/$RMM_PID/oom_score_adj" 2>/dev/null
@@ -321,23 +321,23 @@ if [ "$HV" = "11" ] || [ "$HV" = "12" ]; then
 fi
 
 # ---- this project's stack ----
-cd "$UNIFI_PREFIX/bin"
+cd "$YIP_PREFIX/bin"
 
 # Video push daemon (reads rmm's shared-memory stream, pushes extendedFlv).
 AUDIO_OPT="-a $AUDIO"
-./unifi_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" $AUDIO_OPT > /tmp/unifi_flv_bridge.log 2>&1 &
+./yi_protect_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" $AUDIO_OPT > /tmp/yi_protect_flv_bridge.log 2>&1 &
 
 # Adoption/control client; cert/key self-generated on first boot. PTZ and
 # per-model geometry come from model_table.
-./unifi_avclient_go \
-    -cert "$UNIFI_PREFIX/etc/unifi_client_go.crt" \
-    -key  "$UNIFI_PREFIX/etc/unifi_client_go.key" \
+./yi_protect_avclient_go \
+    -cert "$YIP_PREFIX/etc/yi_protect_client_go.crt" \
+    -key  "$YIP_PREFIX/etc/yi_protect_client_go.key" \
     > /tmp/avclient.log 2>&1 &
 
 # Talkback (speaker) receiver.
 ./talkback_rx > /tmp/talkback_rx.log 2>&1 &
 
 # Watchdog.
-WATCHDOG_INTERVAL=$WATCHDOG_INTERVAL "$UNIFI_PREFIX/script/watchdog.sh" > /tmp/watchdog.log 2>&1 &
+WATCHDOG_INTERVAL=$WATCHDOG_INTERVAL "$YIP_PREFIX/script/watchdog.sh" > /tmp/watchdog.log 2>&1 &
 
 exit 0

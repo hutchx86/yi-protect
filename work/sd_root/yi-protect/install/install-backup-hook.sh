@@ -5,7 +5,7 @@
 # One-time install: patch /backup/init.sh to source /tmp/sd/lower_half_init.sh,
 # then reboot; /backup is jffs2 (writable) and survives firmware updates.
 #
-#   sh /tmp/sd/unifi/install/install-backup-hook.sh   (no-op if already installed)
+#   sh /tmp/sd/yi-protect/install/install-backup-hook.sh   (no-op if already installed)
 
 set -e
 
@@ -18,8 +18,8 @@ fi
 
 [ -w "$INIT" ] || { echo "install-backup-hook: $INIT not writable"; exit 1; }
 
-echo "install-backup-hook: patching $INIT (backup kept at ${INIT}.unifi-orig)"
-cp -f "$INIT" "${INIT}.unifi-orig"
+echo "install-backup-hook: patching $INIT (backup kept at ${INIT}.yi-protect-orig)"
+cp -f "$INIT" "${INIT}.yi-protect-orig"
 cp -f "$INIT" /tmp/init.sh
 
 # Remove the stock lower-half block (both whitespace variants), as yi-hack does.
@@ -47,6 +47,6 @@ sync
 if [ "$(md5sum < /tmp/init.sh)" = "$(md5sum < "$INIT")" ]; then
     echo "install-backup-hook: done -- reboot to boot from the SD card"
 else
-    echo "install-backup-hook: ERROR: write to $INIT failed (backup at ${INIT}.unifi-orig)"
+    echo "install-backup-hook: ERROR: write to $INIT failed (backup at ${INIT}.yi-protect-orig)"
     exit 1
 fi

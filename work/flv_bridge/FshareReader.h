@@ -8,8 +8,8 @@
  * The ring layout -- header fields, per-model offsets, frame tags -- was
  * reverse engineered; there is no LIVE555/RTSP dependency.
  */
-#ifndef UNIFI_FLV_BRIDGE_HSHARE_READER_H
-#define UNIFI_FLV_BRIDGE_HSHARE_READER_H
+#ifndef YI_PROTECT_FLV_BRIDGE_HSHARE_READER_H
+#define YI_PROTECT_FLV_BRIDGE_HSHARE_READER_H
 
 #include <cstddef>
 #include <cstdint>
@@ -63,4 +63,4 @@ private:
     int headerSize_ = 0;
 };
 
-#endif  // UNIFI_FLV_BRIDGE_HSHARE_READER_H
+#endif  // YI_PROTECT_FLV_BRIDGE_HSHARE_READER_H

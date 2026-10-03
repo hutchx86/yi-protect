@@ -2,11 +2,11 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
  *
- * Shared types and constants for unifi_flv_bridge. Everything here is our own
+ * Shared types and constants for yi_protect_flv_bridge. Everything here is our own
  * code except the reverse-engineered on-device fshare framing.
  */
-#ifndef UNIFI_FLV_BRIDGE_BRIDGE_H
-#define UNIFI_FLV_BRIDGE_BRIDGE_H
+#ifndef YI_PROTECT_FLV_BRIDGE_BRIDGE_H
+#define YI_PROTECT_FLV_BRIDGE_BRIDGE_H
 
 #include <pthread.h>
 
@@ -38,7 +38,7 @@
 #define RESOLUTION_HIGH 1080
 #define RESOLUTION_BOTH 1440
 
-// Per-model facts from unifi/etc/model_table; the bridge never tests model
+// Per-model facts from yi-protect/etc/model_table; the bridge never tests model
 // names itself.
 struct ModelParams {
     unsigned offset;       // ring control-header bytes; 0 => autodetect
@@ -49,7 +49,7 @@ struct ModelParams {
     unsigned highBitrate;  // HIGH-channel bitrate to declare (bps); 0 => default
 };
 
-// Row for `name` from $UNIFI_MODEL_TABLE (default /tmp/sd/unifi/etc/model_table);
+// Row for `name` from $YIP_MODEL_TABLE (default /tmp/sd/yi-protect/etc/model_table);
 // missing table/row: warn and use defaults (368/28, 2304x1296, no PTZ, 2 Mbps).
 ModelParams modelParams(const char *name);
 
@@ -65,4 +65,4 @@ typedef struct {
     pthread_mutex_t mutex;
 } output_queue;
 
-#endif  // UNIFI_FLV_BRIDGE_BRIDGE_H
+#endif  // YI_PROTECT_FLV_BRIDGE_BRIDGE_H

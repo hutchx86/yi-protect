@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# Build unifi_flv_bridge. The cross-compiler is supplied by work/build_sd.sh
+# Build yi_protect_flv_bridge. The cross-compiler is supplied by work/build_sd.sh
 # (CXX=arm-openwrt-linux-g++); a native build works too for logic testing.
 CXX ?= g++
 CXXFLAGS ?= -O2 -Wall -std=gnu++14
@@ -24,9 +24,9 @@ OBJS = $(SRCS:.cpp=.o)
 
 .PHONY: all clean test
 
-all: unifi_flv_bridge
+all: yi_protect_flv_bridge
 
-unifi_flv_bridge: $(OBJS)
+yi_protect_flv_bridge: $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
 %.o: %.cpp bridge.h FlvPush.h FshareReader.h keyframe.h tsutil.h flvbytes.h hevc_flv.h
@@ -46,4 +46,4 @@ test: test_fshare_reader.cpp test_keyframe.cpp test_hevc_flv.cpp hevc_flv.cpp he
 	rm -f test_hevc_flv
 
 clean:
-	rm -f $(OBJS) unifi_flv_bridge test_fshare_reader
+	rm -f $(OBJS) yi_protect_flv_bridge test_fshare_reader

@@ -5,17 +5,17 @@
 # Dump every raw MTD partition to the SD card for emergency recovery before
 # modifying the boot; idempotent unless --force: /tmp/sd/yi-protect-backup/<model>/.
 
-UNIFI_PREFIX="${UNIFI_PREFIX:-/tmp/sd/unifi}"
+YIP_PREFIX="${YIP_PREFIX:-/tmp/sd/yi-protect}"
 BKROOT="/tmp/sd/yi-protect-backup"
 FORCE=0
 [ "$1" = "--force" ] && FORCE=1
 
 log() { echo "backup-flash: $*" >&2; }
 
-if [ -f "$UNIFI_PREFIX/etc/model_suffix" ]; then
-    MODEL=$(cat "$UNIFI_PREFIX/etc/model_suffix" 2>/dev/null)
+if [ -f "$YIP_PREFIX/etc/model_suffix" ]; then
+    MODEL=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null)
 fi
-[ -z "$MODEL" ] && MODEL=$("$UNIFI_PREFIX/script/detect-model.sh" 2>/dev/null)
+[ -z "$MODEL" ] && MODEL=$("$YIP_PREFIX/script/detect-model.sh" 2>/dev/null)
 [ -z "$MODEL" ] && MODEL=unknown
 DIR="$BKROOT/$MODEL"
 

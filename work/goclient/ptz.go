@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const ipcCmdPath = unifiPrefix + "/bin/ipc_cmd"
+const ipcCmdPath = yipPrefix + "/bin/ipc_cmd"
 
 func ptzLogPayload(fn string, payload map[string]interface{}) {
 	if raw, err := json.Marshal(payload); err == nil {
@@ -147,7 +147,7 @@ func (c *Client) handleRelativePosition(m Envelope) error {
 
 // ptzPresetsConfPath is the file ptz_presets.sh bookkeeps ("N=name,x,y" per
 // line, N 0-7); ipc_cmd -P can't report which slot it picked, so we mirror it.
-const ptzPresetsConfPath = unifiPrefix + "/etc/ptz_presets.conf"
+const ptzPresetsConfPath = yipPrefix + "/etc/ptz_presets.conf"
 
 var ptzPresetLineRegex = regexp.MustCompile(`^(\d)=(.*)$`)
 

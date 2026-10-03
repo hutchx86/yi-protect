@@ -11,7 +11,7 @@
 # Exit 0 only if every edit landed and OUT passes `sh -n`; otherwise OUT is
 # not written and the caller should run STOCK unmodified.
 
-UNIFI_PREFIX=/tmp/sd/unifi
+YIP_PREFIX=/tmp/sd/yi-protect
 STOCK="$1"
 OUT="$2"
 
@@ -20,7 +20,7 @@ OUT="$2"
 # Stock launch block: the dispatch line ("dispatch&", "./dispatch &", ...) up to
 # the watch_process line (same variants). The aging-test block's own dispatch is
 # skipped; log_tools' "exit" is commented out.
-awk -v P="$UNIFI_PREFIX" '
+awk -v P="$YIP_PREFIX" '
 NR == 1 {
     if ($0 !~ /^#!/) { bad = 1 }
     print

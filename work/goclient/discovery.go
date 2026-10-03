@@ -23,7 +23,7 @@ var isAdopted atomic.Bool
 
 // adoptedStateFilePath is where isAdopted is persisted. Set from the
 // -adopted-state-file flag.
-var adoptedStateFilePath = unifiPrefix + "/etc/unifi_client_go.adopted"
+var adoptedStateFilePath = yipPrefix + "/etc/yi_protect_client_go.adopted"
 
 // setAdopted updates isAdopted and persists it; loadAdoptedState sets the
 // in-memory flag directly to avoid rewriting the file.
@@ -59,7 +59,7 @@ var adoptionUUID []byte
 var deviceName atomic.Value // holds string
 
 // deviceNameFilePath persists a controller-assigned name across restarts.
-var deviceNameFilePath = unifiPrefix + "/etc/unifi_client_go.device-name"
+var deviceNameFilePath = yipPrefix + "/etc/yi_protect_client_go.device-name"
 
 // setDeviceName updates the live name and persists it.
 func setDeviceName(name string) {

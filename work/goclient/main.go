@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 yi-protect contributors
 
-// unifi-avclient: UniFi Protect "avclient" adoption/control client for
+// yi-protect-avclient: UniFi Protect "avclient" adoption/control client for
 // Yi-Hack-Allwinner-v2; protocol shapes ported from unifi-cam-proxy.
 package main
 
@@ -39,9 +39,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// unifiPrefix is the project-owned root on the SD card; everything this client
+// yipPrefix is the project-owned root on the SD card; everything this client
 // persists or shells out to lives under here.
-const unifiPrefix = "/tmp/sd/unifi"
+const yipPrefix = "/tmp/sd/yi-protect"
 
 // Codec ALSA capture-gain control applied by setMicLevel (via bin/mixer_set):
 // "MIC1 gain volume" on hw:0, range 0..31 (0 dB at 30), upstream of the encoder.
@@ -75,10 +75,10 @@ type Config struct {
 	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false, as
 	// Protect re-sends enable3dnr=1 on every connect and would override mediad.
 	Mediad3DNR bool
-	// WebUIPort is the firmware settings page's HTTP port (unifi.cfg
+	// WebUIPort is the firmware settings page's HTTP port (yi-protect.cfg
 	// WEBUI_PORT, default 80; 0 disables it). See webui.go.
 	WebUIPort int
-	// ProtectSSH lets the controller's device credential log in over SSH (unifi.cfg
+	// ProtectSSH lets the controller's device credential log in over SSH (yi-protect.cfg
 	// PROTECT_SSH; default false only acks UpdateUsernamePassword). ssh_credential.go.
 	ProtectSSH bool
 }
@@ -95,8 +95,8 @@ var cfg = Config{
 	// Model maps to platform SAV532Q; the suffix is not the real release, but a
 	// version newer than any known build would make Protect offer a downgrade.
 	FWVersion: "UVC.SAV532Q.v4.75.62.67.9cdac69.260331.1630",
-	CertFile:  unifiPrefix + "/etc/unifi_client_go.crt",
-	KeyFile:   unifiPrefix + "/etc/unifi_client_go.key",
+	CertFile:  yipPrefix + "/etc/yi_protect_client_go.crt",
+	KeyFile:   yipPrefix + "/etc/yi_protect_client_go.key",
 	SysID:     0xa590,
 }
 
@@ -122,7 +122,7 @@ var deviceIDFilePath string
 
 // adoptionUUIDFilePath persists the controller's consoleId (discovery TLV
 // 0x26) so a restart while adopted doesn't look "adopted to another console".
-var adoptionUUIDFilePath = unifiPrefix + "/etc/unifi_client_go.adoption-uuid"
+var adoptionUUIDFilePath = yipPrefix + "/etc/yi_protect_client_go.adoption-uuid"
 
 // loadAdoptionUUID restores the persisted 0x26 TLV value, if any. Absence or a
 // malformed value leaves adoptionUUID as-is.
@@ -282,7 +282,7 @@ func readHardwareSerial() (string, error) {
 
 // modelSuffixFilePath records the real physical camera model (y623/h52ga/...),
 // distinct from the spoofed cfg.Model/cfg.SysID.
-const modelSuffixFilePath = unifiPrefix + "/etc/model_suffix"
+const modelSuffixFilePath = yipPrefix + "/etc/model_suffix"
 
 // readHardwareModel returns this camera's physical model, falling back to "y623"
 // if the file is missing or empty.
@@ -297,7 +297,7 @@ func readHardwareModel() string {
 
 // modelTablePath is the per-model definition file (columns: see parseModelDef);
 // one binary serves every model.
-const modelTablePath = unifiPrefix + "/etc/model_table"
+const modelTablePath = yipPrefix + "/etc/model_table"
 
 // modelDef is this client's slice of a model_table row.
 type modelDef struct {
@@ -983,7 +983,7 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 // runCpldCtl shells out to cpld_ctl for the confirmed /dev/cpld_periph IR-cut
 // filter and IR LED ioctls; failures are logged, not returned.
 func runCpldCtl(args ...string) {
-	if err := exec.Command(unifiPrefix+"/bin/cpld_ctl", args...).Run(); err != nil {
+	if err := exec.Command(yipPrefix+"/bin/cpld_ctl", args...).Run(); err != nil {
 		log.Printf("cpld_ctl %v failed: %v", args, err)
 	}
 }
@@ -995,7 +995,7 @@ func setStatusLed(on bool) {
 	if on {
 		arg = "on"
 	}
-	if err := exec.Command(unifiPrefix+"/bin/ipc_cmd", "-l", arg).Run(); err != nil {
+	if err := exec.Command(yipPrefix+"/bin/ipc_cmd", "-l", arg).Run(); err != nil {
 		log.Printf("ipc_cmd -l %s failed: %v", arg, err)
 	}
 }
@@ -1092,7 +1092,7 @@ func (c *Client) handleSoundLedSettings(m Envelope) map[string]interface{} {
 		if ledOn {
 			arg = "on"
 		}
-		if err := exec.Command(unifiPrefix+"/bin/ipc_cmd", "-l", arg).Run(); err != nil {
+		if err := exec.Command(yipPrefix+"/bin/ipc_cmd", "-l", arg).Run(); err != nil {
 			log.Printf("ipc_cmd -l %s failed: %v", arg, err)
 		} else {
 			log.Printf("ipc_cmd -l %s (status LED)", arg)
@@ -1483,7 +1483,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	return c.send(c.genResponse("ChangeVideoSettings", m.MessageID, payload))
 }
 
-// handleGetRequest answers "GetRequest": grabs a JPEG via unifi_snapshot and
+// handleGetRequest answers "GetRequest": grabs a JPEG via yi_protect_snapshot and
 // HTTP POSTs it with the WSS mTLS cert; it blocks until the next IDR.
 func (c *Client) handleGetRequest(m Envelope) {
 	what, _ := m.Payload["what"].(string)
@@ -1507,7 +1507,7 @@ func (c *Client) handleGetRequest(m Envelope) {
 	c.snapshotGrabMu.Lock()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, unifiPrefix+"/bin/unifi_snapshot", "-m", model, "-r", res)
+	cmd := exec.CommandContext(ctx, yipPrefix+"/bin/yi_protect_snapshot", "-m", model, "-r", res)
 	cmd.Stderr = &stderr
 	jpeg, err := cmd.Output()
 	cancel()
@@ -1678,9 +1678,9 @@ func fetchFirmwareVersion(uri string) (string, error) {
 	return version, nil
 }
 
-// FlvPush control FIFO of unifi_flv_bridge (work/flv_bridge/), which muxes in
+// FlvPush control FIFO of yi_protect_flv_bridge (work/flv_bridge/), which muxes in
 // process: spawning ffmpeg would exhaust this 60 MB device's RAM.
-const flvPushFifo = "/tmp/unifi_flv_bridge_ctl"
+const flvPushFifo = "/tmp/yi_protect_flv_bridge_ctl"
 
 var (
 	videoStreamMu sync.Mutex
@@ -1724,7 +1724,7 @@ func stopVideoStream(channel string) {
 	}
 }
 
-// sendChannelCodec tells unifi_flv_bridge which codec a channel carries, so it
+// sendChannelCodec tells yi_protect_flv_bridge which codec a channel carries, so it
 // muxes the matching FLV video tags (AVC codec 7 vs HEVC codec 12). Sent after
 // CONNECT and whenever the controller changes the requested codec.
 func sendChannelCodec(channel, codec string) {
@@ -1779,7 +1779,7 @@ func (c *Client) setMicLevel(level int) {
 // applyMicGain writes the level to the codec gain element via bin/mixer_set;
 // best-effort (failure logged). Caller must hold videoStreamMu.
 func applyMicGain(level int) {
-	out, err := exec.Command(unifiPrefix+"/bin/mixer_set",
+	out, err := exec.Command(yipPrefix+"/bin/mixer_set",
 		micGainCard, micGainControl, strconv.Itoa(level)).CombinedOutput()
 	if err != nil {
 		log.Printf("applyMicGain: mixer_set failed: %v (%s)", err, strings.TrimSpace(string(out)))
@@ -1798,7 +1798,7 @@ func writeFlvPushFifoLocked(line string) error {
 		flvPushFifoFile = f
 	}
 	if _, err := flvPushFifoFile.WriteString(line); err != nil {
-		// The reader may have gone away (unifi_flv_bridge restarted); drop our
+		// The reader may have gone away (yi_protect_flv_bridge restarted); drop our
 		// stale handle and retry once with a fresh open.
 		flvPushFifoFile.Close()
 		flvPushFifoFile = nil
@@ -1823,7 +1823,7 @@ func openFlvPushFifo() (*os.File, error) {
 			return f, nil
 		}
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("open %s: %w (is unifi_flv_bridge running?)", flvPushFifo, err)
+			return nil, fmt.Errorf("open %s: %w (is yi_protect_flv_bridge running?)", flvPushFifo, err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -2088,21 +2088,21 @@ func controllerOnLink(host string) bool {
 }
 
 // cameraConfigFilePath is the legacy per-file home of MODEL/SYSID/FWVERSION,
-// still read as a migration fallback for unifi.cfg.
-const cameraConfigFilePath = unifiPrefix + "/etc/unifi_client_go.camera-config"
+// still read as a migration fallback for yi-protect.cfg.
+const cameraConfigFilePath = yipPrefix + "/etc/yi_protect_client_go.camera-config"
 
-// unifiConfigFilePath is the project's single human-edited config file (plain
+// yipConfigFilePath is the project's single human-edited config file (plain
 // KEY=value); the shell scripts and this client both read it.
-const unifiConfigFilePath = unifiPrefix + "/etc/unifi.cfg"
+const yipConfigFilePath = yipPrefix + "/etc/yi-protect.cfg"
 
-// readUnifiCfg parses unifi.cfg's flat KEY=value lines into a map (keys
+// readYipCfg parses yi-protect.cfg's flat KEY=value lines into a map (keys
 // upper-cased); missing/unparsable lines are non-fatal and later duplicates win.
-func readUnifiCfg(path string) map[string]string {
+func readYipCfg(path string) map[string]string {
 	vals := map[string]string{}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("unifi.cfg %q exists but couldn't be read: %v", path, err)
+			log.Printf("yi-protect.cfg %q exists but couldn't be read: %v", path, err)
 		}
 		return vals
 	}
@@ -2171,12 +2171,12 @@ func loadCameraConfigFile(path string) {
 }
 
 // defaultInformHostFilePath is runtime state written by applyManagePush so a
-// controller adopt-push pin survives restarts; unifi.cfg CONTROLLER outranks it.
-const defaultInformHostFilePath = unifiPrefix + "/etc/unifi_client_go.inform-host"
+// controller adopt-push pin survives restarts; yi-protect.cfg CONTROLLER outranks it.
+const defaultInformHostFilePath = yipPrefix + "/etc/yi_protect_client_go.inform-host"
 
 // dhcpInformHostFilePath is the lowest-priority controller source (DHCP option
 // 43), kept apart so a lease renewal can't clobber the adopt-push pin.
-const dhcpInformHostFilePath = unifiPrefix + "/etc/unifi_client_go.inform-host-dhcp"
+const dhcpInformHostFilePath = yipPrefix + "/etc/yi_protect_client_go.inform-host-dhcp"
 
 // loadInformHostOverride reads a "host" or "host:port" line from path ('#'
 // comments and blanks skipped); a missing file gives ok=false.
@@ -2232,46 +2232,46 @@ func main() {
 	}
 
 	// Read project config BEFORE computing flag defaults so explicit flags still
-	// win. Controller precedence: unifi.cfg CONTROLLER > inform-host > DHCP.
+	// win. Controller precedence: yi-protect.cfg CONTROLLER > inform-host > DHCP.
 	loadCameraConfigFile(cameraConfigFilePath)
-	unifiCfg := readUnifiCfg(unifiConfigFilePath)
-	if v := unifiCfg["MODEL"]; v != "" {
-		log.Printf("unifi.cfg: model %q -> %q", cfg.Model, v)
+	yipCfg := readYipCfg(yipConfigFilePath)
+	if v := yipCfg["MODEL"]; v != "" {
+		log.Printf("yi-protect.cfg: model %q -> %q", cfg.Model, v)
 		cfg.Model = v
 	}
-	if v := unifiCfg["SYSID"]; v != "" {
+	if v := yipCfg["SYSID"]; v != "" {
 		if n, err := strconv.ParseUint(strings.TrimPrefix(strings.ToLower(v), "0x"), 16, 16); err != nil {
-			log.Printf("unifi.cfg file %q: bad SYSID %q: %v", unifiConfigFilePath, v, err)
+			log.Printf("yi-protect.cfg file %q: bad SYSID %q: %v", yipConfigFilePath, v, err)
 		} else {
-			log.Printf("unifi.cfg: sysid 0x%x -> 0x%x", cfg.SysID, n)
+			log.Printf("yi-protect.cfg: sysid 0x%x -> 0x%x", cfg.SysID, n)
 			cfg.SysID = uint16(n)
 		}
 	}
-	if v := unifiCfg["FWVERSION"]; v != "" {
-		log.Printf("unifi.cfg: fwversion %q -> %q", cfg.FWVersion, v)
+	if v := yipCfg["FWVERSION"]; v != "" {
+		log.Printf("yi-protect.cfg: fwversion %q -> %q", cfg.FWVersion, v)
 		cfg.FWVersion = v
 	}
-	if v := unifiCfg["IS_MEDIAD"]; v != "" {
+	if v := yipCfg["IS_MEDIAD"]; v != "" {
 		cfg.IsMediad = isTruthy(v)
-		log.Printf("unifi.cfg: is_mediad %q -> %v", v, cfg.IsMediad)
+		log.Printf("yi-protect.cfg: is_mediad %q -> %v", v, cfg.IsMediad)
 	}
 	cfg.WebUIPort = 80
-	if v := unifiCfg["WEBUI_PORT"]; v != "" {
+	if v := yipCfg["WEBUI_PORT"]; v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p >= 0 && p < 65536 {
 			cfg.WebUIPort = p
 		} else {
-			log.Printf("unifi.cfg: bad WEBUI_PORT %q, using 80", v)
+			log.Printf("yi-protect.cfg: bad WEBUI_PORT %q, using 80", v)
 		}
 	}
-	if v := unifiCfg["MEDIAD_3DNR"]; v != "" {
+	if v := yipCfg["MEDIAD_3DNR"]; v != "" {
 		cfg.Mediad3DNR = isTruthy(v)
-		log.Printf("unifi.cfg: mediad_3dnr %q -> %v", v, cfg.Mediad3DNR)
+		log.Printf("yi-protect.cfg: mediad_3dnr %q -> %v", v, cfg.Mediad3DNR)
 	}
-	if v := unifiCfg["PROTECT_SSH"]; v != "" {
+	if v := yipCfg["PROTECT_SSH"]; v != "" {
 		cfg.ProtectSSH = isTruthy(v)
-		log.Printf("unifi.cfg: protect_ssh %q -> %v", v, cfg.ProtectSSH)
+		log.Printf("yi-protect.cfg: protect_ssh %q -> %v", v, cfg.ProtectSSH)
 	}
-	if v := unifiCfg["CONTROLLER"]; v != "" {
+	if v := yipCfg["CONTROLLER"]; v != "" {
 		if h, p, err := net.SplitHostPort(v); err == nil {
 			cfg.Host = h
 			if pn, perr := strconv.Atoi(p); perr == nil {
@@ -2280,7 +2280,7 @@ func main() {
 		} else {
 			cfg.Host = v
 		}
-		log.Printf("unifi.cfg CONTROLLER: overriding controller host to %q (port %v)", cfg.Host, cfg.Port)
+		log.Printf("yi-protect.cfg CONTROLLER: overriding controller host to %q (port %v)", cfg.Host, cfg.Port)
 	} else if h, p, ok := loadInformHostOverride(defaultInformHostFilePath); ok {
 		log.Printf("inform-host file %q: overriding default controller host to %q (port default %v)", defaultInformHostFilePath, h, p)
 		cfg.Host = h
@@ -2296,7 +2296,7 @@ func main() {
 	}
 
 	token := flag.String("token", "", "adoption token (optional -- omit to connect like a factory-fresh camera awaiting adoption in the UI)")
-	host := flag.String("host", cfg.Host, "controller host (default seeded from unifi.cfg CONTROLLER or an inform-host file if present, else compiled-in default)")
+	host := flag.String("host", cfg.Host, "controller host (default seeded from yi-protect.cfg CONTROLLER or an inform-host file if present, else compiled-in default)")
 	mac := flag.String("mac", cfg.MAC, "camera MAC (no separators) -- auto-detected from wlan0/eth0 by default, override only for testing")
 	ip := flag.String("ip", cfg.IP, "camera IP to present -- auto-detected from wlan0/eth0 by default, override only for testing")
 	model := flag.String("model", cfg.Model, "model string to present")
@@ -2304,9 +2304,9 @@ func main() {
 	keyFile := flag.String("key", cfg.KeyFile, "client key path (PEM)")
 	noDiscovery := flag.Bool("no-discovery", false, "disable the UDP 10001 discovery responder")
 	ptz := flag.Bool("ptz", cfg.HasPTZ, "declare PTZ (pan/tilt/zoom) hardware capability -- only for units with a real motorized pan/tilt base")
-	mediad := flag.Bool("mediad", cfg.IsMediad, "enable advanced picture controls via the custom mediad rmm replacement (requires unifi.cfg IS_MEDIAD=yes and a running mediad)")
+	mediad := flag.Bool("mediad", cfg.IsMediad, "enable advanced picture controls via the custom mediad rmm replacement (requires yi-protect.cfg IS_MEDIAD=yes and a running mediad)")
 	guid := flag.String("guid", "ffffffff-ffff-ffff-ffff-ffffffffffff", "device GUID advertised in discovery (default matches an unset/unadopted board.guid)")
-	deviceIDFile := flag.String("device-id-file", unifiPrefix+"/etc/unifi_client_go.device-id", "path to persist the stable per-device adoption UUID (device-id header / discovery 0x26 TLV)")
+	deviceIDFile := flag.String("device-id-file", yipPrefix+"/etc/yi_protect_client_go.device-id", "path to persist the stable per-device adoption UUID (device-id header / discovery 0x26 TLV)")
 	manageAwaitFile := flag.String("manage-await-file", manageAwaitFilePath, "path used to persist 'awaiting controller adopt push' state across a ResetToDefaults reboot (see manage.go)")
 	adoptedStateFile := flag.String("adopted-state-file", adoptedStateFilePath, "path used to persist adoption state across restarts, so discovery reports it correctly from the first reply after any restart (see discovery.go)")
 	flag.Parse()
@@ -2318,11 +2318,11 @@ func main() {
 	cfg.Model = *model
 	cfg.CertFile = *certFile
 	cfg.KeyFile = *keyFile
-	// PTZ precedence: explicit -ptz flag, then unifi.cfg PTZ=, else the model
+	// PTZ precedence: explicit -ptz flag, then yi-protect.cfg PTZ=, else the model
 	// table -- the single place the capability is decided.
 	if flagSet("ptz") {
 		cfg.HasPTZ = *ptz
-	} else if v := unifiCfg["PTZ"]; v != "" {
+	} else if v := yipCfg["PTZ"]; v != "" {
 		cfg.HasPTZ = isTruthy(v)
 	} else {
 		def, _ := readModelDef(readHardwareModel())
@@ -2440,7 +2440,7 @@ func applyManagePush(res manageResult) {
 	if res.Host != "" {
 		cfg.Host = res.Host
 		// Persist as the runtime adopt-push pin so this controller "sticks"
-		// across restarts. A human-set unifi.cfg CONTROLLER still outranks it.
+		// across restarts. A human-set yi-protect.cfg CONTROLLER still outranks it.
 		if err := os.WriteFile(defaultInformHostFilePath, []byte(res.Host+"\n"), 0600); err != nil {
 			log.Printf("applyManagePush: failed to persist inform-host: %v", err)
 		}

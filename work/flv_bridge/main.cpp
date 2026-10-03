@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) 2026 yi-protect contributors
  *
- * unifi_flv_bridge: reads the stock video encoder's shared-memory frame ring
+ * yi_protect_flv_bridge: reads the stock video encoder's shared-memory frame ring
  * (/dev/shm/fshare_frame_buf) and pushes each video/audio stream as UniFi's
  * extendedFlv over TCP, on demand, to the Protect controller's ingest.
  */
@@ -30,7 +30,7 @@
 #define AAC_MAX_NCHANS 2
 
 // Set from -m / RRTSP_MODEL. Kept as the model *name*: all per-model facts are
-// looked up in unifi/etc/model_table (see modelParams).
+// looked up in yi-protect/etc/model_table (see modelParams).
 static const char *modelName = "";
 
 namespace {
@@ -132,7 +132,7 @@ void transcodeAacToOpus(std::vector<unsigned char> &adts, uint32_t ptsMs) {
         int err = OPUS_OK;
         g_opusEnc = opus_encoder_create(kOpusRate, 1, OPUS_APPLICATION_AUDIO, &err);
         if (err != OPUS_OK || g_opusEnc == nullptr) {
-            std::fprintf(stderr, "unifi_flv_bridge: opus_encoder_create(%d) failed: %s\n",
+            std::fprintf(stderr, "yi_protect_flv_bridge: opus_encoder_create(%d) failed: %s\n",
                          kOpusRate, opus_strerror(err));
             g_opusEnc = nullptr;
             return;
@@ -203,7 +203,7 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
         last[s] = streamCounter;
     }
 
-    // UNIFI_TEE=<prefix>: HIGH bytes -> <prefix>.h264, per-frame
+    // YIP_TEE=<prefix>: HIGH bytes -> <prefix>.h264, per-frame
     // "wall_ms counter bytes offset" -> <prefix>.idx; stops at 300 MB.
     if (frameType == TYPE_HIGH) {
         static FILE *teeData, *teeIdx;
@@ -211,7 +211,7 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
         static unsigned long long teeOff;
         if (!teeInit) {
             teeInit = true;
-            const char *p = getenv("UNIFI_TEE");
+            const char *p = getenv("YIP_TEE");
             if (p && *p) {
                 std::string base(p);
                 teeData = fopen((base + ".h264").c_str(), "wb");
@@ -326,7 +326,7 @@ int main(int argc, char **argv) {
 
     struct stat st;
     if (stat(FSHARE_BUF_FILE, &st) != 0 || st.st_size <= 0) {
-        std::fprintf(stderr, "unifi_flv_bridge: cannot size %s (is rmm running?)\n",
+        std::fprintf(stderr, "yi_protect_flv_bridge: cannot size %s (is rmm running?)\n",
                      FSHARE_BUF_FILE);
         return 1;
     }
@@ -335,7 +335,7 @@ int main(int argc, char **argv) {
     // Run slightly above the stock encoder's own priority so a busy box still
     // drains the ring in time.
     setpriority(PRIO_PROCESS, 0, -10);
-    std::fprintf(stderr, "unifi_flv_bridge: model=%s resolution=%d audio=%d "
+    std::fprintf(stderr, "yi_protect_flv_bridge: model=%s resolution=%d audio=%d "
                          "ring=%lld offset=%u header=%d high=%ux%u bitrate=%u ptz=%d\n",
                  modelName, resolution, audio, (long long)st.st_size,
                  mp.offset, mp.headerSize, mp.highWidth, mp.highHeight,
@@ -360,7 +360,7 @@ int main(int argc, char **argv) {
             cfg->dontUpSampleImplicitSBR = 1;  // keep the stream's real rate
             NeAACDecSetConfiguration(g_aacDec, cfg);
         } else {
-            std::fprintf(stderr, "unifi_flv_bridge: NeAACDecOpen failed; Opus track disabled\n");
+            std::fprintf(stderr, "yi_protect_flv_bridge: NeAACDecOpen failed; Opus track disabled\n");
         }
     }
     flvPushSetOpusEnabled(audio == 2 && g_aacDec != nullptr);
