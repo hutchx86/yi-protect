@@ -181,9 +181,18 @@ func encoderIsMediad() bool {
 	return installed
 }
 
-// h265Capable reports whether the active encoder can produce H.265. Only the
-// clean-room mediad path can; the stock rmm encoder is H.264-only.
-func h265Capable() bool { return encoderIsMediad() }
+// h265Capable reports whether the active encoder can produce H.265. It requires
+// the clean-room mediad path (stock rmm is H.264-only) AND the model's
+// model_table h265 column: our H.265 encode is only validated on y623, and on an
+// unvalidated model it comes out green, so advertising it there lets Protect
+// enable super-encoding and break the stream.
+func h265Capable() bool {
+	if !encoderIsMediad() {
+		return false
+	}
+	def, ok := readModelDef(readHardwareModel())
+	return ok && def.h265
+}
 
 // logMediadStatus logs the startup state once, so an IS_MEDIAD=yes deployment
 // against a missing/stopped mediad is visible rather than silent.

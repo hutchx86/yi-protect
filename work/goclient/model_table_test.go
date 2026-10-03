@@ -6,16 +6,16 @@ package main
 import "testing"
 
 // model_table columns: model sensor ring_offset ring_header high_w high_h ptz
-// [high_bitrate] [mediad_w mediad_h]. The 8th column (high_bitrate) opts a
-// model out of following the controller; the 9th/10th (mediad geometry) are the
-// geometry the mediad encoder streams, used when the camera is on the mediad
-// path.
+// [high_bitrate] [mediad_w mediad_h] [h265]. The 8th column (high_bitrate) opts
+// a model out of following the controller; the 9th/10th (mediad geometry) are
+// the geometry the mediad encoder streams, used on the mediad path; the 11th
+// (h265 yes/no) whether the encoder's H.265 is known-good.
 const sampleModelTable = `# model_table -- comment line
 #
-y623     gc3003  368  28  2304  1296  no   2200000  2304  1296
-h51ga    gc2053  368  28  2304  1296  yes  0        1920  1080
+y623     gc3003  368  28  2304  1296  no   2200000  2304  1296  yes
+h51ga    gc2053  368  28  2304  1296  yes  0        1920  1080  no
 h52ga    gc2053  368  28  1920  1080  yes
-r35gb    gc2053  0    0   1920  1080  yes   # inline comment (no mediad cols)
+r35gb    gc2053  0    0   1920  1080  yes   # inline comment (no mediad/h265 cols)
 `
 
 func TestParseModelDef(t *testing.T) {
@@ -28,12 +28,13 @@ func TestParseModelDef(t *testing.T) {
 		wantMediadH int
 		wantPTZ     bool
 		wantBitrate int
+		wantH265    bool
 	}{
-		{"y623", true, 2304, 1296, 2304, 1296, false, 2200000},
-		{"h51ga", true, 2304, 1296, 1920, 1080, true, 0},
-		{"h52ga", true, 1920, 1080, 0, 0, true, 0},    // no mediad columns
-		{"r35gb", true, 1920, 1080, 0, 0, true, 0},    // inline comment
-		{"y291ga", false, 2304, 1296, 0, 0, false, 0}, // unlisted -> conservative default
+		{"y623", true, 2304, 1296, 2304, 1296, false, 2200000, true},
+		{"h51ga", true, 2304, 1296, 1920, 1080, true, 0, false},
+		{"h52ga", true, 1920, 1080, 0, 0, true, 0, false},    // no mediad/h265 columns
+		{"r35gb", true, 1920, 1080, 0, 0, true, 0, false},    // inline comment
+		{"y291ga", false, 2304, 1296, 0, 0, false, 0, false}, // unlisted -> default
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -52,6 +53,9 @@ func TestParseModelDef(t *testing.T) {
 			}
 			if def.highBitrate != tc.wantBitrate {
 				t.Fatalf("highBitrate = %d, want %d", def.highBitrate, tc.wantBitrate)
+			}
+			if def.h265 != tc.wantH265 {
+				t.Fatalf("h265 = %v, want %v", def.h265, tc.wantH265)
 			}
 		})
 	}

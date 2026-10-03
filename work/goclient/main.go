@@ -306,7 +306,8 @@ type modelDef struct {
 	mediadWidth  int // HIGH geometry mediad streams (0 = same as high)
 	mediadHeight int
 	ptz          bool
-	highBitrate  int // HIGH-channel bitrate to pin (bps); 0 = follow controller
+	highBitrate  int  // HIGH-channel bitrate to pin (bps); 0 = follow controller
+	h265         bool // this model's encoder produces valid H.265 (super encoding)
 }
 
 // geometry returns the HIGH (video1) width/height for the active encoder path:
@@ -338,7 +339,7 @@ func readModelDef(model string) (def modelDef, ok bool) {
 
 // parseModelDef finds `model`'s row: model sensor ring_offset ring_header high_w
 // high_h ptz [high_bitrate bps; 0/absent = follow the controller] [mediad_w
-// mediad_h; absent = same as high_w/h].
+// mediad_h; absent = same as high_w/h] [h265 yes/no; absent = no].
 func parseModelDef(content, model string) (def modelDef, ok bool) {
 	def = modelDef{highWidth: 2304, highHeight: 1296}
 	for _, line := range strings.Split(content, "\n") {
@@ -366,6 +367,9 @@ func parseModelDef(content, model string) (def modelDef, ok bool) {
 					def.mediadWidth, def.mediadHeight = w, h
 				}
 			}
+		}
+		if len(f) >= 11 {
+			def.h265 = strings.EqualFold(f[10], "yes")
 		}
 		return def, true
 	}
