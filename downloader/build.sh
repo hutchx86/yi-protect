@@ -13,6 +13,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 REPOS_DIR="${REPOS_DIR:-$ROOT/../repos}"
 
+if [ -z "${TOOLCHAIN_DIR:-}" ]; then
+    for d in "$REPOS_DIR/lindenis-v536-prebuilt" "$REPOS_DIR/lindenis-v833-prebuilt" \
+             "$REPOS_DIR/toolchain-sunxi-musl"; do
+        if [ -x "$d/gcc/linux-x86/arm/toolchain-sunxi-musl/toolchain/bin/arm-openwrt-linux-gcc" ]; then
+            TOOLCHAIN_DIR="$d"; break
+        fi
+    done
+fi
 TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$REPOS_DIR/toolchain-sunxi-musl}"
 TCBIN="${TCBIN:-$TOOLCHAIN_DIR/gcc/linux-x86/arm/toolchain-sunxi-musl/toolchain/bin}"
 XP=arm-openwrt-linux-

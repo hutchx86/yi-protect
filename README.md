@@ -247,8 +247,12 @@ mkdir -p ../repos
 git clone https://github.com/roleoroleo/yi-hack-Allwinner-v2 \
   ../repos/yi-hack-Allwinner-v2
 git clone https://github.com/lindenis-org/lindenis-v536-prebuilt \
-  ../repos/toolchain-sunxi-musl
+  ../repos/lindenis-v536-prebuilt
 ```
+
+`build_sd.sh` auto-detects the toolchain clone (`lindenis-v536-prebuilt` or
+`lindenis-v833-prebuilt`, or `toolchain-sunxi-musl`); override with
+`TOOLCHAIN_DIR`.
 
 Then:
 

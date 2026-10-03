@@ -14,9 +14,19 @@ LIB="$YIP/lib"
 ETC="$YIP/etc"
 REPOS_DIR="${REPOS_DIR:-$ROOT/../repos}"
 YH="$REPOS_DIR/yi-hack-Allwinner-v2"
-# Generic armv7-a hard-float musl cross-toolchain; the lindenis v536 and v833
-# prebuilts ship the same compiler. Point TOOLCHAIN_DIR at a clone of either.
-TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$REPOS_DIR/toolchain-sunxi-musl}"
+# Generic armv7-a hard-float musl cross-toolchain: a clone of
+# lindenis-org/lindenis-v536-prebuilt (or -v833-prebuilt), which ships the
+# compiler under gcc/linux-x86/arm/toolchain-sunxi-musl. Point TOOLCHAIN_DIR at
+# a clone, or let it auto-detect the usual clone names under REPOS_DIR.
+if [ -z "${TOOLCHAIN_DIR:-}" ]; then
+    for d in "$REPOS_DIR/toolchain-sunxi-musl" "$REPOS_DIR/lindenis-v536-prebuilt" \
+             "$REPOS_DIR/lindenis-v833-prebuilt"; do
+        if [ -x "$d/gcc/linux-x86/arm/toolchain-sunxi-musl/toolchain/bin/arm-openwrt-linux-gcc" ]; then
+            TOOLCHAIN_DIR="$d"; break
+        fi
+    done
+    TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$REPOS_DIR/toolchain-sunxi-musl}"
+fi
 TCDIR="$TOOLCHAIN_DIR/gcc/linux-x86/arm/toolchain-sunxi-musl"
 TCBIN="$TCDIR/toolchain/bin"
 BUILD="$ROOT/build"
