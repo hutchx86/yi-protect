@@ -24,7 +24,7 @@ sd_root/LICENSE
 sd_root/licenses/
 sd_root/NOTICE
 sd_root/SOURCES.txt
-yi-protect-*.tar.gz
+/*.tar.gz
 SHA256SUMS
 
 # Runtime per-camera identity written onto the SD card by a booted camera.
@@ -58,15 +58,8 @@ snapshot/yi_protect_snapshot
 # Public-repo hygiene
 # ---------------------------------------------------------------------------
 
-# Vendor/extracted assets: third-party copyrighted material. Kept locally for
-# reference only, never committed/published.
-fw_picked/
-
 # Local certs/keys: never publish (private keys, runtime-generated identities).
 *.pem
-
-# Secret-bearing controller dumps (must never be committed).
-archive/cameras.json
 
 # Local working docs — kept on disk, never published (README.md is tracked).
 /*.md
@@ -97,9 +90,3 @@ wg*.conf
 # Static HTTPS downloader build outputs (downloader/build.sh).
 downloader/downloader
 downloader/build/
-
-# legacy unifi-named build outputs (pre-rename, ignore too)
-goclient/unifi_avclient_*
-goclient/unifi-avclient
-flv_bridge/unifi_flv_bridge
-snapshot/unifi_snapshot
