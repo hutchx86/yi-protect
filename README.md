@@ -211,6 +211,31 @@ An on-camera **hotspot / captive-portal flow is not yet possible**: the Yi
 firmware ships no `hostapd`, no `udhcpd`, and a `wpa_supplicant` built without AP
 mode. It needs a cross-built AP daemon.
 
+## Configuration
+
+`yi-protect/etc/yi-protect.cfg` is the one file an admin edits (plain
+`KEY=value`); per-camera runtime state is kept separately in the
+`yi_protect_client_go.*` files beside it.
+
+| Key | Values | Meaning |
+| --- | --- | --- |
+| `RESOLUTION` | `high`/`low`/`both` | Which bridge video channels to publish. |
+| `AUDIO` | `aac`/`no` | Publish the mic audio track. |
+| `PTZ` | `yes`/`no`/empty | Declare the PTZ feature; empty = the model table's `ptz` column. |
+| `IS_MEDIAD` | `yes`/`no` | Run the clean-room `mediad` encoder instead of the stock `rmm`. |
+| `MEDIAD_3DNR` | `yes`/`no` | Let Protect's `enable3dnr` drive mediad's temporal denoise (`tdf`); `no` = `tdf` follows `mediad.conf`. |
+| `YI_CLOUD` | `yes`/`no`/empty | Run the stock Yi cloud daemons; empty = on unless `IS_MEDIAD=yes`. |
+| `SSH_PASSWORD` | text | Root SSH password; hashed at boot, never stored in `/etc`. Empty = locked (no password login). |
+| `PROTECT_SSH` | `yes`/`no` | Also accept Protect's device password (as `ui`, or `ubnt` before adoption) with root rights. |
+| `WATCHDOG_INTERVAL` | seconds | Supervisor poll interval. |
+
+Optional overrides (commented in the file): `CONTROLLER` (`host[:port]`, overrides
+DHCP discovery), `MODEL`/`SYSID`/`FWVERSION` (spoofed identity; default "UVC G3
+Instant"), `STATIC_IP`/`STATIC_MASK`/`STATIC_GW`/`STATIC_DNS1`/`STATIC_DNS2`
+(static network), and `WEBUI_PORT` (mediad settings page on `:80`; `0` = off).
+
+To set WiFi credentials, see [WiFi provisioning](#wifi-provisioning).
+
 ## Build from source
 
 The `repos/yi-hack-Allwinner-v2` submodule and the ~1.2 GB cross-toolchain are
