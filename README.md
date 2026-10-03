@@ -61,14 +61,15 @@ controller. It is still a moving target — expect rough edges.
   YI app alongside Protect. It is **on by default**, except on `mediad` builds
   (`IS_MEDIAD=yes`) where it defaults off; set `yes`/`no` to force it. Off =
   local-only, no Yi cloud traffic.
-- **Selectable encoder** — the image ships two encoder paths: the stock Yi
-  `rmm`, and the clean-room [yi-mediad](https://github.com/hutchx86/yi-mediad)
-  daemon. `yi-protect.cfg IS_MEDIAD=yes` runs `mediad` (H.264 + H.265, advanced
-  picture controls); `no` keeps stock `rmm` (H.264 only). The two never run
-  together. H.265 "super encoding" is advertised to the controller **only** on
-  the `mediad` path, so Protect cannot pick a codec the active encoder cannot
-  produce. A vendor-linked mediad build fetches the vendor H.264 libs from
-  GitHub at boot; the shipped clean-room build makes no such fetch.
+- **Selectable encoder** — yi-protect runs either the stock Yi `rmm` encoder or
+  the clean-room [yi-mediad](https://github.com/hutchx86/yi-mediad) daemon.
+  `yi-protect.cfg IS_MEDIAD=yes` runs `mediad` (H.264 + H.265, advanced picture
+  controls); `no` keeps stock `rmm` (H.264 only). The two never run together.
+  H.265 "super encoding" is advertised to the controller **only** on the
+  `mediad` path, so Protect cannot pick a codec the active encoder cannot
+  produce. The published release image ships the stock `rmm` path only;
+  installing `mediad` is an opt-in step — see
+  [Optional mediad encoder](#optional-mediad-encoder).
 - **Self-contained SD deploy** — everything in the image builds from source into
   `/tmp/sd/yi-protect/`; no yi-hack install required at runtime.
 - **One image, any supported camera** — the model is auto-detected at boot, so
@@ -235,6 +236,26 @@ Instant"), `STATIC_IP`/`STATIC_MASK`/`STATIC_GW`/`STATIC_DNS1`/`STATIC_DNS2`
 (static network), and `WEBUI_PORT` (mediad settings page on `:80`; `0` = off).
 
 To set WiFi credentials, see [WiFi provisioning](#wifi-provisioning).
+
+## Optional mediad encoder
+
+`mediad` is a separate clean-room daemon (repo:
+[hutchx86/yi-mediad](https://github.com/hutchx86/yi-mediad)) that replaces the
+stock Yi `rmm` encoder while publishing the same fshare ring the bridge reads.
+It adds H.265/HEVC, per-model capture geometry, and advanced picture controls,
+and is the only encoder path on which H.265 is advertised.
+
+The published release image is **rmm-only**. To add `mediad`:
+
+- **Existing yi-protect install** — overlay the yi-mediad package onto the card;
+  its installer flips `IS_MEDIAD=yes`, reroutes `init.sh`/`watchdog.sh`, and
+  keeps `.pre-mediad` backups.
+- **Fresh camera** — install yi-protect first, then overlay; or build a
+  `mediad`-bundled image from source (build the yi-mediad package first so
+  `build_sd.sh` picks up its `dist/`).
+
+Full instructions for both starting points are in the yi-mediad repo:
+[`package/README.md`](https://github.com/hutchx86/yi-mediad/blob/main/package/README.md).
 
 ## Build from source
 
