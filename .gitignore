@@ -5,8 +5,6 @@ devices.md
 
 # Built Go binaries — source lives in *.go
 work/goclient/yi_protect_avclient_*
-work/goclient/yi-protect-avclient
-work/goclient/yi-protect-avclient
 
 # Downloaded material (toolchains, caches, upstream archives, controller dumps) — never in git
 file_downloads/

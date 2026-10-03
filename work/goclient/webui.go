@@ -217,9 +217,8 @@ function render(list){
   rows.innerHTML=list.map(c=>'<div class="row"><div class="name">'+c.label+'</div>'+(c.ok?control(c):'<span class="help">unavailable</span>')+
     '<div class="help">'+c.help+'</div><div class="meta">'+(c.pinned?'<span class="badge pin">Saved on this page</span><button class="link" data-unpin="'+c.key+'">Let Protect control</button>':'<span class="badge">Protect controls</span>')+'</div></div>').join('');
   rows.querySelectorAll('[data-k]').forEach(el=>{
-    const ev=el.type==='range'?'change':'change';
     if(el.type==='range')el.addEventListener('input',()=>el.nextElementSibling.textContent=el.value);
-    el.addEventListener(ev,()=>save(el.dataset.k,el.type==='checkbox'?(el.checked?1:0):+el.value))});
+    el.addEventListener('change',()=>save(el.dataset.k,el.type==='checkbox'?(el.checked?1:0):+el.value))});
   rows.querySelectorAll('[data-unpin]').forEach(b=>b.addEventListener('click',()=>unpin(b.dataset.unpin)))}
 async function load(){try{render(await call('/api/denoise'));say('')}catch(e){rows.textContent='Could not reach the camera ('+e.message+').'}}
 async function save(k,v){say('Saving…');try{render(await call('/api/denoise',{key:k,value:v}));say('Saved.')}catch(e){say('Not saved: '+e.message,1);load()}}
