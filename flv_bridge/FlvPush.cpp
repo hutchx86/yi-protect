@@ -806,9 +806,9 @@ static void *pushThreadMain(void *arg) {
                 c.haveCachedAsc = true;
                 pthread_mutex_unlock(&c.stateMutex);
                 std::vector<unsigned char> aacSeq = buildAacSequenceHeaderTag(asc);
-                double seqElapsed = nowSeconds() - connectionStart;
+                double seqElapsed = captureElapsed(af.time);
                 uint32_t seqMs = monotonicMs(lastAudioMs, (uint32_t)(seqElapsed * 1000.0));
-                if (seqMs > (uint32_t)(seqElapsed * 1000.0)) seqElapsed = seqMs / 1000.0;
+                seqElapsed = seqMs / 1000.0;
                 out.clear();
                 writeFlvTag(out, 8, aacSeq, seqMs);
                 writeTimestampTrailerClock(out, 0x003E80, 16000.0, seqElapsed);
