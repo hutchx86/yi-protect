@@ -260,6 +260,10 @@ fully installed (`bin/mediad` + `script/mediad.sh` + `lib/libvenc_base.so`) and
 fall back to stock `rmm` otherwise, so an overlay needs no config edit. Set
 `IS_MEDIAD=no` to force `rmm`, or `yes` to require `mediad`.
 
+A prebuilt overlay archive is published on the yi-mediad
+[Releases](https://github.com/hutchx86/yi-mediad/releases) page —
+`mediad-overlay-<rev>.tar.gz`, built in CI from the clean-room sources.
+
 Full instructions for both starting points are in the yi-mediad repo:
 [`package/README.md`](https://github.com/hutchx86/yi-mediad/blob/main/package/README.md).
 
