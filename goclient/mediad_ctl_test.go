@@ -437,6 +437,9 @@ func TestMediadDecision(t *testing.T) {
 		{"", "auto", false, false},       // auto, not installed -> rmm
 		{"", "", true, true},             // absent behaves as auto
 		{"", "", false, false},
+		{"", "ON", true, true}, // unknown -> auto (installed-gated)
+		{"", "ON", false, false},
+		{"", "true", false, false},
 	}
 	for _, c := range cases {
 		if got := mediadDecision(c.env, c.mode, c.installed); got != c.want {

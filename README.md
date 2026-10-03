@@ -58,8 +58,9 @@ controller. It is still a moving target — expect rough edges.
   **unauthenticated**: anyone on the LAN can change them.
 - **Optional Yi cloud** — the `yi-protect.cfg` key `YI_CLOUD` also runs the stock Yi
   cloud daemons (`cloud`, `p2p_tnp`, `oss`) so the camera still appears in the
-  YI app alongside Protect. It is **on by default**, except on `mediad` builds
-  (`IS_MEDIAD=yes`) where it defaults off; set `yes`/`no` to force it. Off =
+  YI app alongside Protect. It is **on by default**, except when the `mediad`
+  encoder is active (`IS_MEDIAD=auto`/`yes` with mediad installed) where it
+  defaults off; set `yes`/`no` to force it. Off =
   local-only, no Yi cloud traffic.
 - **Selectable encoder** — yi-protect runs either the stock Yi `rmm` encoder or
   the clean-room [yi-mediad](https://github.com/hutchx86/yi-mediad) daemon.
@@ -225,7 +226,7 @@ mode. It needs a cross-built AP daemon.
 | `PTZ` | `yes`/`no`/empty | Declare the PTZ feature; empty = the model table's `ptz` column. |
 | `IS_MEDIAD` | `yes`/`no`/`auto` | Encoder path. `auto` (default) runs `mediad` when installed, else `rmm`; `yes`/`no` force it. |
 | `MEDIAD_3DNR` | `yes`/`no` | Let Protect's `enable3dnr` drive mediad's temporal denoise (`tdf`); `no` = `tdf` follows `mediad.conf`. |
-| `YI_CLOUD` | `yes`/`no`/empty | Run the stock Yi cloud daemons; empty = on unless `IS_MEDIAD=yes`. |
+| `YI_CLOUD` | `yes`/`no`/empty | Run the stock Yi cloud daemons; empty = on unless the `mediad` encoder is active. |
 | `SSH_PASSWORD` | text | Root SSH password; hashed at boot, never stored in `/etc`. Empty = locked (no password login). |
 | `PROTECT_SSH` | `yes`/`no` | Also accept Protect's device password (as `ui`, or `ubnt` before adoption) with root rights. |
 | `WATCHDOG_INTERVAL` | seconds | Supervisor poll interval. |

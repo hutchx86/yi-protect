@@ -23,7 +23,7 @@ encoder_resolve() {
     _want=auto
     if [ -f "$_p/etc/yi-protect.cfg" ]; then
         _want=$(sed -n 's/^IS_MEDIAD=//p' "$_p/etc/yi-protect.cfg" 2>/dev/null | tail -1)
-        _want=$(printf '%s' "$_want" | tr -d "[:space:]'\"")
+        _want=$(printf '%s' "$_want" | tr -d "[:space:]'\"" | tr '[:upper:]' '[:lower:]')
         [ -n "$_want" ] || _want=auto
     fi
     if [ -x "$_p/bin/mediad" ] && [ -x "$_p/script/mediad.sh" ] && [ -f "$_p/lib/libvenc_base.so" ]; then

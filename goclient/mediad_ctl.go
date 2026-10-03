@@ -197,15 +197,33 @@ func mediadDecision(encoderEnv, mode string, installed bool) bool {
 	case "yes", "auto", "":
 		return installed
 	default:
-		return isTruthy(mode)
+		// Unknown value: mirror encoder.sh, which treats anything other than
+		// no/yes as auto (installed-gated).
+		return installed
 	}
 }
 
+// mediadFullyInstalled mirrors the boot resolver (script/encoder.sh): the
+// daemon, its launcher and its support library must all be on the card. mediad
+// loads libvenc_base.so via its $ORIGIN/../lib rpath.
+func mediadFullyInstalled() bool {
+	for _, p := range []string{
+		yipPrefix + "/bin/mediad",
+		yipPrefix + "/script/mediad.sh",
+		yipPrefix + "/lib/libvenc_base.so",
+	} {
+		if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
+			return false
+		}
+	}
+	return true
+}
+
 // resolveMediad applies mediadDecision to the live environment: YIP_ENCODER,
-// cfg.MediadMode and the installed binary.
+// cfg.MediadMode and whether mediad is fully installed (the boot resolver's
+// definition).
 func resolveMediad() bool {
-	_, installed := mediadInstalled()
-	return mediadDecision(os.Getenv("YIP_ENCODER"), cfg.MediadMode, installed)
+	return mediadDecision(os.Getenv("YIP_ENCODER"), cfg.MediadMode, mediadFullyInstalled())
 }
 
 // h265Capable reports whether the active encoder can produce H.265. It requires
