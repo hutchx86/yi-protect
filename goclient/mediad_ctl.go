@@ -2,7 +2,7 @@
 // Copyright (C) 2026 yi-protect contributors
 
 // mediad_ctl.go - optional client for the custom rmm replacement (mediad): with
-// IS_MEDIAD=yes and a responsive mediad, picture controls go to its socket.
+// IS_MEDIAD=yes/auto and a responsive mediad, picture controls go to its socket.
 package main
 
 import (
@@ -181,6 +181,33 @@ func encoderIsMediad() bool {
 	return installed
 }
 
+// mediadDecision is the pure encoder decision. The boot scripts' YIP_ENCODER is
+// authoritative (it names the encoder actually started); otherwise IS_MEDIAD
+// mode decides: no = off, yes/auto/empty = mediad when installed.
+func mediadDecision(encoderEnv, mode string, installed bool) bool {
+	switch strings.ToLower(strings.TrimSpace(encoderEnv)) {
+	case "mediad":
+		return true
+	case "rmm":
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "no":
+		return false
+	case "yes", "auto", "":
+		return installed
+	default:
+		return isTruthy(mode)
+	}
+}
+
+// resolveMediad applies mediadDecision to the live environment: YIP_ENCODER,
+// cfg.MediadMode and the installed binary.
+func resolveMediad() bool {
+	_, installed := mediadInstalled()
+	return mediadDecision(os.Getenv("YIP_ENCODER"), cfg.MediadMode, installed)
+}
+
 // h265Capable reports whether the active encoder can produce H.265. It requires
 // the clean-room mediad path (stock rmm is H.264-only) AND the model's
 // model_table h265 column: our H.265 encode is only validated on y623, and on an
@@ -202,7 +229,11 @@ func logMediadStatus() {
 	}
 	exe, installed := mediadInstalled()
 	pid, _, running := findMediadProcess()
-	log.Printf("IS_MEDIAD=yes: installed=%v (%s) running=%v (pid %d) socket=%s", installed, exe, running, pid, mediadSockPath())
+	mode := cfg.MediadMode
+	if mode == "" {
+		mode = "auto"
+	}
+	log.Printf("mediad active (IS_MEDIAD=%s): installed=%v (%s) running=%v (pid %d) socket=%s", mode, installed, exe, running, pid, mediadSockPath())
 	// Prime the availability cache now so the false->true transition (which
 	// re-arms the delta) happens here, before run() seeds the first object.
 	mediadEnabled()

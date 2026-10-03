@@ -67,9 +67,9 @@ controller. It is still a moving target — expect rough edges.
   controls); `no` keeps stock `rmm` (H.264 only). The two never run together.
   H.265 "super encoding" is advertised to the controller **only** on the
   `mediad` path, so Protect cannot pick a codec the active encoder cannot
-  produce. The published release image ships the stock `rmm` path only;
-  installing `mediad` is an opt-in step — see
-  [Optional mediad encoder](#optional-mediad-encoder).
+  produce. The published release image ships the stock `rmm` path only; with
+  `IS_MEDIAD=auto` (the default) a card that has `mediad` installed runs it
+  automatically — see [Optional mediad encoder](#optional-mediad-encoder).
 - **Self-contained SD deploy** — everything in the image builds from source into
   `/tmp/sd/yi-protect/`; no yi-hack install required at runtime.
 - **One image, any supported camera** — the model is auto-detected at boot, so
@@ -223,7 +223,7 @@ mode. It needs a cross-built AP daemon.
 | `RESOLUTION` | `high`/`low`/`both` | Which bridge video channels to publish. |
 | `AUDIO` | `aac`/`no` | Publish the mic audio track. |
 | `PTZ` | `yes`/`no`/empty | Declare the PTZ feature; empty = the model table's `ptz` column. |
-| `IS_MEDIAD` | `yes`/`no` | Run the clean-room `mediad` encoder instead of the stock `rmm`. |
+| `IS_MEDIAD` | `yes`/`no`/`auto` | Encoder path. `auto` (default) runs `mediad` when installed, else `rmm`; `yes`/`no` force it. |
 | `MEDIAD_3DNR` | `yes`/`no` | Let Protect's `enable3dnr` drive mediad's temporal denoise (`tdf`); `no` = `tdf` follows `mediad.conf`. |
 | `YI_CLOUD` | `yes`/`no`/empty | Run the stock Yi cloud daemons; empty = on unless `IS_MEDIAD=yes`. |
 | `SSH_PASSWORD` | text | Root SSH password; hashed at boot, never stored in `/etc`. Empty = locked (no password login). |
@@ -248,11 +248,16 @@ and is the only encoder path on which H.265 is advertised.
 The published release image is **rmm-only**. To add `mediad`:
 
 - **Existing yi-protect install** — overlay the yi-mediad package onto the card;
-  its installer flips `IS_MEDIAD=yes`, reroutes `init.sh`/`watchdog.sh`, and
-  keeps `.pre-mediad` backups.
+  its installer copies the files, reroutes `init.sh`/`watchdog.sh`, and keeps
+  `.pre-mediad` backups.
 - **Fresh camera** — install yi-protect first, then overlay; or build a
   `mediad`-bundled image from source (build the yi-mediad package first so
   `build_sd.sh` picks up its `dist/`).
+
+`IS_MEDIAD` defaults to `auto`: the boot scripts run `mediad` whenever it is
+fully installed (`bin/mediad` + `script/mediad.sh` + `lib/libvenc_base.so`) and
+fall back to stock `rmm` otherwise, so an overlay needs no config edit. Set
+`IS_MEDIAD=no` to force `rmm`, or `yes` to require `mediad`.
 
 Full instructions for both starting points are in the yi-mediad repo:
 [`package/README.md`](https://github.com/hutchx86/yi-mediad/blob/main/package/README.md).

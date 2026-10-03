@@ -28,24 +28,26 @@ fi
 CONF="$YIP_PREFIX/etc/yi-protect.cfg"
 get_cfg() { grep -E "^$1=" "$CONF" 2>/dev/null | cut -d= -f2-; }
 
+# Encoder path (shared with init.sh): resolve once. YIP_ENCODER is exported so
+# the bridge/client the watchdog (re)starts declare the matching model_table
+# geometry. A missing helper (partial card) -> rmm.
+if [ -r "$YIP_PREFIX/script/encoder.sh" ]; then
+    . "$YIP_PREFIX/script/encoder.sh"
+    encoder_resolve
+else
+    ENCODER=rmm; ENCODER_REASON="rmm (encoder.sh missing)"
+fi
+export YIP_ENCODER="$ENCODER"
+
 INTERVAL=${WATCHDOG_INTERVAL:-$(get_cfg WATCHDOG_INTERVAL)}
 [ -z "$INTERVAL" ] && INTERVAL=10
 RESOLUTION=$(get_cfg RESOLUTION); [ -z "$RESOLUTION" ] && RESOLUTION=both
 AUDIO=$(get_cfg AUDIO); [ -z "$AUDIO" ] && AUDIO=aac
 YI_CLOUD=$(get_cfg YI_CLOUD)
 if [ -z "$YI_CLOUD" ]; then
-    # Default on, except on mediad builds (IS_MEDIAD=yes): mediad replaces the
+    # Default on, except when the mediad encoder is active: mediad replaces the
     # stock encoder daemon and the Yi cloud is not run alongside it.
-    if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
-fi
-
-# Encoder path (must match init.sh): exported so the bridge/client it (re)starts
-# select the matching model_table geometry (mediad streams native geometry where
-# the stock rmm upscales).
-if [ "$(get_cfg IS_MEDIAD)" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PREFIX/script/mediad.sh" ]; then
-    export YIP_ENCODER=mediad
-else
-    export YIP_ENCODER=rmm
+    if [ "$ENCODER" = "mediad" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
 fi
 
 # PIDs whose argv[0] equals $1 or has the same basename (a substring grep would
@@ -176,6 +178,7 @@ case "$1" in
         restart_cmd "$2"; exit $?
         ;;
     status)
+        echo "encoder: $ENCODER ($ENCODER_REASON)"
         for _s in bridge avclient talkback; do
             echo "$_s: $(pids_of "$(proc_name $_s)")"
         done
@@ -201,10 +204,9 @@ while true; do
     sleep "$INTERVAL"
     lock_take || { log "lock busy, skipping pass"; continue; }
 
-    # Encoder: mediad (drop-in) if opted in/installed, else stock rmm. Match the
-    # daemon binary path, not "mediad" (mediad.sh's launcher line also contains it).
-    IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
-    if [ "$IS_MEDIAD" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PREFIX/script/mediad.sh" ]; then
+    # Encoder: the boot-resolved choice ($ENCODER). Match the daemon binary path,
+    # not "mediad" (mediad.sh's launcher line also contains it).
+    if [ "$ENCODER" = "mediad" ]; then
         if alive "$YIP_PREFIX/bin/mediad"; then
             [ "$RMM_FAILS" -ne 0 ] && log "mediad present again (was $RMM_FAILS fails)"
             RMM_FAILS=0

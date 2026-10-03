@@ -417,3 +417,31 @@ func TestOsdSettingsResponseEchoesRequest(t *testing.T) {
 		t.Fatal("_2 missing defaults")
 	}
 }
+
+// mediadDecision resolves IS_MEDIAD (yes/no/auto) plus the boot scripts'
+// YIP_ENCODER into the advanced-control gate: YIP_ENCODER is authoritative,
+// else auto/yes enable mediad only when it is installed.
+func TestMediadDecision(t *testing.T) {
+	cases := []struct {
+		env, mode string
+		installed bool
+		want      bool
+	}{
+		{"mediad", "no", false, true},    // YIP_ENCODER wins over config
+		{"rmm", "yes", true, false},      // ... both ways
+		{"  MeDiAd ", "no", false, true}, // trimmed/lower-cased
+		{"", "no", true, false},          // forced off
+		{"", "yes", true, true},          // forced on, installed
+		{"", "yes", false, false},        // forced on, not installed -> rmm
+		{"", "auto", true, true},         // auto, installed -> mediad
+		{"", "auto", false, false},       // auto, not installed -> rmm
+		{"", "", true, true},             // absent behaves as auto
+		{"", "", false, false},
+	}
+	for _, c := range cases {
+		if got := mediadDecision(c.env, c.mode, c.installed); got != c.want {
+			t.Errorf("mediadDecision(env=%q mode=%q installed=%v) = %v, want %v",
+				c.env, c.mode, c.installed, got, c.want)
+		}
+	}
+}

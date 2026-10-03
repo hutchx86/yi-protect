@@ -72,6 +72,11 @@ type Config struct {
 	// mediad is detected, picture settings go to its control socket (mediad_ctl.go).
 	IsMediad bool
 
+	// MediadMode is the raw yi-protect.cfg IS_MEDIAD value ("yes"/"no"/"auto");
+	// resolveMediad() turns it, plus the boot scripts' YIP_ENCODER and whether
+	// mediad is installed, into the effective IsMediad.
+	MediadMode string
+
 	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false, as
 	// Protect re-sends enable3dnr=1 on every connect and would override mediad.
 	Mediad3DNR bool
@@ -2256,8 +2261,8 @@ func main() {
 		cfg.FWVersion = v
 	}
 	if v := yipCfg["IS_MEDIAD"]; v != "" {
-		cfg.IsMediad = isTruthy(v)
-		log.Printf("yi-protect.cfg: is_mediad %q -> %v", v, cfg.IsMediad)
+		cfg.MediadMode = strings.ToLower(strings.TrimSpace(v))
+		log.Printf("yi-protect.cfg: is_mediad %q", cfg.MediadMode)
 	}
 	cfg.WebUIPort = 80
 	if v := yipCfg["WEBUI_PORT"]; v != "" {
@@ -2308,7 +2313,10 @@ func main() {
 	keyFile := flag.String("key", cfg.KeyFile, "client key path (PEM)")
 	noDiscovery := flag.Bool("no-discovery", false, "disable the UDP 10001 discovery responder")
 	ptz := flag.Bool("ptz", cfg.HasPTZ, "declare PTZ (pan/tilt/zoom) hardware capability -- only for units with a real motorized pan/tilt base")
-	mediad := flag.Bool("mediad", cfg.IsMediad, "enable advanced picture controls via the custom mediad rmm replacement (requires yi-protect.cfg IS_MEDIAD=yes and a running mediad)")
+	// Resolve IS_MEDIAD (yes/no/auto) + the boot scripts' YIP_ENCODER into the
+	// effective gate; -mediad overrides it just below.
+	cfg.IsMediad = resolveMediad()
+	mediad := flag.Bool("mediad", cfg.IsMediad, "enable advanced picture controls via the custom mediad rmm replacement (IS_MEDIAD=yes/auto with a running mediad)")
 	guid := flag.String("guid", "ffffffff-ffff-ffff-ffff-ffffffffffff", "device GUID advertised in discovery (default matches an unset/unadopted board.guid)")
 	deviceIDFile := flag.String("device-id-file", yipPrefix+"/etc/yi_protect_client_go.device-id", "path to persist the stable per-device adoption UUID (device-id header / discovery 0x26 TLV)")
 	manageAwaitFile := flag.String("manage-await-file", manageAwaitFilePath, "path used to persist 'awaiting controller adopt push' state across a ResetToDefaults reboot (see manage.go)")

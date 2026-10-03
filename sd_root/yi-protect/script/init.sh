@@ -7,6 +7,18 @@
 
 YIP_PREFIX="/tmp/sd/yi-protect"
 CONF="$YIP_PREFIX/etc/yi-protect.cfg"
+
+# Encoder selection (shared with watchdog.sh): resolve once, before YI_CLOUD
+# below needs it. encoder.sh sets ENCODER/ENCODER_REASON; YIP_ENCODER is the
+# contract the bridge/client read. A missing helper (partial card) -> rmm.
+if [ -r "$YIP_PREFIX/script/encoder.sh" ]; then
+    . "$YIP_PREFIX/script/encoder.sh"
+    encoder_resolve
+else
+    ENCODER=rmm; ENCODER_REASON="rmm (encoder.sh missing)"
+fi
+export YIP_ENCODER="$ENCODER"
+
 # model_suffix is boot-generated (detect-model.sh). Regenerate if a fresh card or
 # a lost write left it empty, so the app never starts on the wrong model.
 MODEL_SUFFIX=$(cat "$YIP_PREFIX/etc/model_suffix" 2>/dev/null)
@@ -31,9 +43,9 @@ AUDIO=$(get_cfg AUDIO); [ -z "$AUDIO" ] && AUDIO=aac
 WATCHDOG_INTERVAL=$(get_cfg WATCHDOG_INTERVAL); [ -z "$WATCHDOG_INTERVAL" ] && WATCHDOG_INTERVAL=10
 YI_CLOUD=$(get_cfg YI_CLOUD)
 if [ -z "$YI_CLOUD" ]; then
-    # Default on, except on mediad builds (IS_MEDIAD=yes): mediad replaces the
+    # Default on, except when the mediad encoder is active: mediad replaces the
     # stock encoder daemon and the Yi cloud is not run alongside it.
-    if [ "$(get_cfg IS_MEDIAD)" = "yes" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
+    if [ "$ENCODER" = "mediad" ]; then YI_CLOUD=no; else YI_CLOUD=yes; fi
 fi
 
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/home/base/tools:/home/app/localbin:/home/base:$YIP_PREFIX/bin
@@ -271,13 +283,11 @@ if grep -q 'libvenc_codec.so' "$YIP_PREFIX/bin/mediad" 2>/dev/null; then
     done
 fi
 
-# Media daemon: mediad (sister project's rmm replacement) if installed, else
-# stock rmm; both publish /dev/shm/fshare_frame_buf. Never run both at once.
-IS_MEDIAD=$(get_cfg IS_MEDIAD); [ -z "$IS_MEDIAD" ] && IS_MEDIAD=no
-if [ "$IS_MEDIAD" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PREFIX/script/mediad.sh" ]; then
-    # Tell the bridge/client which encoder is live so they declare the matching
-    # model_table geometry (h51ga: mediad streams native 1080p, rmm upscales to 2K).
-    export YIP_ENCODER=mediad
+# Media daemon: the encoder resolved above (mediad drop-in or stock rmm); both
+# publish /dev/shm/fshare_frame_buf. Never run both at once. YIP_ENCODER is
+# already exported for the bridge/client.
+echo "init: encoder $ENCODER_REASON"
+if [ "$ENCODER" = "mediad" ]; then
     # CABAC is the encoder default (cabac_init_idc=1); do not pin cabac=0.
     # overlay=1 enables the burned-in OSD overlay path.
     export FREECODEC_EXTRA="overlay=1"
@@ -286,7 +296,6 @@ if [ "$IS_MEDIAD" = "yes" ] && [ -x "$YIP_PREFIX/bin/mediad" ] && [ -x "$YIP_PRE
     sleep 2
     [ "$YI_CLOUD" = "yes" ] && start_yi_cloud
 else
-    export YIP_ENCODER=rmm
     cd /home/app
     sleep 2
     # Load the SD-shipped patched libasound (the only one with the /tmp/audio_in_fifo
