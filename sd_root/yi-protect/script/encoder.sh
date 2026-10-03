@@ -22,7 +22,7 @@ encoder_resolve() {
     _p="${YIP_PREFIX:-/tmp/sd/yi-protect}"
     _want=auto
     if [ -f "$_p/etc/yi-protect.cfg" ]; then
-        _want=$(sed -n 's/^IS_MEDIAD=//p' "$_p/etc/yi-protect.cfg" 2>/dev/null | tail -1)
+        _want=$(awk -F= '/^IS_MEDIAD=/{print $2; exit}' "$_p/etc/yi-protect.cfg" 2>/dev/null)
         _want=$(printf '%s' "$_want" | tr -d "[:space:]'\"" | tr '[:upper:]' '[:lower:]')
         [ -n "$_want" ] || _want=auto
     fi

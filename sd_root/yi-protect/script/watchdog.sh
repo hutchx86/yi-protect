@@ -178,7 +178,7 @@ case "$1" in
         restart_cmd "$2"; exit $?
         ;;
     status)
-        echo "encoder: $ENCODER ($ENCODER_REASON)"
+        echo "encoder: $ENCODER_REASON"
         for _s in bridge avclient talkback; do
             echo "$_s: $(pids_of "$(proc_name $_s)")"
         done
