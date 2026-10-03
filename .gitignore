@@ -3,41 +3,41 @@ devices.md
 *.img
 *.key
 
-# Built Go binaries — source lives in *.go
-work/goclient/yi_protect_avclient_*
-
 # Downloaded material (toolchains, caches, upstream archives, controller dumps) — never in git
 file_downloads/
 
-# SD-card build output (assembled by work/build_sd.sh)
-work/build/
-work/sd_root/yi-protect/bin/
-work/sd_root/yi-protect/lib/
-work/sd_root/yi-protect/script/lower_half/
+# Build dependencies (local: ../repos; the release CI clones into ./repos).
+/repos/
+
+# SD-card build output (assembled by build_sd.sh)
+build/
+sd_root/yi-protect/bin/
+sd_root/yi-protect/lib/
+sd_root/yi-protect/script/lower_half/
 # mediad files copied in from sisters/yi-mediad/dist by build_sd.sh (generated).
-work/sd_root/yi-protect/script/mediad.sh
-work/sd_root/yi-protect/etc/mediad.conf
-work/sd_root/yi-protect/etc/mediad.env
-work/sd_root/yi-protect/etc/mediad.*.env
+sd_root/yi-protect/script/mediad.sh
+sd_root/yi-protect/etc/mediad.conf
+sd_root/yi-protect/etc/mediad.env
+sd_root/yi-protect/etc/mediad.*.env
 # License files copied into the SD image by build_sd.sh (generated).
-work/sd_root/LICENSE
-work/sd_root/licenses/
-work/sd_root/NOTICE
-work/sd_root/SOURCES.txt
-work/yi-protect-*.tar.gz
-work/SHA256SUMS
+sd_root/LICENSE
+sd_root/licenses/
+sd_root/NOTICE
+sd_root/SOURCES.txt
+yi-protect-*.tar.gz
+SHA256SUMS
 
 # Runtime per-camera identity written onto the SD card by a booted camera.
 # Never tracked, never shipped (build_sd.sh refuses to package it).
-work/sd_root/yi-protect/etc/model_suffix
-work/sd_root/yi-protect/etc/yi_protect_client_go.device-id
-work/sd_root/yi-protect/etc/yi_protect_client_go.adoption-uuid
-work/sd_root/yi-protect/etc/yi_protect_client_go.adopted
-work/sd_root/yi-protect/etc/yi_protect_client_go.device-name
-work/sd_root/yi-protect/etc/yi_protect_client_go.inform-host*
-work/sd_root/yi-protect/etc/configure_wifi.cfg
-work/sd_root/yi-protect/etc/dropbear/
-work/sd_root/yi-protect/log/
+sd_root/yi-protect/etc/model_suffix
+sd_root/yi-protect/etc/yi_protect_client_go.device-id
+sd_root/yi-protect/etc/yi_protect_client_go.adoption-uuid
+sd_root/yi-protect/etc/yi_protect_client_go.adopted
+sd_root/yi-protect/etc/yi_protect_client_go.device-name
+sd_root/yi-protect/etc/yi_protect_client_go.inform-host*
+sd_root/yi-protect/etc/configure_wifi.cfg
+sd_root/yi-protect/etc/dropbear/
+sd_root/yi-protect/log/
 *.applied
 
 # Compiled build artifacts
@@ -46,41 +46,21 @@ work/sd_root/yi-protect/log/
 *.a
 *.so
 __pycache__/
-work/flv_bridge/yi_protect_flv_bridge
-work/snapshot/yi_protect_snapshot
+goclient/yi_protect_avclient_*
+flv_bridge/yi_protect_flv_bridge
+snapshot/yi_protect_snapshot
 
 # local agent settings (may contain pasted credentials)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
 # ---------------------------------------------------------------------------
-# Public-repo hygiene (2026-09-14)
+# Public-repo hygiene
 # ---------------------------------------------------------------------------
 
 # Vendor/extracted assets: third-party copyrighted material. Kept locally for
 # reference only, never committed/published.
 fw_picked/
-
-# Console/controller dumps and captures (vendor ds.json, pcaps, trace logs).
-# Kept on disk only.
-/work/yi-protect/
-
-# Local-only third-party reference clones (not submodules).
-repos/allwinner-isp6xx/
-repos/lindenis-v833-softwinner/
-repos/tinalinux-package/
-# Vendored cross-toolchain (not tracked; cloned manually / by CI for builds).
-repos/toolchain-sunxi-musl/
-repos/lindenis-v536-prebuilt/
-repos/lindenis-v833-prebuilt/
-# Vendor Allwinner SDK (only used by the retired rmm_replacement prototype).
-repos/lindenis-v536-softwinner/
-# Research-only reference clones, no longer submodules.
-repos/onvif_simple_server/
-repos/unifi-guides/
-repos/finch/
-repos/pyunifiwire/
-repos/unifi-cam-proxy/
 
 # Local certs/keys: never publish (private keys, runtime-generated identities).
 *.pem
@@ -114,12 +94,12 @@ known_hosts
 wg*.conf
 *.wg.conf
 
-# Static HTTPS downloader build outputs (work/downloader/build.sh).
-work/downloader/downloader
-work/downloader/build/
+# Static HTTPS downloader build outputs (downloader/build.sh).
+downloader/downloader
+downloader/build/
 
 # legacy unifi-named build outputs (pre-rename, ignore too)
-work/goclient/unifi_avclient_*
-work/goclient/unifi-avclient
-work/flv_bridge/unifi_flv_bridge
-work/snapshot/unifi_snapshot
+goclient/unifi_avclient_*
+goclient/unifi-avclient
+flv_bridge/unifi_flv_bridge
+snapshot/unifi_snapshot

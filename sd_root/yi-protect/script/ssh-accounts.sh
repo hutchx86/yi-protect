@@ -11,7 +11,7 @@
 #                   UniFi camera. SSH_PASSWORD, and also the controller's device
 #                   password: etc/ssh_protect ("user:$6$...") is copied to
 #                   /etc/ssh_protect, which our dropbear patch checks
-#                   (work/dropbear/yp_extra_auth.c).
+#                   (dropbear/yp_extra_auth.c).
 #
 # An empty SSH_PASSWORD locks that password ("!"); there is no default and no
 # blank login. PROTECT_SSH defaults to off: /etc/ssh_protect is then left

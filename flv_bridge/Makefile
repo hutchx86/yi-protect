@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# Build yi_protect_flv_bridge. The cross-compiler is supplied by work/build_sd.sh
+# Build yi_protect_flv_bridge. The cross-compiler is supplied by build_sd.sh
 # (CXX=arm-openwrt-linux-g++); a native build works too for logic testing.
 CXX ?= g++
 CXXFLAGS ?= -O2 -Wall -std=gnu++14
@@ -15,7 +15,7 @@ EXTRA_INC = $(if $(FAAD2),-I$(FAAD2)/include) $(if $(OPUS),-I$(OPUS)/include)
 EXTRA_LIB = $(if $(FAAD2),$(FAAD2)/libfaad.a) $(if $(OPUS),$(OPUS)/.libs/libopus.a)
 
 # `override` so these survive a CXXFLAGS=... on the make command line
-# (work/build_sd.sh passes one).
+# (build_sd.sh passes one).
 override CXXFLAGS += $(EXTRA_INC)
 override LDLIBS += $(EXTRA_LIB) -lm
 

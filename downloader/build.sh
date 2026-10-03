@@ -5,14 +5,15 @@
 # Build the fully static armv7/musl HTTPS downloader (downloader.c + mbedTLS,
 # fetched from upstream and checksum-verified, linked statically).
 #
-# Toolchain: the same sunxi-musl cross-toolchain as work/build_sd.sh (which
+# Toolchain: the same sunxi-musl cross-toolchain as build_sd.sh (which
 # calls this script). Standalone: set TCBIN to its bin/ directory, or
 # TOOLCHAIN_DIR to a clone of lindenis-org/lindenis-v536-prebuilt.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+REPOS_DIR="${REPOS_DIR:-$ROOT/../repos}"
 
-TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$ROOT/repos/toolchain-sunxi-musl}"
+TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$REPOS_DIR/toolchain-sunxi-musl}"
 TCBIN="${TCBIN:-$TOOLCHAIN_DIR/gcc/linux-x86/arm/toolchain-sunxi-musl/toolchain/bin}"
 XP=arm-openwrt-linux-
 CC="$TCBIN/${XP}gcc"

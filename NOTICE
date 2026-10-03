@@ -27,8 +27,8 @@ Third-party components
 
 This project is built on, and the compiled SD image redistributes, the
 following upstream projects. Their licenses apply to their respective
-portions. Full per-component license texts are in `licenses/`. Each release
-tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
+portions. Full per-component license texts are in `LICENSES/`. Each release
+tarball ships this NOTICE, the LICENSE, the `LICENSES/` texts, and a
 `SOURCES.txt` with the corresponding source locations and a written offer.
 
 * yi-hack-Allwinner-v2  -- https://github.com/roleoroleo/yi-hack-Allwinner-v2
@@ -36,23 +36,23 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
   set_tz_offset, dropbearmulti, and alsa-lib patched for audio-FIFO support)
   are built from this tree at build time. Mixed licensing: the repo
   `LICENSE` file is MIT, but several components are GPL-3.0 (notably ipc_cmd /
-  libipc; GPL-3.0 text: licenses/GPL-3.0.txt) -- see that project.
+  libipc; GPL-3.0 text: LICENSES/GPL-3.0.txt) -- see that project.
   `set_tz_offset` ships no license header in its source.
   `yi-protect/script/ethdhcp.sh` and `wifidhcp.sh` are modified from this tree's
   MIT-licensed `script/ethdhcp.sh` and `script/wifidhcp.sh`, and the sed
   edits / init block in `yi-protect/install/install-backup-hook.sh` derive from its
   MIT-licensed `Factory/config.sh`; the upstream MIT notice is in
-  licenses/yi-hack-Allwinner-v2-MIT.txt and our changes are
+  LICENSES/yi-hack-Allwinner-v2-MIT.txt and our changes are
   AGPL-3.0-or-later.
 
 * libipc -- https://github.com/TheCrypt0/libipc
   Upstream library that yi-hack's `ipc_cmd` and `ipc_multiplex.so` derive from.
-  GPL-3.0. License text: licenses/GPL-3.0.txt.
+  GPL-3.0. License text: LICENSES/GPL-3.0.txt.
 
 * roleo's rRTSPServer -- https://github.com/roleoroleo/yi-hack-Allwinner
   The fshare shared-memory framing and the original video-push path were
   reverse engineered with reference to this GPLv3 project. `yi_protect_flv_bridge`
-  is now an independent implementation (work/flv_bridge); neither rRTSPServer
+  is now an independent implementation (flv_bridge); neither rRTSPServer
   nor LIVE555 is compiled into it any more.
 
 * FAAD2 -- https://github.com/knik0/faad2
@@ -63,13 +63,13 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
   source is not in this repository, but the compiled SD image redistributes it
   statically linked into those two binaries, so the corresponding source is
   covered by the written offer in SOURCES.txt. License text:
-  licenses/faad2-GPL-2.0.txt.
+  LICENSES/faad2-GPL-2.0.txt.
 
 * libopus -- https://opus-codec.org/
   Used by talkback_rx for RTP/Opus decode and by yi_protect_flv_bridge to encode the
   transcoded FLV type-10 audio track. Copyright Xiph.Org and contributors.
   Version 1.5.2, linked statically. BSD-3-Clause. License text:
-  licenses/libopus-BSD-3-Clause.txt.
+  LICENSES/libopus-BSD-3-Clause.txt.
 
 * gorilla/websocket -- https://github.com/gorilla/websocket
   WebSocket transport for the Go avclient. Copyright (c) 2013 The Gorilla
@@ -77,7 +77,7 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
 
 * Go runtime and standard library -- https://go.dev/
   Compiled into the Go avclient (`yi_protect_avclient_go`). Copyright (c) 2009 The
-  Go Authors. BSD-3-Clause. License text: licenses/go-runtime-BSD-3-Clause.txt.
+  Go Authors. BSD-3-Clause. License text: LICENSES/go-runtime-BSD-3-Clause.txt.
 
 * alsa-lib -- https://www.alsa-project.org/
   The patched `libasound.so.2` is derived from alsa-lib 1.1.4.1 (LGPL-2.1)
@@ -97,24 +97,24 @@ tarball ships this NOTICE, the LICENSE, the `licenses/` texts, and a
 
 * Dropbear SSH -- https://matt.ucc.asn.au/dropbear/dropbear.html
   MIT-style license. Built from the upstream 2026.91 release with our patch
-  (work/dropbear/, AGPL-3.0-or-later) for a second password per account.
+  (dropbear/, AGPL-3.0-or-later) for a second password per account.
 
 * musl libc SHA-512 crypt -- https://musl.libc.org/
-  work/dropbear/yp_crypt_sha512.c is musl 1.2.5 src/crypt/crypt_sha512.c,
+  dropbear/yp_crypt_sha512.c is musl 1.2.5 src/crypt/crypt_sha512.c,
   public domain, unchanged apart from its entry-point name; compiled into the
   distributed `dropbearmulti`.
 
 * musl libc -- https://musl.libc.org/
   The toolchain's musl libc is linked statically into the distributed
-  `downloader` (work/downloader); all other binaries link the camera's libc
-  dynamically. MIT. License text: licenses/musl-MIT.txt.
+  `downloader` (downloader); all other binaries link the camera's libc
+  dynamically. MIT. License text: LICENSES/musl-MIT.txt.
 
 * Mbed TLS -- https://github.com/Mbed-TLS/mbedtls
-  TLS for the static `downloader` (work/downloader). Version 2.28.8 is fetched
+  TLS for the static `downloader` (downloader). Version 2.28.8 is fetched
   (checksum-verified) and built from upstream source at build time and linked
   statically into that binary. Apache-2.0 OR GPL-2.0-or-later; we take it
   under Apache-2.0. License text:
-  licenses/mbedtls-Apache-2.0-OR-GPL-2.0-or-later.txt.
+  LICENSES/mbedtls-Apache-2.0-OR-GPL-2.0-or-later.txt.
 
 
 Disclaimer

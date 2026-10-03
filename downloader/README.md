@@ -27,7 +27,7 @@ acceptable. To verify instead, put a CA bundle on the SD card and pass
 
 ## Build
 
-`work/build_sd.sh` runs `build.sh` with its toolchain. Standalone:
+`build_sd.sh` runs `build.sh` with its toolchain. Standalone:
 
 ```
 TCBIN=/path/to/toolchain-sunxi-musl/gcc/linux-x86/arm/toolchain-sunxi-musl/toolchain/bin sh build.sh

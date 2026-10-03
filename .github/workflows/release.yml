@@ -17,10 +17,10 @@ jobs:
   build-sd:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    env:
+      REPOS_DIR: ${{ github.workspace }}/repos
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-go@v5
         with:
@@ -31,28 +31,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake wget patch build-essential
 
-      - name: Clone cross-toolchain
+      # Build dependencies are not vendored. Clone them into REPOS_DIR: the
+      # pinned yi-hack tree (dropbear/alsa/IPC helpers) and the cross-toolchain.
+      - name: Clone build dependencies
         run: |
+          mkdir -p "$REPOS_DIR"
+          git clone --depth 1 \
+            https://github.com/roleoroleo/yi-hack-Allwinner-v2 \
+            "$REPOS_DIR/yi-hack-Allwinner-v2"
           git clone --depth 1 \
             https://github.com/lindenis-org/lindenis-v536-prebuilt \
-            repos/toolchain-sunxi-musl
+            "$REPOS_DIR/toolchain-sunxi-musl"
 
       - name: Build SD package
-        run: sh work/build_sd.sh
+        run: sh build_sd.sh
 
       - name: Checksum
-        run: cd work && sha256sum yi-protect-*.tar.gz > SHA256SUMS
+        run: sha256sum yi-protect-*.tar.gz > SHA256SUMS
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
           files: |
-            work/yi-protect-*.tar.gz
-            work/SHA256SUMS
+            yi-protect-*.tar.gz
+            SHA256SUMS
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: yi-protect-sd
-          path: work/yi-protect-*.tar.gz
+          path: yi-protect-*.tar.gz

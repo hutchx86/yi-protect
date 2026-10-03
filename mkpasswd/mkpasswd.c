@@ -9,7 +9,7 @@
  * yi-protect.cfg's SSH_PASSWORD through this and installs the result as the shadow
  * entry of root and the Protect user (the stock image ships an empty root
  * password). The controller's SHA-512 credential is checked separately by our
- * dropbear patch (work/dropbear/).
+ * dropbear patch (dropbear/).
  *
  * Usage:
  *   mkpasswd <password>

@@ -2,23 +2,24 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 yi-protect contributors
 #
-# Build the self-contained SD-card layout (work/sd_root/) from source and
-# package it as work/yi-protect-<rev>.tar.gz. Prerequisites are checked below.
+# Build the self-contained SD-card layout (sd_root/) from source and
+# package it as yi-protect-<rev>.tar.gz. Prerequisites are checked below.
 
 set -e
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SD="$ROOT/work/sd_root"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+SD="$ROOT/sd_root"
 YIP="$SD/yi-protect"
 BIN="$YIP/bin"
 LIB="$YIP/lib"
 ETC="$YIP/etc"
-YH="$ROOT/repos/yi-hack-Allwinner-v2"
+REPOS_DIR="${REPOS_DIR:-$ROOT/../repos}"
+YH="$REPOS_DIR/yi-hack-Allwinner-v2"
 # Generic armv7-a hard-float musl cross-toolchain; the lindenis v536 and v833
 # prebuilts ship the same compiler. Point TOOLCHAIN_DIR at a clone of either.
-TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$ROOT/repos/toolchain-sunxi-musl}"
+TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$REPOS_DIR/toolchain-sunxi-musl}"
 TCDIR="$TOOLCHAIN_DIR/gcc/linux-x86/arm/toolchain-sunxi-musl"
 TCBIN="$TCDIR/toolchain/bin"
-BUILD="$ROOT/work/build"
+BUILD="$ROOT/build"
 YHB="$BUILD/yi-hack"
 
 # Optional clean-room mediad (sister project yi-mediad). When this dist exists it
@@ -34,7 +35,7 @@ export STAGING_DIR="$TCDIR"
 
 echo "== prerequisites =="
 [ -x "$TCBIN/arm-openwrt-linux-gcc" ] || { echo "ERROR: cross-toolchain missing ($TCBIN). Clone lindenis-org/lindenis-v536-prebuilt into $TOOLCHAIN_DIR (or set TOOLCHAIN_DIR)."; exit 1; }
-[ -d "$YH/src" ] || { echo "ERROR: yi-hack submodule missing ($YH). Run: git submodule update --init --recursive"; exit 1; }
+[ -d "$YH/src" ] || { echo "ERROR: yi-hack tree missing ($YH). Clone roleoroleo/yi-hack-Allwinner-v2 into $REPOS_DIR (or set REPOS_DIR)."; exit 1; }
 command -v cmake >/dev/null 2>&1 || { echo "ERROR: cmake not found (needed for libjpeg-turbo). Try: python3 -m pip install --user cmake"; exit 1; }
 
 XP=arm-openwrt-linux-
@@ -61,10 +62,10 @@ sed -i \
 sed -i 's|/tmp/sd/yi-hack|/tmp/sd/yi-protect|g' "$YHB/src/dropbear/localoptions.h"
 
 # dropbear: second per-account password (controller device credential, SHA-512
-# crypt; work/dropbear/yp_extra_auth.c), patched in after the tarball unpacks.
+# crypt; dropbear/yp_extra_auth.c), patched in after the tarball unpacks.
 mkdir -p "$YHB/src/dropbear/yp"
-cp "$ROOT"/work/dropbear/yp_crypt_sha512.c "$ROOT"/work/dropbear/yp_extra_auth.c \
-   "$ROOT"/work/dropbear/svr-authpasswd.patch "$YHB/src/dropbear/yp/"
+cp "$ROOT"/dropbear/yp_crypt_sha512.c "$ROOT"/dropbear/yp_extra_auth.c \
+   "$ROOT"/dropbear/svr-authpasswd.patch "$YHB/src/dropbear/yp/"
 sed -i 's#^cp ../localoptions.h ./ || exit 1$#&\ncp ../yp/yp_*.c src/ \&\& patch -p1 -s < ../yp/svr-authpasswd.patch || exit 1#' \
     "$YHB/src/dropbear/init.dropbear"
 grep -q 'svr-authpasswd.patch' "$YHB/src/dropbear/init.dropbear" || \
@@ -168,41 +169,41 @@ fi
 
 # 4. This project's own code.
 echo "== 4/6 our components (yi_protect_avclient_go, cpld_ctl, talkback_rx, yi_protect_flv_bridge, downloader) =="
-( cd "$ROOT/work/goclient"
+( cd "$ROOT/goclient"
   CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 CC="$CC" \
       go build -trimpath -ldflags="-s -w" -o "$BIN/yi_protect_avclient_go" . )
 
-"$CC" -O2 -o "$BIN/cpld_ctl" "$ROOT/work/cpld_ctl/cpld_ctl.c"
+"$CC" -O2 -o "$BIN/cpld_ctl" "$ROOT/cpld_ctl/cpld_ctl.c"
 "$STRIP" "$BIN/cpld_ctl"
 
 # mkpasswd: MD5-crypt helper for yi-protect.cfg SSH_PASSWORD; the camera libc has
 # no cryptpw applet/openssl, so init.sh needs our own crypt() call.
-"$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/work/mkpasswd/mkpasswd.c"
+"$CC" -O2 -o "$BIN/mkpasswd" "$ROOT/mkpasswd/mkpasswd.c"
 "$STRIP" "$BIN/mkpasswd"
 
 # Static HTTPS downloader (downloader.c + mbedTLS): the camera has no https
 # client/CA store, so init.sh uses it with -k to fetch the md5-checked H.264 libs.
-TCBIN="$TCBIN" sh "$ROOT/work/downloader/build.sh"
-cp "$ROOT/work/downloader/downloader" "$BIN/downloader"
+TCBIN="$TCBIN" sh "$ROOT/downloader/build.sh"
+cp "$ROOT/downloader/downloader" "$BIN/downloader"
 
 # mixer_set: maps the controller's mic volume onto the codec capture element
 # (analog of a real camera's UBNT_CVOLUME write); links the step-2 alsa-lib.
 ALSASRC=$(printf '%s\n' "$YHB"/src/alsa-lib/alsa-lib-* | sed -n '1p')
-"$CC" -O2 -Wall -o "$BIN/mixer_set" "$ROOT/work/mixer_set/mixer_set.c" \
+"$CC" -O2 -Wall -o "$BIN/mixer_set" "$ROOT/mixer_set/mixer_set.c" \
     -I"$ALSASRC/include" "$YHB/src/alsa-lib/_install/lib/libasound.so.2" -lpthread
 "$STRIP" "$BIN/mixer_set"
 
 FAAD2="$BUILD/faad2-$FAAD2_VER"
 
 # Our FlvPush/FshareReader bridge; FAAD2/OPUS feed its AAC->Opus transcode.
-( cd "$ROOT/work/flv_bridge"
+( cd "$ROOT/flv_bridge"
   make -s clean
   make -s CXX="$CXX" CXXFLAGS="-O2 -Wall -std=gnu++14" \
       FAAD2="$FAAD2" OPUS="$OPUS_DIR" yi_protect_flv_bridge
   "$STRIP" yi_protect_flv_bridge
   cp yi_protect_flv_bridge "$BIN/yi_protect_flv_bridge" )
 
-( cd "$ROOT/work/talkback/rx"
+( cd "$ROOT/talkback/rx"
   "$CC" -O2 -o "$BIN/talkback_rx" talkback_rx.c \
       -I"$FAAD2/include" -I"$OPUS_DIR/include" \
       "$FAAD2/libfaad.a" "$OPUS_DIR/.libs/libopus.a" -lm )
@@ -210,10 +211,10 @@ FAAD2="$BUILD/faad2-$FAAD2_VER"
 
 # yi_protect_snapshot: Protect GetRequest JPEG from the ring's keyframe (our own
 # replacement for yi-hack's imggrabber); reuses the bridge's ring reader.
-( cd "$ROOT/work/snapshot"
+( cd "$ROOT/snapshot"
   make -s clean
   make -s CXX="$CXX" CXXFLAGS="-O2 -Wall -std=gnu++14" \
-      FLV="$ROOT/work/flv_bridge" FFMPEG_DIR="$FFMPEG_DIR" JPEG_DIR="$JPEG_DIR" \
+      FLV="$ROOT/flv_bridge" FFMPEG_DIR="$FFMPEG_DIR" JPEG_DIR="$JPEG_DIR" \
       yi_protect_snapshot
   "$STRIP" yi_protect_snapshot
   cp yi_protect_snapshot "$BIN/yi_protect_snapshot" )
@@ -277,7 +278,7 @@ rmdir "$LHDIR" 2>/dev/null || true
 cp "$ROOT/LICENSE" "$SD/LICENSE"
 cp "$ROOT/NOTICE"  "$SD/NOTICE"
 rm -rf "$SD/licenses"
-cp -R "$ROOT/licenses" "$SD/licenses"
+cp -R "$ROOT/LICENSES" "$SD/licenses"
 # mediad's own third-party notices (AGPL clean-room, Terminus font, FAAC, ...).
 if [ -d "$MEDIAD_DIST/licenses" ]; then
     cp -R "$MEDIAD_DIST/licenses" "$SD/licenses/mediad"
@@ -291,7 +292,7 @@ redistributes compiled third-party components. License texts are in LICENSE,
 NOTICE and licenses/. The project's own source is at
 https://github.com/hutchx86/yi-protect . Components shipped in this image:
 
-* yi-hack-Allwinner-v2 (pinned submodule commit; ipc_cmd, ipc_multiplex.so,
+* yi-hack-Allwinner-v2 (pinned commit; ipc_cmd, ipc_multiplex.so,
   set_tz_offset, dropbearmulti, patched alsa-lib)
   https://github.com/roleoroleo/yi-hack-Allwinner-v2          (MIT / GPL-3.0)
 * libipc (ipc_cmd, ipc_multiplex.so)
@@ -306,7 +307,7 @@ https://github.com/hutchx86/yi-protect . Components shipped in this image:
   https://downloads.xiph.org/releases/opus/opus-${OPUS_VER}.tar.gz (BSD-3-Clause)
 * alsa-lib 1.1.4.1 + yi-hack audio-FIFO patch (libasound.so.2)
   https://www.alsa-project.org/files/pub/lib/alsa-lib-1.1.4.1.tar.bz2 (LGPL-2.1)
-* Dropbear 2026.91 + work/dropbear patch (dropbearmulti)
+* Dropbear 2026.91 + dropbear patch (dropbearmulti)
   https://github.com/mkj/dropbear/releases/tag/DROPBEAR_2026.91 (MIT; patch AGPL-3.0-or-later)
 * musl libc (static in downloader; SHA-512 crypt in dropbearmulti)
   https://musl.libc.org/                                      (MIT)
@@ -405,7 +406,7 @@ if [ -d "$SD/yi-protect/log" ]; then
 fi
 
 REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
-PKG="$ROOT/work/yi-protect-$REV.tar.gz"
+PKG="$ROOT/yi-protect-$REV.tar.gz"
 rm -f "$PKG"
 ( cd "$SD" && tar czf "$PKG" . )
 echo "   $PKG ($(du -h "$PKG" | cut -f1))"

@@ -238,36 +238,38 @@ To set WiFi credentials, see [WiFi provisioning](#wifi-provisioning).
 
 ## Build from source
 
-The `repos/yi-hack-Allwinner-v2` submodule and the ~1.2 GB cross-toolchain are
-needed. The toolchain is **not** vendored — clone it to the expected path first:
+The build needs the pinned `yi-hack-Allwinner-v2` tree and a ~1.2 GB
+cross-toolchain. Neither is vendored: clone both into the project's shared
+`repos/` directory (a sibling of this repo; override with `REPOS_DIR`):
 
 ```
-git submodule update --init --recursive
-
+mkdir -p ../repos
+git clone https://github.com/roleoroleo/yi-hack-Allwinner-v2 \
+  ../repos/yi-hack-Allwinner-v2
 git clone https://github.com/lindenis-org/lindenis-v536-prebuilt \
-  repos/toolchain-sunxi-musl
+  ../repos/toolchain-sunxi-musl
 ```
 
 Then:
 
 ```
 # Host-only self-test of the FLV/fshare parser (no cross toolchain needed)
-make -C work/flv_bridge test
+make -C flv_bridge test
 
 # Full SD package: build_sd.sh builds every binary from source (including the
-# static downloader with Mbed TLS) into work/sd_root/ and writes
-# work/yi-protect-<rev>.tar.gz
-work/build_sd.sh
+# static downloader with Mbed TLS) into sd_root/ and writes
+# yi-protect-<rev>.tar.gz
+./build_sd.sh
 
-# Release: runs build_sd.sh, then writes work/yi-protect-<rev>-src.tar.gz
+# Release: runs build_sd.sh, then writes yi-protect-<rev>-src.tar.gz
 # (corresponding source) and SHA256SUMS
-work/release.sh
+./release.sh
 ```
 
-Config lives in `work/sd_root/yi-protect/etc/yi-protect.cfg` (resolution, audio, optional
+Config lives in `sd_root/yi-protect/etc/yi-protect.cfg` (resolution, audio, optional
 static controller override, PTZ auto-detect, optional Yi cloud).
 
-Per-model **facts** live in `work/sd_root/yi-protect/etc/model_table` — one row per
+Per-model **facts** live in `sd_root/yi-protect/etc/model_table` — one row per
 camera (sensor, fshare ring geometry, HIGH-channel resolution, PTZ, an optional
 pinned HIGH bitrate). The bridge,
 the client, the boot scripts, `detect-model.sh` and `build_sd.sh` all read that
@@ -302,7 +304,7 @@ ssh ui@<camera-ip>          # PROTECT_SSH=yes: Protect's device password or SSH_
   it back to `no` (and rebooting) stops a stored credential being accepted.
 - `SSH_PASSWORD` is hashed at boot (MD5-crypt, the scheme the camera's libc
   checks). Protect's SHA-512 hash is checked by a small patch to our Dropbear
-  build (`work/dropbear/`), since the camera's libc cannot verify it.
+  build (`dropbear/`), since the camera's libc cannot verify it.
 - To change either setting, edit `yi-protect.cfg` on the card and reboot. The card
   is FAT, so anyone holding it can read `yi-protect.cfg`; treat the card as a secret.
 
@@ -405,7 +407,7 @@ The project's own code is AGPL-3.0-or-later; the two vendored yi-hack scripts
 (`yi-protect/script/ethdhcp.sh`, `wifidhcp.sh`) are modified from the MIT-licensed
 yi-hack-Allwinner-v2 scripts of the same name and are combined with our code under
 AGPL-3.0-or-later (upstream MIT notice:
-`licenses/yi-hack-Allwinner-v2-MIT.txt`). The compiled SD image additionally
+`LICENSES/yi-hack-Allwinner-v2-MIT.txt`). The compiled SD image additionally
 bundles GPL/LGPL components (yi-hack GPL-3.0 helpers, FAAD2 GPL-2.0-or-later,
 LGPL-2.1 libasound, and FFmpeg/libjpeg-turbo statically linked into
 `yi_protect_snapshot`); the release tarball includes `LICENSE`, `NOTICE` and

@@ -3,40 +3,41 @@
 # Copyright (C) 2026 yi-protect contributors
 #
 # Build the SD-card package and optionally publish it as a GitHub release:
-#   work/release.sh | PUBLISH=1 work/release.sh | TAG=v1.0.0 PUBLISH=1 work/release.sh
+#   release.sh | PUBLISH=1 release.sh | TAG=v1.0.0 PUBLISH=1 release.sh
 
 set -e
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-sh "$ROOT/work/build_sd.sh"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+REPOS_DIR="${REPOS_DIR:-$ROOT/../repos}"
+sh "$ROOT/build_sd.sh"
 
 REV=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)
-PKG="$ROOT/work/yi-protect-$REV.tar.gz"
+PKG="$ROOT/yi-protect-$REV.tar.gz"
 [ -f "$PKG" ] || { echo "ERROR: expected $PKG missing"; exit 1; }
 
 # Complete corresponding source for our AGPL project and the image's GPL/LGPL
 # components; anything not captured here is covered by the SOURCES.txt offer.
-SRC="$ROOT/work/yi-protect-$REV-src.tar.gz"
+SRC="$ROOT/yi-protect-$REV-src.tar.gz"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT INT TERM
 mkdir -p "$STAGE/yi-protect" "$STAGE/yi-hack-Allwinner-v2" "$STAGE/upstream"
 git -C "$ROOT" archive HEAD | tar -x -C "$STAGE/yi-protect"
-if git -C "$ROOT/repos/yi-hack-Allwinner-v2" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$ROOT/repos/yi-hack-Allwinner-v2" archive HEAD | tar -x -C "$STAGE/yi-hack-Allwinner-v2"
+if git -C "$REPOS_DIR/yi-hack-Allwinner-v2" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$REPOS_DIR/yi-hack-Allwinner-v2" archive HEAD | tar -x -C "$STAGE/yi-hack-Allwinner-v2"
 fi
-find "$ROOT/work/build" -maxdepth 6 -type f \
+find "$ROOT/build" -maxdepth 6 -type f \
     \( -name '*.tar.gz' -o -name '*.tar.xz' -o -name '*.tar.bz2' -o -name '*.tgz' \) \
     -exec cp -n {} "$STAGE/upstream/" \; 2>/dev/null || true
 ( cd "$STAGE" && tar czf "$SRC" . )
 
-( cd "$ROOT/work" && sha256sum "$(basename "$PKG")" "$(basename "$SRC")" > SHA256SUMS )
+( cd "$ROOT" && sha256sum "$(basename "$PKG")" "$(basename "$SRC")" > SHA256SUMS )
 
 echo "artifact: $PKG"
 echo "sources:  $SRC"
-echo "checksum: $ROOT/work/SHA256SUMS"
+echo "checksum: $ROOT/SHA256SUMS"
 
 if [ "${PUBLISH:-0}" = "1" ]; then
     TAG="${TAG:-v$REV}"
     command -v gh >/dev/null 2>&1 || { echo "gh not found; cannot publish"; exit 1; }
-    gh release create "$TAG" "$PKG" "$SRC" "$ROOT/work/SHA256SUMS" \
+    gh release create "$TAG" "$PKG" "$SRC" "$ROOT/SHA256SUMS" \
         --title "yi-protect $REV" --generate-notes
 fi

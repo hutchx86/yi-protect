@@ -1682,7 +1682,7 @@ func fetchFirmwareVersion(uri string) (string, error) {
 	return version, nil
 }
 
-// FlvPush control FIFO of yi_protect_flv_bridge (work/flv_bridge/), which muxes in
+// FlvPush control FIFO of yi_protect_flv_bridge (flv_bridge/), which muxes in
 // process: spawning ffmpeg would exhaust this 60 MB device's RAM.
 const flvPushFifo = "/tmp/yi_protect_flv_bridge_ctl"
 
