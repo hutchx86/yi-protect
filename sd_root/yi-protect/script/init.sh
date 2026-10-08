@@ -292,7 +292,20 @@ if [ "$ENCODER" = "mediad" ]; then
     # overlay=1 enables the burned-in OSD overlay path.
     export FREECODEC_EXTRA="overlay=1"
     echo "init: starting mediad (FREECODEC_EXTRA=$FREECODEC_EXTRA)"
-    "$YIP_PREFIX/script/mediad.sh" start
+    # First-boot race: on some units/cards a freshly-mounted SD returns ENOENT
+    # for the mediad binary for a few seconds, so mediad.sh bails immediately.
+    # Retry a *quick* failure a few times; a slow timeout (a real stall) is left
+    # to the watchdog.
+    _try=0
+    while :; do
+        _t0=$(cut -d. -f1 /proc/uptime)
+        "$YIP_PREFIX/script/mediad.sh" start && break
+        _t1=$(cut -d. -f1 /proc/uptime)
+        _try=$((_try + 1))
+        { [ $((_t1 - _t0)) -gt 10 ] || [ "$_try" -ge 4 ]; } && break
+        echo "init: mediad start failed quickly (attempt $_try); retrying in 4s"
+        sleep 4
+    done
     sleep 2
     [ "$YI_CLOUD" = "yes" ] && start_yi_cloud
 else
