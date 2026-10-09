@@ -292,10 +292,8 @@ if [ "$ENCODER" = "mediad" ]; then
     # overlay=1 enables the burned-in OSD overlay path.
     export FREECODEC_EXTRA="overlay=1"
     echo "init: starting mediad (FREECODEC_EXTRA=$FREECODEC_EXTRA)"
-    # First-boot race: on some units/cards a freshly-mounted SD returns ENOENT
-    # for the mediad binary for a few seconds, so mediad.sh bails immediately.
-    # Retry a *quick* failure a few times; a slow timeout (a real stall) is left
-    # to the watchdog.
+    # First-boot race: a freshly-mounted SD can ENOENT the mediad binary for a
+    # few seconds; retry a quick failure, leave a slow stall to the watchdog.
     _try=0
     while :; do
         _t0=$(cut -d. -f1 /proc/uptime)
