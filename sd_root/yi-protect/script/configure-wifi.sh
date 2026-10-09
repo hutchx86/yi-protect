@@ -30,8 +30,10 @@ unquote() {
 [ -e "$MTD" ] || die "$MTD not present"
 [ -f "$CFG" ] || die "config not found: $CFG"
 
-SSID=$(unquote "$(grep -E '^wifi_ssid=' "$CFG" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r')")
-PSK=$(unquote "$(grep -E '^wifi_psk='  "$CFG" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r')")
+# First matching KEY= line, without `head` (this busybox has no head - same bug
+# class as encoder.sh's old `tail`). awk also preserves any '=' inside the value.
+SSID=$(unquote "$(awk '/^wifi_ssid=/{sub(/^[^=]*=/,"");print;exit}' "$CFG" 2>/dev/null | tr -d '\r')")
+PSK=$(unquote "$(awk '/^wifi_psk=/{sub(/^[^=]*=/,"");print;exit}' "$CFG" 2>/dev/null | tr -d '\r')")
 
 [ -n "$SSID" ] || die "wifi_ssid is empty in $CFG"
 [ -n "$PSK" ]  || die "wifi_psk is empty in $CFG"

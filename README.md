@@ -208,10 +208,14 @@ card contents with a newer package and reboot.
 The stock camera has no AP-mode provisioning of its own, so yi-protect sets WiFi
 from a credentials file on the card.
 
-> [!WARNING]
-> **Untested on hardware.** The conf-partition write is unit-tested against a
-> synthetic mtd7 (offsets, padding, idempotency, validation), but a real
-> first-boot association has not been validated.
+> [!NOTE]
+> **Validated on hardware (y623, 2026-10-09).** The conf-partition write is
+> unit-tested against a synthetic mtd7 (offsets, padding, idempotency,
+> validation) and was exercised on a live camera writing a scratch mtd7; the real
+> path (write mtd7 + reboot) was then used to move that unit between SSIDs and it
+> associated cleanly. `/dev/mtdblock7` is the authoritative store — the stock
+> regenerates `/tmp/wpa_supplicant.conf` from it at boot. (A `head`-dependency
+> bug, fixed 2026-10-09, had previously stopped the write from running on-device.)
 
 - **First boot (fresh card):** rename `Factory/configure_wifi.cfg.ori` to
   `Factory/configure_wifi.cfg`, edit `wifi_ssid=` / `wifi_psk=`, power on. The
