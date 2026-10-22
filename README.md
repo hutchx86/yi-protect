@@ -249,7 +249,7 @@ files beside it.
 | `YI_CLOUD` | `yes`/`no`/empty | Run the stock Yi cloud daemons; empty = on unless the `mediad` encoder is active. |
 | `SSH_PASSWORD` | text | Root SSH password; hashed at boot, never stored in `/etc`. Empty = locked. |
 | `PROTECT_SSH` | `yes`/`no` | Also accept Protect's device password (as `ui`, or `ubnt` before adoption). |
-| `WATCHDOG_INTERVAL` | seconds | Supervisor poll interval. |
+| `WATCHDOG_INTERVAL` | seconds | Supervisor poll interval; a supervisor with no heartbeat for `3×interval+120 s` is replaced. |
 
 Optional overrides (commented in the file): `CONTROLLER` (`host[:port]`),
 `MODEL`/`SYSID`/`FWVERSION` (spoofed identity), `STATIC_IP`/`STATIC_MASK`/

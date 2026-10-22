@@ -136,6 +136,24 @@ if [ -d /sys/class/net/eth0 ]; then
     net_monitor &
 fi
 
+# Watchdog supervisor: a supervisor shell that stops progressing (h52ga
+# 2026-10-16: spun in lock_take on a full /tmp) never exits, so nothing would
+# start a replacement. Check its heartbeat; the newcomer replaces the stalled
+# singleton itself (watchdog.sh).
+wd_guard() {
+    while :; do
+        sleep 30
+        _p=$(cat /tmp/yi_protect_wd.pid 2>/dev/null)
+        _b=$(cat /tmp/yi_protect_wd.beat 2>/dev/null)
+        _n=$(cut -d. -f1 /proc/uptime)
+        case "$_b" in ''|*[!0-9]*) _age=999999 ;; *) _age=$((_n - _b)) ;; esac
+        [ -n "$_p" ] && [ -d "/proc/$_p" ] && [ "$_age" -le 200 ] && continue
+        echo "$(date +%H:%M:%S) wd_guard: supervisor pid '$_p' heartbeat ${_age}s old; restarting it" >> /tmp/watchdog.log
+        WATCHDOG_INTERVAL=$WATCHDOG_INTERVAL "$YIP_PREFIX/script/watchdog.sh" >> /tmp/watchdog.log 2>&1 &
+    done
+}
+wd_guard &
+
 # Make /etc writable (some stock bits write there)
 mkdir -p /tmp/etc && cp -R /etc/* /tmp/etc 2>/dev/null && mount --bind /tmp/etc /etc
 
@@ -352,19 +370,19 @@ cd "$YIP_PREFIX/bin"
 
 # Video push daemon (reads rmm's shared-memory stream, pushes extendedFlv).
 AUDIO_OPT="-a $AUDIO"
-./yi_protect_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" $AUDIO_OPT > /tmp/yi_protect_flv_bridge.log 2>&1 &
+./yi_protect_flv_bridge -m "$MODEL_SUFFIX" -r "$RESOLUTION" $AUDIO_OPT >> /tmp/yi_protect_flv_bridge.log 2>&1 &
 
 # Adoption/control client; cert/key self-generated on first boot. PTZ and
 # per-model geometry come from model_table.
 ./yi_protect_avclient_go \
     -cert "$YIP_PREFIX/etc/yi_protect_client_go.crt" \
     -key  "$YIP_PREFIX/etc/yi_protect_client_go.key" \
-    > /tmp/avclient.log 2>&1 &
+    >> /tmp/avclient.log 2>&1 &
 
 # Talkback (speaker) receiver.
-./talkback_rx > /tmp/talkback_rx.log 2>&1 &
+./talkback_rx >> /tmp/talkback_rx.log 2>&1 &
 
 # Watchdog.
-WATCHDOG_INTERVAL=$WATCHDOG_INTERVAL "$YIP_PREFIX/script/watchdog.sh" > /tmp/watchdog.log 2>&1 &
+WATCHDOG_INTERVAL=$WATCHDOG_INTERVAL "$YIP_PREFIX/script/watchdog.sh" >> /tmp/watchdog.log 2>&1 &
 
 exit 0
