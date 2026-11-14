@@ -643,7 +643,7 @@ func readWifiStatus() *wifiStatus {
 
 // encoderFps is mediad's fixed capture/encode rate (SRC_FPS). Every fps field
 // declares it: the controller adopts fps/validFpsValues from our reply.
-const encoderFps = 20
+const encoderFps = 15
 
 // featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
 // "truedaynight" is the real IR key, "ledStatus" the separate status LED.
