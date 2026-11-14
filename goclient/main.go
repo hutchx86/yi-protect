@@ -189,8 +189,9 @@ type Client struct {
 	activeVideo1StreamName string
 	activeVideo2Host       string
 	activeVideo2StreamName string
-	// video3 ("medium", what Auto live view picks) carries the SAME real LOW
-	// frames as video2; HQ/LQ request video1/video2 directly.
+	// video3 ("medium", the expanded live view's stream) carries the real HIGH
+	// frames: the expanded panel requests video3 regardless of quality, so
+	// aliasing LOW pinned it to 640x360.
 	activeVideo3Host       string
 	activeVideo3StreamName string
 
@@ -1475,17 +1476,17 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					"parameters":   streamParams("video3"),
 					"type":         "extendedFlv",
 				},
-				// video3 carries the real LOW stream (see activeVideo3*).
-				"bitRateCbrAvg": 500000, "bitRateVbrMax": 750000, "bitRateVbrMin": 48000,
-				"currentVbrBitrate": 500000, "description": "Medium quality video track",
-				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": 360,
+				// video3 aliases the real HIGH stream (see activeVideo3*).
+				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
+				"currentVbrBitrate": declaredHighBps, "description": "Medium quality video track",
+				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": video1Height,
 				"horizontalFlip": false, "isCbr": false, "maxFps": encoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
 				"name": "video3", "sourceId": 2, "streamId": 4, "streamOrdinal": 2, "type": vidCodec["video3"],
-				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
+				"validBitrateRangeMax": 2800000, "validBitrateRangeMin": 32000,
 				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
-				"width":          640,
+				"width":          video1Width,
 			},
 		},
 	}
