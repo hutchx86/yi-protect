@@ -641,9 +641,11 @@ func readWifiStatus() *wifiStatus {
 	}
 }
 
-// encoderFps is mediad's fixed capture/encode rate (SRC_FPS). Every fps field
-// declares it: the controller adopts fps/validFpsValues from our reply.
-const encoderFps = 15
+// encoderFps is mediad's capture/HIGH rate (SRC_FPS); lowEncoderFps is the
+// native substream rate. Every fps field declares that stream's own rate; the
+// controller adopts fps/validFpsValues from our reply.
+const encoderFps = 20
+const lowEncoderFps = 15
 
 // featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
 // "truedaynight" is the real IR key, "ledStatus" the separate status LED.
@@ -1451,7 +1453,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				"width":          video1Width,
 			},
 			"video2": map[string]interface{}{
-				"M": 1, "N": encoderFps,
+				"M": 1, "N": lowEncoderFps,
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{vidDst["video2"]},
 					"parameters":   streamParams("video2"),
@@ -1460,12 +1462,12 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				// Real LOW resolution (640x360) -- must match the encoder.
 				"bitRateCbrAvg": 500000, "bitRateVbrMax": 750000, "bitRateVbrMin": 48000,
 				"currentVbrBitrate": 500000, "description": "Low quality video track",
-				"enabled": true, "fps": encoderFps, "gopModel": 0, "height": 360,
-				"horizontalFlip": false, "isCbr": false, "maxFps": encoderFps,
+				"enabled": true, "fps": lowEncoderFps, "gopModel": 0, "height": 360,
+				"horizontalFlip": false, "isCbr": false, "maxFps": lowEncoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
 				"name": "video2", "sourceId": 1, "streamId": 2, "streamOrdinal": 1, "type": vidCodec["video2"],
 				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
-				"validFpsValues": []int{encoderFps},
+				"validFpsValues": []int{lowEncoderFps},
 				"verticalFlip":   false,
 				"width":          640,
 			},

@@ -436,6 +436,7 @@ bool flvPushAudioMuted() { return g_audioMuted != 0; }
 
 // mediad's capture/encode rate (SRC_FPS); declared until measureFps() has data.
 static const double kEncoderFps = 20;
+static const double kLowFps = 15;   /* native substream rate */
 
 // Real fps from frame arrival intervals over a rolling window; runs for every
 // encoder frame, viewers or not.
@@ -1313,7 +1314,7 @@ void flvPushInit() {
         // Matches video2's declaration (streamId=2); 640x360 is the real
         // low-res encoder output.
         low.channelId = 1; low.streamId = 2;
-        low.videoBandwidth = 500000; low.videoFps = kEncoderFps;
+        low.videoBandwidth = 500000; low.videoFps = kLowFps;
         low.videoWidth = 640; low.videoHeight = 360;
         low.cachedMeasuredFps = 0;
 
