@@ -170,6 +170,7 @@ void transcodeAacToOpus(std::vector<unsigned char> &adts, uint32_t ptsMs) {
 struct EmitCtx {
     int resolution;
     int audio;
+    int medSeen;   // a real MED frame arrived; stop aliasing LOW to video3
 };
 
 bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
@@ -178,12 +179,12 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
 
     // A streamCounter gap means lost frames: restart the channel on a keyframe.
     // Trusted only after 100 consecutive +1 steps prove it is per-stream.
-    if (frameType == TYPE_HIGH || frameType == TYPE_LOW) {
-        static bool seen[2], trusted[2];
-        static uint16_t last[2];
-        static unsigned run[2];
-        static unsigned long gaps[2];
-        int s = frameType == TYPE_HIGH ? 0 : 1;
+    if (frameType == TYPE_HIGH || frameType == TYPE_LOW || frameType == TYPE_MED) {
+        static bool seen[3], trusted[3];
+        static uint16_t last[3];
+        static unsigned run[3];
+        static unsigned long gaps[3];
+        int s = frameType == TYPE_HIGH ? 0 : (frameType == TYPE_LOW ? 1 : 2);
         bool step = streamCounter == (uint16_t)(last[s] + 1);
         if (seen[s] && step && !trusted[s] && ++run[s] >= 100) trusted[s] = true;
         if (seen[s] && !step && !trusted[s]) run[s] = 0;
@@ -191,11 +192,15 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
             unsigned long n = ++gaps[s];
             if ((n & (n - 1)) == 0)
                 fprintf(stderr, "fshare: %s stream gap %u -> %u (%lu gaps total)\n",
-                        s == 0 ? "HIGH" : "LOW", last[s], streamCounter, gaps[s]);
+                        s == 0 ? "HIGH" : (s == 1 ? "LOW" : "MED"),
+                        last[s], streamCounter, gaps[s]);
             if (s == 0) {
                 flvPushDiscontinuity(FLV_CH_HIGH);
-            } else {
+            } else if (s == 1) {
                 flvPushDiscontinuity(FLV_CH_LOW);
+                if (!ctx->medSeen)
+                    flvPushDiscontinuity(FLV_CH_MED);
+            } else {
                 flvPushDiscontinuity(FLV_CH_MED);
             }
         }
@@ -240,10 +245,16 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
             if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueue(FLV_CH_HIGH, of);
         }
     } else if (frameType == TYPE_LOW) {
-        // The app's LQ/Auto view requests video3; it must carry the real LOW
-        // frames or LQ shows the HIGH feed. HQ uses video1.
+        // video2 always carries the real LOW encoder. Until a MED frame arrives,
+        // keep the old LOW->video3 alias so a two-channel mediad still feeds the
+        // app's LQ/Auto view.
         if (ctx->resolution != RESOLUTION_HIGH) {
             if (flvPushActive(FLV_CH_LOW)) flvPushEnqueue(FLV_CH_LOW, of);
+            if (!ctx->medSeen && flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
+        }
+    } else if (frameType == TYPE_MED) {
+        ctx->medSeen = 1;
+        if (ctx->resolution != RESOLUTION_HIGH) {
             if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_AAC) {
@@ -365,7 +376,7 @@ int main(int argc, char **argv) {
     }
     flvPushSetOpusEnabled(audio == 2 && g_aacDec != nullptr);
 
-    EmitCtx ctx{resolution, audio};
+    EmitCtx ctx{resolution, audio, 0};
     FshareReader reader(debug);
     FshareReader::Config cfg;
     cfg.size = (size_t)st.st_size;

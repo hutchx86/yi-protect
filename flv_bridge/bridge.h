@@ -29,6 +29,7 @@
 // Frame classification tags; internal only, values match resolution heights.
 #define TYPE_NONE 0
 #define TYPE_LOW 360
+#define TYPE_MED 576
 #define TYPE_HIGH 1080
 #define TYPE_AAC 65521
 

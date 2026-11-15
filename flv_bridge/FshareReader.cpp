@@ -253,7 +253,9 @@ void FshareReader::run(const Config &cfg, EmitFn emit, void *ctx) {
             long plen = (long)h.len;
 
             int frameType;
-            if (h.type & 0x0800) {
+            if (h.type & 0x0200) {
+                frameType = TYPE_MED;
+            } else if (h.type & 0x0800) {
                 frameType = TYPE_LOW;
             } else if (h.type & 0x0400) {
                 frameType = TYPE_HIGH;

@@ -2,8 +2,9 @@
 // Copyright (C) 2026 yi-protect contributors
 
 // FlvPush: muxes the raw H.264/AAC frames from the fshare ring into extendedFlv
-// and pushes them over TCP. Channels HIGH=video1, LOW=video2, MED=video3 (aliases
-// the LOW encoder output). Control FIFO commands: see docs/flv-bridge.md.
+// and pushes them over TCP. Channels HIGH=video1, LOW=video2, MED=video3 (a real
+// MED encoder when the camera enables it, otherwise the LOW output). Control FIFO
+// commands: see docs/flv-bridge.md.
 #ifndef _FLV_PUSH_H
 #define _FLV_PUSH_H
 

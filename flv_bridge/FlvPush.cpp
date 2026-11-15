@@ -1324,11 +1324,11 @@ void flvPushInit() {
         med.activeFd = -1;
         med.generation = 0;
         med.haveCachedSpsPps = false;
-        // video3 (MED) aliases the real LOW output (see main.cpp); LQ/Auto
-        // requests it, HQ uses video1.
+        // video3 (MED) is a real 1024x576 encoder on three-channel mediad
+        // builds; main.cpp aliases LOW to it only until the first MED frame.
         med.channelId = 2; med.streamId = 4;
-        med.videoBandwidth = 500000; med.videoFps = kLowFps;
-        med.videoWidth = 640; med.videoHeight = 360;
+        med.videoBandwidth = 1000000; med.videoFps = kLowFps;
+        med.videoWidth = 1024; med.videoHeight = 576;
         med.cachedMeasuredFps = 0;
 
         for (int i = 0; i < FLV_CH_COUNT; i++) {

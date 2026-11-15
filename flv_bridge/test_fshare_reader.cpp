@@ -54,7 +54,7 @@ static bool emit(void *, int frameType, std::vector<unsigned char> &&payload,
                  uint32_t, uint16_t sc) {
     (void)sc;
     g_seen.push_back({frameType, std::move(payload)});
-    return g_seen.size() < 4;
+    return g_seen.size() < 5;
 }
 
 static int runScenario(size_t start) {
@@ -72,6 +72,7 @@ static int runScenario(size_t start) {
     std::vector<unsigned char> sps = {1, 2, 3, 4, 5};
     std::vector<unsigned char> high = {0xAA, 0xBB, 0xCC};
     std::vector<unsigned char> low = {0x11, 0x22};
+    std::vector<unsigned char> med = {0x33, 0x44, 0x55};
     std::vector<unsigned char> aac = {0x07, 0x08, 0x09, 0x0A};
 
     std::vector<unsigned char> f;
@@ -88,8 +89,9 @@ static int runScenario(size_t start) {
     wf(0x0402, sps, 3, true);
     wf(0x0400, high, 4, false);
     wf(0x0800, low, 5, false);
-    wf(0x0100, aac, 6, false);
-    wf(0x0400, {0x99}, 7, false);  // trailing frame, retained by the reader
+    wf(0x0200, med, 6, false);
+    wf(0x0100, aac, 7, false);
+    wf(0x0400, {0x99}, 8, false);  // trailing frame, retained by the reader
 
     size_t len = total;
     put32(base + 16, (uint32_t)start);
@@ -110,8 +112,8 @@ static int runScenario(size_t start) {
     t.join();
 
     int rc = 0;
-    if (g_seen.size() != 4) {
-        std::fprintf(stderr, "FAIL(start=%zu): expected 4 frames, got %zu\n", start, g_seen.size());
+    if (g_seen.size() != 5) {
+        std::fprintf(stderr, "FAIL(start=%zu): expected 5 frames, got %zu\n", start, g_seen.size());
         rc = 1;
     } else {
         auto check = [&](int i, int wantType, const std::vector<unsigned char> &want) {
@@ -123,7 +125,8 @@ static int runScenario(size_t start) {
         check(0, TYPE_HIGH, sps);
         check(1, TYPE_HIGH, high);
         check(2, TYPE_LOW, low);
-        check(3, TYPE_AAC, aac);
+        check(3, TYPE_MED, med);
+        check(4, TYPE_AAC, aac);
     }
     munmap(base, kRing);
     close(fd);
@@ -200,6 +203,6 @@ int main() {
     rc |= runScenario(kRing - kOffset - 100);  // straddles the wrap point
     rc |= testModelFallback();
     rc |= testModelGeometry();
-    if (rc == 0) std::printf("PASS: linear + wrap scenarios + model fallback + geometry\n");
+    if (rc == 0) std::printf("PASS: linear + wrap + MED scenarios + model fallback + geometry\n");
     return rc;
 }
