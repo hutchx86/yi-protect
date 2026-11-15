@@ -189,8 +189,8 @@ type Client struct {
 	activeVideo1StreamName string
 	activeVideo2Host       string
 	activeVideo2StreamName string
-	// video3 ("medium", the LQ/Auto live view stream) is the real MED encoder;
-	// HQ switches to video1.
+	// video3 ("medium", the LQ/Auto live view stream) carries the real LOW
+	// frames; HQ switches to video1.
 	activeVideo3Host       string
 	activeVideo3StreamName string
 
@@ -641,15 +641,10 @@ func readWifiStatus() *wifiStatus {
 }
 
 // encoderFps is mediad's capture/HIGH rate (SRC_FPS); lowEncoderFps is the
-// native LOW substream rate and medEncoderFps the MED encoder rate. Every fps
-// field declares that stream's own rate; the controller adopts
-// fps/validFpsValues from our reply.
+// native LOW substream rate. Every fps field declares that stream's own rate;
+// the controller adopts fps/validFpsValues from our reply.
 const encoderFps = 20
 const lowEncoderFps = 15
-const medEncoderFps = 15
-const medWidth = 1024
-const medHeight = 576
-const medBitrate = 1000000
 
 // featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
 // "truedaynight" is the real IR key, "ledStatus" the separate status LED.
@@ -1376,24 +1371,20 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 		c.storeStreamCodecs(vidCodec)
 
 		// Tell mediad each channel's codec. Protect sets it per stream
-		// (video1 -> high, video2 -> low, video3 -> med), so map per channel and
-		// let each follow its own stream. A single "any h265 -> all channels"
-		// mapping made mixed settings objects churn the encoder.
+		// (video1 -> high; video2/video3 -> the shared low encoder), so map per
+		// channel and let each follow its own stream. A single "any h265 -> all
+		// channels" mapping made mixed settings objects churn the encoder.
 		{
-			codecHigh, codecLow, codecMed := 0, 0, 0
+			codecHigh, codecLow := 0, 0
 			if vidCodec["video1"] == "h265" {
 				codecHigh = 1
 			}
-			if vidCodec["video2"] == "h265" {
+			if vidCodec["video2"] == "h265" || vidCodec["video3"] == "h265" {
 				codecLow = 1
-			}
-			if vidCodec["video3"] == "h265" {
-				codecMed = 1
 			}
 			go mediadApplyControls([]mediadCtl{
 				{key: "codec_high", value: codecHigh},
 				{key: "codec_low", value: codecLow},
-				{key: "codec_med", value: codecMed},
 			}, mediadVidDelta, true)
 		}
 	}
@@ -1480,24 +1471,23 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				"width":          640,
 			},
 			"video3": map[string]interface{}{
-				"M": 1, "N": medEncoderFps,
+				"M": 1, "N": lowEncoderFps,
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{vidDst["video3"]},
 					"parameters":   streamParams("video3"),
 					"type":         "extendedFlv",
 				},
-				// Real MED encoder (1024x576, 1 Mbps); LQ/Auto requests it, HQ
-				// switches to video1.
-				"bitRateCbrAvg": medBitrate, "bitRateVbrMax": medBitrate, "bitRateVbrMin": 48000,
-				"currentVbrBitrate": medBitrate, "description": "Medium quality video track",
-				"enabled": true, "fps": medEncoderFps, "gopModel": 0, "height": medHeight,
-				"horizontalFlip": false, "isCbr": false, "maxFps": medEncoderFps,
+				// video3 aliases the real LOW stream (see activeVideo3*).
+				"bitRateCbrAvg": 500000, "bitRateVbrMax": 750000, "bitRateVbrMin": 48000,
+				"currentVbrBitrate": 500000, "description": "Medium quality video track",
+				"enabled": true, "fps": lowEncoderFps, "gopModel": 0, "height": 360,
+				"horizontalFlip": false, "isCbr": false, "maxFps": lowEncoderFps,
 				"minClientAdaptiveBitRate": 0, "minMotionAdaptiveBitRate": 0, "nMultiplier": 6,
 				"name": "video3", "sourceId": 2, "streamId": 4, "streamOrdinal": 2, "type": vidCodec["video3"],
-				"validBitrateRangeMax": medBitrate, "validBitrateRangeMin": 32000,
-				"validFpsValues": []int{medEncoderFps},
+				"validBitrateRangeMax": 750000, "validBitrateRangeMin": 32000,
+				"validFpsValues": []int{lowEncoderFps},
 				"verticalFlip":   false,
-				"width":          medWidth,
+				"width":          640,
 			},
 		},
 	}
