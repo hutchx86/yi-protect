@@ -238,16 +238,13 @@ bool emitFrame(void *vctx, int frameType, std::vector<unsigned char> &&payload,
     if (frameType == TYPE_HIGH) {
         if (ctx->resolution == RESOLUTION_HIGH || ctx->resolution == RESOLUTION_BOTH) {
             if (flvPushActive(FLV_CH_HIGH)) flvPushEnqueue(FLV_CH_HIGH, of);
-            // Protect's expanded live view always requests video3; alias it to
-            // HIGH so the panel is not pinned to the low-resolution stream.
-            if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_LOW) {
+        // The app's LQ/Auto view requests video3; it must carry the real LOW
+        // frames or LQ shows the HIGH feed. HQ uses video1.
         if (ctx->resolution != RESOLUTION_HIGH) {
             if (flvPushActive(FLV_CH_LOW)) flvPushEnqueue(FLV_CH_LOW, of);
-            // No HIGH output (e.g. -r low): MED falls back to LOW.
-            if (ctx->resolution == RESOLUTION_LOW &&
-                flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
+            if (flvPushActive(FLV_CH_MED)) flvPushEnqueue(FLV_CH_MED, of);
         }
     } else if (frameType == TYPE_AAC) {
         if (ctx->audio == 2) {
