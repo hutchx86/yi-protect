@@ -126,7 +126,8 @@ per-camera edits. Per-model facts live in one table
   advanced picture controls). H.265 is advertised only on the `mediad` path. See
   [Optional mediad encoder](#optional-mediad-encoder).
 - **Settings page**, a small HTTP page on `:80` (`WEBUI_PORT`, `0` = off) for
-  pinning picture settings. **Unauthenticated**: anyone on the LAN can change them.
+  pinning picture settings and a per-camera time-zone override.
+  **Unauthenticated**: anyone on the LAN can change them.
 - **SSH access**, a Dropbear server for `root` (password from `SSH_PASSWORD`).
   See [Access](#access-ssh).
 - **One image, any supported camera**, the model is auto-detected at boot; the

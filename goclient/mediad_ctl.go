@@ -291,6 +291,7 @@ func mediadWatch(lastPid int) {
 		mediadCheckedAt = time.Time{}
 		mediadMu.Unlock()
 		mediadEnabled()
+		reapplyTimezone()
 	}
 }
 

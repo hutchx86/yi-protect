@@ -8,6 +8,12 @@
 YIP_PREFIX="/tmp/sd/yi-protect"
 CONF="$YIP_PREFIX/etc/yi-protect.cfg"
 
+# Protect's zone, persisted by the client as a POSIX TZ rule (the camera has no
+# zoneinfo). Export it before the encoder starts so the OSD reads local time
+# from the first frame, not only after the controller reconnects.
+TZ=$(cat "$YIP_PREFIX/etc/yi_protect_client_go.tz" 2>/dev/null)
+[ -n "$TZ" ] && export TZ
+
 # Encoder selection (shared with watchdog.sh): resolve once, before YI_CLOUD
 # below needs it. encoder.sh sets ENCODER/ENCODER_REASON; YIP_ENCODER is the
 # contract the bridge/client read. A missing helper (partial card) -> rmm.

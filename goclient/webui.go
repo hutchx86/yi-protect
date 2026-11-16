@@ -141,10 +141,41 @@ func handleWebuiUnpin(w http.ResponseWriter, r *http.Request) {
 	webuiJSON(w, http.StatusOK, webuiReadAll())
 }
 
+// handleWebuiTimezone reads or sets this camera's timezone override. An empty
+// override clears it, handing the OSD back to Protect's zone.
+func handleWebuiTimezone(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		webuiJSON(w, http.StatusOK, timezoneStateNow())
+	case http.MethodPost:
+		var req struct {
+			Override string `json:"override"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req); err != nil {
+			webuiJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+			return
+		}
+		if err := setTimezoneOverride(req.Override); err != nil {
+			log.Printf("webui: timezone override %q: %v", req.Override, err)
+			webuiJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if req.Override == "" {
+			log.Printf("webui: timezone override cleared (Protect controls)")
+		} else {
+			log.Printf("webui: timezone override = %q", req.Override)
+		}
+		webuiJSON(w, http.StatusOK, timezoneStateNow())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func webuiHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/denoise", handleWebuiDenoise)
 	mux.HandleFunc("/api/denoise/unpin", handleWebuiUnpin)
+	mux.HandleFunc("/api/timezone", handleWebuiTimezone)
 	// Any other GET path serves the page too (a bookmarked /index.html etc.
 	// should never land on "404 page not found").
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -193,12 +224,19 @@ button.link{background:none;border:0;color:var(--accent);cursor:pointer;padding:
 .sw input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 select,input[type=range]{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px 8px}
 input[type=range]{padding:0;width:140px;accent-color:var(--accent)}
+input[type=text]{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px 8px;width:16em;max-width:100%}
 .val{min-width:2.5em;text-align:right;font-variant-numeric:tabular-nums}
 .ctl{display:flex;align-items:center;gap:8px}
 #msg{min-height:1.5em;margin:12px 2px 0;font-size:13px;color:var(--muted)}#msg.err{color:var(--warn)}
 </style></head><body><main>
 <h1>Camera settings</h1>
 <p class="sub">Changes apply live and are saved on the camera. A saved value overrides what Protect sends.</p>
+<section><h2>Time zone</h2>
+<div class="row"><div class="name">Override</div>
+<div class="ctl"><input id="tz" type="text" placeholder="Europe/Berlin" aria-label="Time zone override" spellcheck="false"></div>
+<div class="help">An IANA name (Europe/Berlin) or a POSIX TZ rule. Empty means Protect controls the time zone. Saved on this camera and applied to the burned-in OSD immediately.</div>
+<div class="meta"><span id="tzinfo">Loading&hellip;</span><button class="link" id="tzsave">Save override</button><button class="link" id="tzclear">Use Protect's</button></div></div>
+</section>
 <section><h2>Noise reduction</h2><div id="rows">Loading&hellip;</div></section>
 <div id="msg" role="status"></div>
 </main><script>
@@ -223,6 +261,12 @@ function render(list){
 async function load(){try{render(await call('/api/denoise'));say('')}catch(e){rows.textContent='Could not reach the camera ('+e.message+').'}}
 async function save(k,v){say('Saving…');try{render(await call('/api/denoise',{key:k,value:v}));say('Saved.')}catch(e){say('Not saved: '+e.message,1);load()}}
 async function unpin(k){try{render(await call('/api/denoise/unpin',{key:k}));say('Protect now controls this setting.')}catch(e){say(e.message,1)}}
-load();
+const tz=document.getElementById('tz'),tzinfo=document.getElementById('tzinfo');
+function tzshow(s){tz.value=s.override||'';tzinfo.textContent='Protect: '+(s.controller||'not received')+' - OSD: '+(s.applied||'UTC')}
+async function tzload(){try{tzshow(await call('/api/timezone'))}catch(e){tzinfo.textContent='Time zone unavailable ('+e.message+')'}}
+async function tzsave(v){say('Saving…');try{tzshow(await call('/api/timezone',{override:v}));say(v?'Time zone override saved.':'Protect controls the time zone.')}catch(e){say('Not saved: '+e.message,1)}}
+document.getElementById('tzsave').addEventListener('click',()=>tzsave(tz.value.trim()));
+document.getElementById('tzclear').addEventListener('click',()=>tzsave(''));
+load();tzload();
 </script></body></html>
 `

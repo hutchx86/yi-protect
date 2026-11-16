@@ -89,6 +89,11 @@ func (c *Client) handleTimeSync(m Envelope) (bool, error) {
 		}
 	}
 
+	// The 30 s timeSync beat is also the cheapest place to notice a DST
+	// transition in the controller's zone (the resolved POSIX rule carries the
+	// current offset, not the zone's DST rules).
+	refreshTimezone()
+
 	if m.InResponseTo == 0 {
 		// Controller-initiated request: answer with our offset.
 		return false, c.send(c.genResponse("ubnt_avclient_timeSync", m.MessageID,

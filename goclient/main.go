@@ -843,9 +843,15 @@ func (c *Client) process(raw []byte) (forceReconnect bool, err error) {
 			log.Printf("ChangeDeviceSettings: controller renamed device to %q", newName)
 			setDeviceName(newName)
 		}
+		// The controller sends its zone as an IANA name (sometimes in this
+		// same message, sometimes alone): resolve it to a POSIX rule for the
+		// OSD and echo the controller's own value back.
+		if tz, ok := m.Payload["timezone"].(string); ok && tz != "" {
+			applyControllerTimezone(tz)
+		}
 		return false, c.send(c.genResponse("ChangeDeviceSettings", m.MessageID, map[string]interface{}{
 			"name":     getDeviceName(),
-			"timezone": "GMT0",
+			"timezone": currentTimezone(),
 		}))
 	case "ChangeOsdSettings":
 		if raw, err := json.Marshal(m.Payload); err == nil {
@@ -2373,6 +2379,10 @@ func main() {
 	// via ChangeDeviceSettings, which is then persisted.
 	loadDeviceName(deviceNameFilePath, cfg.Model)
 	log.Printf("device name: %s", getDeviceName())
+
+	// Re-apply the controller's zone from the previous run: mediad is already
+	// up and the controller only re-sends it on the next connect.
+	loadTimezone()
 
 	if !*noDiscovery {
 		go runDiscoveryResponder(macBytes(cfg.MAC), net.ParseIP(cfg.IP), cfg.Model, cfg.FWVersion, cfg.SysID, *guid)
