@@ -1,4 +1,4 @@
-# yi-protect — present a cheap Yi camera as a native UniFi Protect camera
+# yi-protect: present a cheap Yi camera as a native UniFi Protect camera
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 **Connects cheap Yi cameras (Allwinner V831-class) to a UniFi Protect console as
 if they were native Ubiquiti cameras.**
 **The camera keeps its stock firmware and encoder; the bridge muxes its output
-into Protect's native `extendedFlv`, so the console does no decode/re-encode —
+into Protect's native `extendedFlv`, so the console does no decode/re-encode,
 and adds low-latency live view, talkback, snapshots, motion and IR control.**
 
 </div>
@@ -58,7 +58,7 @@ detail: [Install](#install-prebuilt).
 | **Hardware** | Native UniFi SoC | Stock Yi Allwinner V831 camera + SD card |
 | **Cost** | Buy a camera | An already-owned Yi camera |
 | **Media path** | Native encode | The camera's own stock encoder, muxed into `extendedFlv` |
-| **Fidelity** | Supported | Proof of concept — stock firmware kept, identity spoofed; rough edges |
+| **Fidelity** | Supported | Proof of concept, stock firmware kept, identity spoofed; rough edges |
 
 ## How it works
 
@@ -93,7 +93,7 @@ interoperability and are not published here.
 ## Supported hardware
 
 Allwinner **sun8iw19** (`sun8iw19p1`), ~60 MB RAM, BusyBox userland. The SoC is a
-**QG2101A/B** (SensLab) — a rebadged Allwinner **V831**-class part: single
+**QG2101A/B** (SensLab), a rebadged Allwinner **V831**-class part: single
 Cortex-A7, 0.2 TOPS NPU, 64 MB DDR2 in-package, 2-lane MIPI CSI.
 
 | Model | Camera | HIGH geometry | Notes |
@@ -111,27 +111,27 @@ per-camera edits. Per-model facts live in one table
 
 ## Features
 
-- **Discovery & adoption** — UBNT L2/UDP discovery and the WSS control protocol;
+- **Discovery & adoption**, UBNT L2/UDP discovery and the WSS control protocol;
   the controller adopts it like real hardware.
-- **Live video & recording** — the stock encoder's output is muxed into UniFi's
+- **Live video & recording**, the stock encoder's output is muxed into UniFi's
   `extendedFlv` over a plain TCP socket. Low latency; no RTSP hop.
-- **Audio** — the camera's native AAC plus a transcoded Opus track for web live.
+- **Audio**, the camera's native AAC plus a transcoded Opus track for web live.
   The mic level follows Protect's "Microphone Level"; the slider's minimum (1%)
   is a deliberate mute (see [Troubleshooting](#troubleshooting)).
 - **Snapshots, motion events, PTZ** (models with a motorized base) and
   rudimentary **IR / night-vision** control.
-- **Two-way audio (talkback)** — from the Protect mobile/web app to the speaker.
-- **Selectable encoder** — the stock Yi `rmm`, or the clean-room
+- **Two-way audio (talkback)**, from the Protect mobile/web app to the speaker.
+- **Selectable encoder**, the stock Yi `rmm`, or the clean-room
   [yi-mediad](https://github.com/hutchx86/yi-mediad) daemon (H.264 + H.265,
   advanced picture controls). H.265 is advertised only on the `mediad` path. See
   [Optional mediad encoder](#optional-mediad-encoder).
-- **Settings page** — a small HTTP page on `:80` (`WEBUI_PORT`, `0` = off) for
+- **Settings page**, a small HTTP page on `:80` (`WEBUI_PORT`, `0` = off) for
   pinning picture settings. **Unauthenticated**: anyone on the LAN can change them.
-- **SSH access** — a Dropbear server for `root` (password from `SSH_PASSWORD`).
+- **SSH access**, a Dropbear server for `root` (password from `SSH_PASSWORD`).
   See [Access](#access-ssh).
-- **One image, any supported camera** — the model is auto-detected at boot; the
+- **One image, any supported camera**, the model is auto-detected at boot; the
   package carries no per-camera identity.
-- **Safety net** — the first boot dumps the camera's full raw flash to the SD
+- **Safety net**, the first boot dumps the camera's full raw flash to the SD
   card, before the boot is modified.
 
 ## Requirements
@@ -194,7 +194,7 @@ Insert the card and power on. The stock firmware runs the Factory hook, which:
 ### 4. Adopt
 
 On the post-install boot the camera appears in Protect as a new, unadopted
-device — adopt it like any UniFi camera. SSH is at `root@<camera-ip>` (see
+device, adopt it like any UniFi camera. SSH is at `root@<camera-ip>` (see
 [Access](#access-ssh)).
 
 The package carries **no per-camera identity**: device-id, TLS cert/key, adopt
@@ -213,7 +213,7 @@ from a credentials file on the card.
 > unit-tested against a synthetic mtd7 (offsets, padding, idempotency,
 > validation) and was exercised on a live camera writing a scratch mtd7; the real
 > path (write mtd7 + reboot) was then used to move that unit between SSIDs and it
-> associated cleanly. `/dev/mtdblock7` is the authoritative store — the stock
+> associated cleanly. `/dev/mtdblock7` is the authoritative store: the stock
 > regenerates `/tmp/wpa_supplicant.conf` from it at boot. (A `head`-dependency
 > bug, fixed 2026-10-09, had previously stopped the write from running on-device.)
 
@@ -227,7 +227,7 @@ from a credentials file on the card.
 Plain `KEY=value`; the value may be bare or wrapped in one pair of matching
 quotes (quotes are stripped and recommended for spaces/special characters), no
 backslash, max 63 chars. `configure-wifi.sh` writes the SSID at offset 28 and the
-PSK at offset 92 of `/dev/mtdblock7` after backing it up — the same partition the
+PSK at offset 92 of `/dev/mtdblock7` after backing it up, the same partition the
 stock WiFi stack reads.
 
 An on-camera **hotspot / captive-portal flow is not yet possible**: the stock
@@ -302,7 +302,7 @@ stores only the SHA-512 hash of Protect's pushed device credential
 and switching back to `no` stops a stored credential being accepted. `SSH_PASSWORD`
 is hashed MD5-crypt at boot (the camera libc's scheme); Protect's SHA-512 hash is
 verified by a patch to our Dropbear build. The card is FAT, so anyone holding it
-can read the config — treat the card as a secret.
+can read the config: treat the card as a secret.
 
 ## Backup & recovery
 
@@ -345,7 +345,7 @@ make -C flv_bridge test
 ```
 
 Config lives in `sd_root/yi-protect/etc/yi-protect.cfg`; per-model **facts** live
-in `sd_root/yi-protect/etc/model_table` — one row per camera (sensor, ring
+in `sd_root/yi-protect/etc/model_table`, one row per camera (sensor, ring
 geometry, HIGH resolution, PTZ, optional pinned bitrate). The bridge, client,
 boot scripts, `detect-model.sh` and `build_sd.sh` all read that one table and
 never hardcode a model name, so adding a camera is a single row. An unlisted
@@ -360,7 +360,7 @@ model gets a conservative default and a warning, never a silent guess.
 
 ## Roadmap / known limitations
 
-- **Known:** proof of concept, not production-ready — see [Disclaimer](#disclaimer).
+- **Known:** proof of concept, not production-ready, see [Disclaimer](#disclaimer).
 - **Known:** the published image is `rmm`-only; `mediad` is a separate overlay.
 - **Known:** WiFi provisioning is unit-tested but not yet verified on a real
   first-boot association.
@@ -370,13 +370,13 @@ model gets a conservative default and a warning, never a silent guess.
 
 ## Changelog
 
-- **2026-10-03** — `IS_MEDIAD=auto` (default) with one shared encoder resolver;
+- **2026-10-03**, `IS_MEDIAD=auto` (default) with one shared encoder resolver;
   optional `mediad` overlay published in the yi-mediad repo; repo flattened
   (`work/` removed).
-- **2026-10-02** — selectable encoder (stock `rmm` or clean-room `mediad`) in one
+- **2026-10-02**, selectable encoder (stock `rmm` or clean-room `mediad`) in one
   image; path-aware declared geometry; H.265 gated to validated models.
-- **2026-09-29** — H.265 end-to-end on y623; snapshots under H.265.
-- **Initial public release** — adoption, live, recording, talkback, PTZ.
+- **2026-09-29**, H.265 end-to-end on y623; snapshots under H.265.
+- **Initial public release**, adoption, live, recording, talkback, PTZ.
 
 ## Troubleshooting
 
@@ -385,7 +385,7 @@ model gets a conservative default and a warning, never a silent guess.
 
 **No camera audio in Protect (live view or recordings).** Check the camera's
 **Microphone Level** slider first. Its **minimum position (1%) is a deliberate
-mute, not a quiet setting** — Protect floors the slider at 1 and never sends 0,
+mute, not a quiet setting**, Protect floors the slider at 1 and never sends 0,
 so 1% drives the codec capture gain to zero and the bridge substitutes silent
 AAC/Opus frames (the track keeps flowing, silenced). Move it up and audio
 returns. A camera left at 1% after a silence test looks like a dead microphone.
@@ -394,7 +394,7 @@ returns. A camera left at 1% after a silence test looks like a dead microphone.
 same L2 network for discovery; on a routed subnet set `CONTROLLER=host[:port]` in
 `yi-protect.cfg`.
 
-**No video after entering the card.** Check `/tmp/lower_half.log` — if the stock
+**No video after entering the card.** Check `/tmp/lower_half.log`. If the stock
 `lower_half_init.sh` was not in a shape the generator recognises, it runs
 unmodified (the camera boots without the app) and says why.
 
@@ -431,7 +431,7 @@ Further thanks: [unifi-cam-proxy](https://github.com/keshavdv/unifi-cam-proxy)
   a few helper scripts vendored from yi-hack-Allwinner-v2
   (`yi-protect/script/ethdhcp.sh`, `wifidhcp.sh`). See [`NOTICE`](NOTICE).
 - **Interoperability.** This project exists to make independently created
-  software interoperate; that goal is recognised under EU law — Directive
+  software interoperate; that goal is recognised under EU law, Directive
   2009/24/EC Art. 6 and Art. 5(3), Regulation (EU) 2024/903, and Regulation (EU)
   2022/1925 Art. 6(7). Intended for personal use on hardware you own; reverse
   engineering may be restricted in your jurisdiction.
@@ -444,7 +444,7 @@ Further thanks: [unifi-cam-proxy](https://github.com/keshavdv/unifi-cam-proxy)
 **This is a proof-of-concept project, not a production-ready system**, and it is
 **not recommended for an actual production deployment**. Large parts were produced
 with LLMs (Claude Code and DeepSeek) under strict human supervision and
-real-hardware testing — review and verify everything yourself. **This software is
+real-hardware testing, review and verify everything yourself. **This software is
 provided "as is", without warranty of any kind.** It modifies your camera's boot
 process and runs custom binaries: you can **brick the camera**, lose recordings,
 and void its warranty. Recovery may require physical access and is never
@@ -459,7 +459,7 @@ if you understand the risks and are working on hardware you own.
 
 Report vulnerabilities privately through
 [GitHub Security Advisories](../../security/advisories/new). No credentials are
-stored in the repository — `SSH_PASSWORD` lives only in the on-card
+stored in the repository, `SSH_PASSWORD` lives only in the on-card
 `yi-protect.cfg` (and is hashed before use). The settings page is unauthenticated
 by design; keep the camera on a trusted LAN.
 

@@ -61,9 +61,12 @@ snapshot/yi_protect_snapshot
 # Local certs/keys: never publish (private keys, runtime-generated identities).
 *.pem
 
-# Local working docs — kept on disk, never published (README.md is tracked).
+# Local working docs, kept on disk and not published. The repository files
+# README.md, AGENTS.md and SECURITY.md are tracked.
 /*.md
 !/README.md
+!/AGENTS.md
+!/SECURITY.md
 
 # Local archive of older notes/code — kept on disk, never published.
 /archive/
