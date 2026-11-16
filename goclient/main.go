@@ -641,8 +641,8 @@ func readWifiStatus() *wifiStatus {
 }
 
 // encoderFps is mediad's capture/HIGH rate (SRC_FPS); lowEncoderFps is the
-// native LOW substream rate. Every fps field declares that stream's own rate;
-// the controller adopts fps/validFpsValues from our reply.
+// native substream rate. Every fps field declares that stream's own rate; the
+// controller adopts fps/validFpsValues from our reply.
 const encoderFps = 20
 const lowEncoderFps = 15
 
@@ -1313,8 +1313,8 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			}
 			c.streams[key] = streamName
 			c.streamsMu.Unlock()
-			// video3 is the real MED stream; streamName is the controller-issued
-			// FLV onMetaData token (reconnect only if changed).
+			// video3 aliases the SAME real LOW frames as video2; streamName is
+			// the controller-issued FLV onMetaData token (reconnect only if changed).
 			c.videoMu.Lock()
 			if key == "video1" {
 				if u.Host != c.activeVideo1Host || streamName != c.activeVideo1StreamName {
@@ -1471,7 +1471,7 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 				"width":          640,
 			},
 			"video3": map[string]interface{}{
-				"M": 1, "N": lowEncoderFps,
+				"M": 1, "N": encoderFps,
 				"avSerializer": map[string]interface{}{
 					"destinations": []string{vidDst["video3"]},
 					"parameters":   streamParams("video3"),
