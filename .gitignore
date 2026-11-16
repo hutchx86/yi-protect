@@ -36,6 +36,9 @@ sd_root/yi-protect/etc/yi_protect_client_go.adopted
 sd_root/yi-protect/etc/yi_protect_client_go.device-name
 sd_root/yi-protect/etc/yi_protect_client_go.inform-host*
 sd_root/yi-protect/etc/configure_wifi.cfg
+# A provisioned first-boot Wi-Fi config carries real credentials. Only the .ori
+# template is tracked; the renamed file is ignored.
+/sd_root/Factory/configure_wifi.cfg
 sd_root/yi-protect/etc/dropbear/
 sd_root/yi-protect/log/
 *.applied
