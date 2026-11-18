@@ -4,7 +4,9 @@
 # two lines below, then reboot the camera. init.sh writes them into the camera's
 # conf partition (mtd7) and reboots once so the stock WiFi stack associates.
 # The file is renamed to configure_wifi.cfg.applied afterwards; to re-provision,
-# rename it back, edit, and reboot.
+# rename it back, edit, and reboot. The last successful copy is also kept as
+# wifi.known-good, which wifi-guard.sh restores (and clears the Protect adoption
+# identity) if the stock factory reset wipes the camera's mtd7 WiFi config.
 #
 # Rules:
 #   - one value per line, KEY=value

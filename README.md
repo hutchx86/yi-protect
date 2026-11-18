@@ -224,6 +224,14 @@ from a credentials file on the card.
 - **Later:** rename `yi-protect/etc/configure_wifi.cfg.example` to
   `configure_wifi.cfg`, edit it, drop it on the card, reboot. `init.sh` applies
   it, reboots once, and renames it `.applied`.
+- **Factory reset:** the stock reset button zeroes the conf partition (mtd7).
+  The next boot `wifi-guard.sh` sees the empty SSID, restores the last
+  successfully applied config from `yi-protect/etc/wifi.known-good`, clears the
+  Protect adoption identity and reboots once. The camera comes back on its old
+  WiFi, unadopted, ready for a new adopt push. A failed mtd7 read is treated as
+  an error, not a wipe, so adoption is never cleared blindly. A pending
+  `configure_wifi.cfg` is treated as a deliberate WiFi change and leaves
+  adoption alone.
 
 Plain `KEY=value`; the value may be bare or wrapped in one pair of matching
 quotes (quotes are stripped and recommended for spaces/special characters), no
@@ -356,6 +364,8 @@ model gets a conservative default and a warning, never a silent guess.
 
 - Host self-test: `make -C flv_bridge test` (fshare/keyframe/HEVC tag bytes).
 - Go client: `go test ./...` (model table, codec selection, timesync, SSH credential).
+- WiFi guard: `sh tests/test-wifi-guard.sh` (factory-reset restore, healthy no-op,
+  unreadable mtd7, write failure, first provision).
 - On camera: adoption, both channels streaming and recording, snapshots, motion,
   talkback and PTZ verified against a real Protect controller.
 

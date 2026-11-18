@@ -414,7 +414,7 @@ done
 for pat in yi_protect_client_go.device-id yi_protect_client_go.crt yi_protect_client_go.key \
            yi_protect_client_go.adoption-uuid yi_protect_client_go.adopted \
            yi_protect_client_go.device-name 'yi_protect_client_go.inform-host*' \
-           model_suffix configure_wifi.cfg '*.applied' 'dropbear_*_host_key'; do
+           model_suffix configure_wifi.cfg wifi.known-good '*.applied' 'dropbear_*_host_key'; do
     found=$(find "$SD" -name "$pat" 2>/dev/null)
     if [ -n "$found" ]; then
         echo "ERROR: per-camera runtime identity present in the SD layout:"

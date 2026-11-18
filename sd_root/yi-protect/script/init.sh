@@ -34,11 +34,6 @@ if [ -z "$MODEL_SUFFIX" ] && [ -x "$YIP_PREFIX/script/detect-model.sh" ]; then
 fi
 [ -z "$MODEL_SUFFIX" ] && MODEL_SUFFIX=y623
 
-# Emergency flash backup (idempotent; skips once a complete set exists).
-if [ -x "$YIP_PREFIX/script/backup-flash.sh" ]; then
-    "$YIP_PREFIX/script/backup-flash.sh" >>/tmp/sd/yi-protect-backup.log 2>&1 &
-fi
-
 get_cfg() {
     # Anchor to a real KEY= line so commented examples (#KEY=...) are not parsed.
     grep -E "^$1=" "$CONF" 2>/dev/null | cut -d= -f2-
@@ -57,6 +52,20 @@ fi
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/home/base/tools:/home/app/localbin:/home/base:$YIP_PREFIX/bin
 export LD_LIBRARY_PATH=/lib:/usr/lib:/home/lib:/home/qigan/lib:/home/app/locallib:/tmp/sd:$YIP_PREFIX/lib
 ulimit -s 1024
+
+# WiFi boot guard: a stock factory reset zeroes mtd7, where the stock WiFi stack
+# reads the SSID/PSK. Restore the last known-good config from the SD and clear
+# the Protect adoption identity; a healthy boot is a no-op. Must run before
+# net_monitor so the first association attempt sees the restored credentials.
+if [ -f "$YIP_PREFIX/script/wifi-guard.sh" ]; then
+    sh "$YIP_PREFIX/script/wifi-guard.sh"
+fi
+
+# Emergency flash backup (idempotent; skips once a complete set exists). Started
+# after the guard so a factory-reset restore is not raced by a mtd7 read.
+if [ -x "$YIP_PREFIX/script/backup-flash.sh" ]; then
+    "$YIP_PREFIX/script/backup-flash.sh" >>/tmp/sd/yi-protect-backup.log 2>&1 &
+fi
 
 # MTU (stock cameras want 1500 on both interfaces)
 [ -d /sys/class/net/eth0 ]  && echo 1500 > /sys/class/net/eth0/mtu
@@ -182,18 +191,8 @@ if mount 2>/dev/null | grep -q "/tmp/sd "; then
     echo 15 > /proc/sys/vm/swappiness 2>/dev/null
 fi
 
-# WiFi provisioning (SD config): drop yi-protect/etc/configure_wifi.cfg (wifi_ssid=/
-# wifi_psk=) and reboot; init.sh writes mtd7 and reboots once, renaming to .applied.
-WCFG="$YIP_PREFIX/etc/configure_wifi.cfg"
-if [ -f "$WCFG" ] && [ -x "$YIP_PREFIX/script/configure-wifi.sh" ]; then
-    "$YIP_PREFIX/script/configure-wifi.sh" "$WCFG"
-    rc=$?
-    case $rc in
-        0) mv "$WCFG" "$WCFG.applied"; sync; echo "init: wifi credentials applied; rebooting"; reboot ;;
-        2) mv "$WCFG" "$WCFG.applied"; sync ;;
-        *) echo "init: wifi provisioning failed (rc=$rc); leaving $WCFG in place" ;;
-    esac
-fi
+# WiFi provisioning and factory-reset recovery live in script/wifi-guard.sh,
+# invoked above before net_monitor.
 
 # SSH (dropbear) started before the video pipeline so a failure there can't lock
 # us out. Generate ecdsa+ed25519 host keys up front (missing keys failed the KEX).
