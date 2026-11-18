@@ -1243,28 +1243,37 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	// from this binary.
 	video1Width, video1Height := readHighResolution()
 
-	// A model_table high_bitrate pins HIGH's encoder target and declared
-	// bitrates below (0 = follow the controller).
-	pinnedHighBps := modelHighBitrate()
-	declaredHighBps := 2000000
-	if pinnedHighBps > 0 {
-		declaredHighBps = pinnedHighBps
-	}
+	// A per-unit mediad.conf pin wins over the model_table policy (0 = follow
+	// the controller). With no pin, Protect's current video1 target drives the
+	// encoder and is what the response below declares. Until the controller
+	// sends a target, advertise the encoder capability, like a native camera in
+	// Auto.
+	daemonPin, daemonRate := mediadBitratePin()
+	pinnedHighBps := resolveHighBitrate(modelHighBitrate(), daemonPin, daemonRate)
+	declaredHighBps := mediaBitrateMax
 
 	if video, ok := m.Payload["video"].(map[string]interface{}); ok {
 		// Shutter (Video Mode) and HIGH bitrate -> mediad, delta-gated so the
 		// controller's periodic resend doesn't re-issue them.
 		var vidControls []mediadCtl
 		vidControls = append(vidControls, shutterControls(video)...)
+		controllerBps := 0
+		if v1, ok := video["video1"].(map[string]interface{}); ok {
+			controllerBps = videoStreamBitrate(v1)
+		}
 		vidBps := pinnedHighBps
 		if vidBps == 0 {
-			if v1, ok := video["video1"].(map[string]interface{}); ok {
-				vidBps = videoStreamBitrate(v1)
-			}
+			vidBps = controllerBps
 		}
 		if vidBps > 0 {
-			vidControls = append(vidControls, mediadCtl{key: "bitrate", value: clampBitrate(vidBps)})
+			vidBps = clampBitrate(vidBps)
+			vidControls = append(vidControls, mediadCtl{key: "bitrate", value: vidBps})
 		}
+		currentBps := 0
+		if pinnedHighBps == 0 && controllerBps == 0 {
+			currentBps = mediadCurrentBitrate()
+		}
+		declaredHighBps = declaredHighBitrate(pinnedHighBps, controllerBps, currentBps)
 		go mediadApplyControls(vidControls, mediadVidDelta, true)
 		for _, key := range []string{"video1", "video2", "video3"} {
 			v, ok := video[key].(map[string]interface{})
@@ -1458,13 +1467,13 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 					"parameters":   streamParams("video1"),
 					"type":         "extendedFlv",
 				},
-				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": 2800000, "bitRateVbrMin": 48000,
+				"bitRateCbrAvg": declaredHighBps, "bitRateVbrMax": declaredHighBps, "bitRateVbrMin": 48000,
 				"description": "Hi quality video track", "enabled": true, "fps": encoderFps,
 				"gopModel": 0, "height": video1Height, "horizontalFlip": false,
 				"isCbr": false, "maxFps": encoderFps, "minClientAdaptiveBitRate": 0,
 				"minMotionAdaptiveBitRate": 0, "nMultiplier": 6, "name": "video1",
 				"sourceId": 0, "streamId": 1, "streamOrdinal": 0, "type": vidCodec["video1"],
-				"validBitrateRangeMax": 2800000, "validBitrateRangeMin": 32000,
+				"validBitrateRangeMax": mediaBitrateMax, "validBitrateRangeMin": 32000,
 				"validFpsValues": []int{encoderFps},
 				"verticalFlip":   false,
 				"width":          video1Width,

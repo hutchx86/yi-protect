@@ -18,10 +18,11 @@ namespace {
 // Same path the boot scripts use; YIP_PREFIX may be overridden for tests.
 const char *kDefaultTablePath = "/tmp/sd/yi-protect/etc/model_table";
 
-// Conservative fallback for a missing table or an unlisted model. Ring
-// offset/header 0 = autodetect (FshareReader falls back to 368/28 if it cannot
-// find the marker); geometry stays the historical y623-class default.
-const unsigned kDefaultHighBitrate = 2000000;
+// Declared HIGH bandwidth when the table has no model policy (0). This is the
+// encoder capability, not a pin: the client follows Protect's current target.
+// Ring offset/header 0 = autodetect (FshareReader falls back to 368/28 if it
+// cannot find the marker); geometry stays the historical y623-class default.
+const unsigned kDefaultHighBitrate = 6000000;
 const ModelParams kFallback = {0, 0, 2304, 1296, false, kDefaultHighBitrate};
 
 }  // namespace

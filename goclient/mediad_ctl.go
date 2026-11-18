@@ -112,6 +112,62 @@ func mediadPing() bool {
 	return err == nil && strings.HasPrefix(reply, "ok")
 }
 
+// mediadBitratePin reports whether mediad.conf pins the HIGH bitrate and the
+// pinned value. A per-unit pin is the effective rate; the model table is only
+// the fallback policy.
+func mediadBitratePin() (int, int) {
+	if !mediadEnabled() {
+		return 0, 0
+	}
+	p, err := mediadInt("pinned", "bitrate")
+	if err != nil || p != 1 {
+		return 0, 0
+	}
+	b, err := mediadInt("get", "bitrate")
+	if err != nil || b <= 0 {
+		return 0, 0
+	}
+	return 1, b
+}
+
+// resolveHighBitrate prefers a per-unit mediad.conf pin over the model table
+// policy. A model with no pin (0) keeps following the controller.
+func resolveHighBitrate(modelPin, daemonPin, daemonRate int) int {
+	if daemonPin == 1 && daemonRate > 0 {
+		return daemonRate
+	}
+	return modelPin
+}
+
+// mediadCurrentBitrate returns the rate the daemon is actually running, so a
+// response can show the current target even when the message omits video1.
+func mediadCurrentBitrate() int {
+	if !mediadEnabled() {
+		return 0
+	}
+	b, err := mediadInt("get", "bitrate")
+	if err != nil || b <= 0 {
+		return 0
+	}
+	return b
+}
+
+// declaredHighBitrate is the rate Protect should show: an explicit pin wins,
+// then the controller's current target, then the daemon's actual rate, then the
+// encoder capability.
+func declaredHighBitrate(pinned, controller, current int) int {
+	if pinned > 0 {
+		return pinned
+	}
+	if controller > 0 {
+		return controller
+	}
+	if current > 0 {
+		return current
+	}
+	return mediaBitrateMax
+}
+
 // mediad availability is cached briefly so a settings burst doesn't rescan /proc
 // per message; a failed send clears the cache so a killed mediad is noticed.
 var (
@@ -780,9 +836,9 @@ func videoStreamBitrate(v map[string]interface{}) int {
 	return 0
 }
 
-// mediaBitrateMax is the ceiling the SoC can sustain with WDR+PLTM; matches
-// MEDIAD_BITRATE_MAX in mediad's main.c.
-const mediaBitrateMax = 3000000
+// mediaBitrateMax matches MEDIAD_BITRATE_MAX in mediad's main.c, the encoder's
+// own clamp. It is a capability, not a claim about what the link sustains.
+const mediaBitrateMax = 6000000
 
 func clampBitrate(b int) int {
 	if b < 48000 {
