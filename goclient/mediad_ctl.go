@@ -226,17 +226,19 @@ func resolveMediad() bool {
 	return mediadDecision(os.Getenv("YIP_ENCODER"), cfg.MediadMode, mediadFullyInstalled())
 }
 
-// h265Capable reports whether the active encoder can produce H.265. It requires
-// the clean-room mediad path (stock rmm is H.264-only) AND the model's
-// model_table h265 column: our H.265 encode is only validated on y623, and on an
-// unvalidated model it comes out green, so advertising it there lets Protect
-// enable super-encoding and break the stream.
+// h265Advertising is the whole H.265 gate: the user's explicit experimental
+// opt-in AND the clean-room encoder path. The model_table h265 column is not a
+// gate any more; it only feeds the startup warning, so no camera advertises
+// H.265 by default.
+func h265Advertising(experimental, mediadPath bool) bool {
+	return experimental && mediadPath
+}
+
+// h265Capable reports whether the active encoder may advertise H.265 to the
+// controller. Stock rmm is H.264-only, and H.265 itself is experimental
+// (yi-protect.cfg H265=yes), so both must hold.
 func h265Capable() bool {
-	if !encoderIsMediad() {
-		return false
-	}
-	def, ok := readModelDef(readHardwareModel())
-	return ok && def.h265
+	return h265Advertising(cfg.H265Experimental, encoderIsMediad())
 }
 
 // logMediadStatus logs the startup state once, so an IS_MEDIAD deployment

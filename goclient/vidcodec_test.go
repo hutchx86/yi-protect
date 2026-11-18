@@ -60,3 +60,22 @@ func TestStreamCodecsRestored(t *testing.T) {
 		t.Fatalf("changed store not persisted: %v", got)
 	}
 }
+
+// TestH265AdvertisingNeedsExplicitOptIn pins the experimental gate: H.265 is
+// never advertised without H265=yes, and never on the stock rmv path.
+func TestH265AdvertisingNeedsExplicitOptIn(t *testing.T) {
+	cases := []struct {
+		experimental, mediadPath, want bool
+	}{
+		{false, false, false},
+		{false, true, false}, // default: off on every camera
+		{true, false, false}, // opt-in on the rmm path still cannot encode it
+		{true, true, true},   // explicit opt-in + mediad
+	}
+	for _, tc := range cases {
+		if got := h265Advertising(tc.experimental, tc.mediadPath); got != tc.want {
+			t.Fatalf("h265Advertising(%v, %v) = %v, want %v",
+				tc.experimental, tc.mediadPath, got, tc.want)
+		}
+	}
+}

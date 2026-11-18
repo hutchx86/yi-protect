@@ -80,6 +80,12 @@ type Config struct {
 	// Mediad3DNR lets Protect's enable3dnr drive mediad's tdf; default false, as
 	// Protect re-sends enable3dnr=1 on every connect and would override mediad.
 	Mediad3DNR bool
+	// H265Experimental advertises H.265 (super encoding) to Protect. Off by
+	// default on every camera and marked experimental: the stream still shows
+	// grain on motion, so it is an explicit opt-in (yi-protect.cfg H265=yes),
+	// never a model_table default. The model_table h265 column only records
+	// which models have been validated, for the warning at startup.
+	H265Experimental bool
 	// WebUIPort is the firmware settings page's HTTP port (yi-protect.cfg
 	// WEBUI_PORT, default 80; 0 disables it). See webui.go.
 	WebUIPort int
@@ -649,11 +655,13 @@ const lowEncoderFps = 15
 // featureFlags' keys are read by service.js as hasX:Boolean(t.<key>);
 // "truedaynight" is the real IR key, "ledStatus" the separate status LED.
 func featureFlags() map[string]interface{} {
-	// H.265 super-encoding is only real on the mediad path; the stock rmm
-	// encoder is H.264-only. Advertising h265 there lets Protect enable
-	// super-encoding, after which the bridge is told "CODEC h265" but receives
-	// H.264 frames -- HEVC keyframe detection never matches, dropUntilKey
-	// latches and video dies (observed live on y291ga, 2026-10-02).
+	// H.265 super-encoding is experimental and off unless the user opts in
+	// (yi-protect.cfg H265=yes), and only real on the mediad path; the stock
+	// rmm encoder is H.264-only. Advertising h265 where it cannot be produced
+	// lets Protect enable super-encoding, after which the bridge is told
+	// "CODEC h265" but receives H.264 frames -- HEVC keyframe detection never
+	// matches, dropUntilKey latches and video dies (observed on y291ga,
+	// 2026-10-02).
 	videoCodecs := []string{"h264", "mjpg"}
 	if h265Capable() {
 		videoCodecs = []string{"h264", "h265", "mjpg"}
@@ -1267,9 +1275,13 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 			// field it uses to request "h265" on a native camera).
 			if t, ok := v["type"].(string); ok && (t == "h264" || t == "h265") {
 				if t == "h265" && !h265Capable() {
-					// rmm path: decline super-encoding rather than ship a
-					// mislabelled stream (see featureFlags).
-					log.Printf("codec: controller requested h265 on %s but the encoder path is h264-only; forcing h264", key)
+					// H.265 is an explicit experimental opt-in; decline rather
+					// than ship a mislabelled stream (see featureFlags).
+					why := "experimental H.265 is off (set H265=yes in yi-protect.cfg)"
+					if cfg.H265Experimental {
+						why = "the encoder path is h264-only"
+					}
+					log.Printf("codec: controller requested h265 on %s but %s; forcing h264", key, why)
 					t = "h264"
 				}
 				vidCodec[key] = t
@@ -2299,6 +2311,19 @@ func main() {
 	if v := yipCfg["MEDIAD_3DNR"]; v != "" {
 		cfg.Mediad3DNR = isTruthy(v)
 		log.Printf("yi-protect.cfg: mediad_3dnr %q -> %v", v, cfg.Mediad3DNR)
+	}
+	if v := yipCfg["H265"]; v != "" {
+		cfg.H265Experimental = isTruthy(v)
+		log.Printf("yi-protect.cfg: h265 (experimental) %q -> %v", v, cfg.H265Experimental)
+	}
+	if cfg.H265Experimental {
+		if def, known := readModelDef(readHardwareModel()); !known || !def.h265 {
+			log.Printf("H.265: EXPERIMENTAL and not validated on model %q; enabled by H265=yes", readHardwareModel())
+		} else {
+			log.Printf("H.265: EXPERIMENTAL, enabled by H265=yes")
+		}
+	} else {
+		log.Printf("H.265: experimental and disabled (set H265=yes in yi-protect.cfg to advertise it)")
 	}
 	if v := yipCfg["PROTECT_SSH"]; v != "" {
 		cfg.ProtectSSH = isTruthy(v)

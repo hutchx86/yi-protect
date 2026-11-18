@@ -255,6 +255,7 @@ files beside it.
 | `PTZ` | `yes`/`no`/empty | Declare the PTZ feature; empty = the model table's `ptz` column. |
 | `IS_MEDIAD` | `yes`/`no`/`auto` | Encoder path. `auto` (default) runs `mediad` when installed, else `rmm`; `yes`/`no` force it. |
 | `MEDIAD_3DNR` | `yes`/`no` | Let Protect's `enable3dnr` drive mediad's temporal denoise (`tdf`); `no` = `tdf` follows `mediad.conf`. |
+| `H265` | `yes`/`no` | **Experimental, `no` on every camera unless set.** Advertise H.265/super encoding to Protect; mediad path only. The stream still shows grain on motion, so it is an explicit opt-in. |
 | `YI_CLOUD` | `yes`/`no`/empty | Run the stock Yi cloud daemons; empty = on unless the `mediad` encoder is active. |
 | `SSH_PASSWORD` | text | Root SSH password; hashed at boot, never stored in `/etc`. Empty = locked. |
 | `PROTECT_SSH` | `yes`/`no` | Also accept Protect's device password (as `ui`, or `ubnt` before adoption). |
