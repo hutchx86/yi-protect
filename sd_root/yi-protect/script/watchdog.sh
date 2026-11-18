@@ -108,9 +108,19 @@ wifi_restart() {
 
 wifi_check() {
     wifi_active || { WIFI_DOWN=0; return 0; }
+    gw=$(cat /tmp/gw1 2>/dev/null)
+    [ -z "$gw" ] && gw=$(route -n 2>/dev/null | awk '$1=="0.0.0.0" && $8=="wlan0" {print $2; exit}')
+    up=0
     if alive wpa_supplicant && \
        ifconfig wlan0 2>/dev/null | grep -q "inet addr" && \
        ! $IWCONFIG wlan0 2>/dev/null | grep -q "Not-Associated"; then
+        # A wedged driver can keep the association and address while no packet
+        # moves; the local gateway is the cheapest end-to-end check.
+        if [ -z "$gw" ] || ping -c 1 -W 1 "$gw" >/dev/null 2>&1; then
+            up=1
+        fi
+    fi
+    if [ "$up" = 1 ]; then
         WIFI_DOWN=0
         WIFI_UP_PASSES=$((WIFI_UP_PASSES+1))
         [ "$WIFI_UP_PASSES" -ge 60 ] && { WIFI_RESTARTS=0; WIFI_UP_PASSES=0; }
