@@ -67,6 +67,70 @@ alive() { [ -n "$(pids_of "$1")" ]; }
 
 log() { beat; echo "$(date +'%H:%M:%S') $*"; }
 
+# ---- WiFi recovery ----
+# The stock wificonnect.sh starts one wpa_supplicant; nothing restarts it when
+# it dies, and it runs with cwd / on the read-only squashfs, so a crash leaves
+# no core. init.sh's net_monitor only re-ups wlan0 and starts DHCP when the
+# address is gone, which misses a dead supplicant that still holds a stale
+# address. Any of missing supplicant, no address, or not-associated counts as
+# down; restart the supplicant after 5 min, reboot after three failed restarts.
+IWCONFIG=/usr/sbin/iwconfig
+[ -x "$IWCONFIG" ] || IWCONFIG=iwconfig
+WIFI_DOWN=0
+WIFI_RESTARTS=0
+WIFI_UP_PASSES=0
+
+wifi_active() {
+    # Same path rule as init.sh: Ethernet wins only with carrier and a lease.
+    if [ -r /sys/class/net/eth0/carrier ] && \
+       [ "$(cat /sys/class/net/eth0/carrier 2>/dev/null)" = "1" ] && \
+       ifconfig eth0 2>/dev/null | grep -q "inet addr"; then
+        return 1
+    fi
+    [ -d /sys/class/net/wlan0 ] && [ -f /tmp/wpa_supplicant.conf ]
+}
+
+wifi_restart() {
+    killall wpa_supplicant 2>/dev/null
+    sleep 1
+    # A dead supplicant leaves its control sockets behind and the next instance
+    # refuses to start over them.
+    rm -f /var/run/wpa_supplicant-global /var/run/wpa_supplicant/wlan0
+    if [ -x /backup/tools/wificonnect.sh ]; then
+        /backup/tools/wificonnect.sh >/dev/null 2>&1
+    else
+        /backup/tools/wpa_supplicant -c/tmp/wpa_supplicant.conf \
+            -g/var/run/wpa_supplicant-global -Dnl80211 -iwlan0 -B >/dev/null 2>&1
+    fi
+    sleep 2
+    "$YIP_PREFIX/script/wifidhcp.sh" >/dev/null 2>&1 &
+}
+
+wifi_check() {
+    wifi_active || { WIFI_DOWN=0; return 0; }
+    if alive wpa_supplicant && \
+       ifconfig wlan0 2>/dev/null | grep -q "inet addr" && \
+       ! $IWCONFIG wlan0 2>/dev/null | grep -q "Not-Associated"; then
+        WIFI_DOWN=0
+        WIFI_UP_PASSES=$((WIFI_UP_PASSES+1))
+        [ "$WIFI_UP_PASSES" -ge 60 ] && { WIFI_RESTARTS=0; WIFI_UP_PASSES=0; }
+        return 0
+    fi
+    WIFI_UP_PASSES=0
+    WIFI_DOWN=$((WIFI_DOWN+1))
+    log "WiFi down ($WIFI_DOWN/${WIFI_DOWN_PASSES:-30})"
+    [ "$WIFI_DOWN" -lt "${WIFI_DOWN_PASSES:-30}" ] && return 0
+    WIFI_DOWN=0
+    WIFI_RESTARTS=$((WIFI_RESTARTS+1))
+    if [ "$WIFI_RESTARTS" -le 3 ]; then
+        log "restarting WiFi (attempt $WIFI_RESTARTS/3)"
+        wifi_restart
+    else
+        log "REBOOT: WiFi down after 3 restarts"
+        /sbin/reboot
+    fi
+}
+
 # ---- heartbeat ----
 # /proc/uptime (integer seconds) is monotonic across NTP steps; busybox has no
 # `stat`, and a heartbeat written by the looping shell also proves the shell is
@@ -354,6 +418,7 @@ while true; do
     fi
 
     ensure_stack
+    wifi_check
 
     # Yi cloud daemons (YI_CLOUD=yes only). Restart only the one that died, so a
     # single failure does not spawn duplicate P2P/storage sessions.
