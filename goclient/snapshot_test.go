@@ -75,3 +75,23 @@ func TestSnapshotCache(t *testing.T) {
 		t.Fatal("stale entry should miss")
 	}
 }
+
+// TestSnapshotResolution pins the H.265 high-stream fallback: a 2K HEVC grab
+// OOM'd the 60 MB y623 every time, so the snapshot uses the low stream.
+func TestSnapshotResolution(t *testing.T) {
+	cases := []struct {
+		requested, codec, want string
+	}{
+		{"high", "h265", "low"},
+		{"high", "h264", "high"},
+		{"low", "h265", "low"},
+		{"low", "h264", "low"},
+		{"high", "", "high"},
+	}
+	for _, tc := range cases {
+		if got := snapshotResolution(tc.requested, tc.codec); got != tc.want {
+			t.Fatalf("snapshotResolution(%q, %q) = %q, want %q",
+				tc.requested, tc.codec, got, tc.want)
+		}
+	}
+}

@@ -1500,6 +1500,18 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	return c.send(c.genResponse("ChangeVideoSettings", m.MessageID, payload))
 }
 
+// snapshotResolution selects the stream a snapshot decodes. A 2K H.265 access
+// unit costs roughly 10 MB of decoder working set; on a 60 MB camera that is
+// the allocation that tips the kernel into OOM (y623, 2026-11-18: free
+// 256-368 kB and yi_protect_snap killed on every high grab). The 640x360 low
+// stream is what Protect uses as a thumbnail and fits comfortably.
+func snapshotResolution(requested, video1Codec string) string {
+	if requested == "high" && video1Codec == "h265" {
+		return "low"
+	}
+	return requested
+}
+
 // handleGetRequest answers "GetRequest": grabs a JPEG via yi_protect_snapshot and
 // HTTP POSTs it with the WSS mTLS cert; it blocks until the next IDR.
 func (c *Client) handleGetRequest(m Envelope) {
@@ -1513,6 +1525,10 @@ func (c *Client) handleGetRequest(m Envelope) {
 	res := "high"
 	if q, _ := m.Payload["quality"].(string); q == "low" {
 		res = "low"
+	}
+	if eff := snapshotResolution(res, c.streamCodecs()["video1"]); eff != res {
+		log.Printf("GetRequest[%s]: high stream is h265; snapshotting the low stream instead", what)
+		res = eff
 	}
 
 	model := readHardwareModel()
