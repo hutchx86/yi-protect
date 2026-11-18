@@ -1512,13 +1512,18 @@ func (c *Client) handleVideoSettings(m Envelope) error {
 	return c.send(c.genResponse("ChangeVideoSettings", m.MessageID, payload))
 }
 
-// snapshotResolution selects the stream a snapshot decodes. A 2K H.265 access
-// unit costs roughly 10 MB of decoder working set; on a 60 MB camera that is
-// the allocation that tips the kernel into OOM (y623, 2026-11-18: free
-// 256-368 kB and yi_protect_snap killed on every high grab). The 640x360 low
-// stream is what Protect uses as a thumbnail and fits comfortably.
-func snapshotResolution(requested, video1Codec string) string {
-	if requested == "high" && video1Codec == "h265" {
+// snapshotResolution selects the stream a snapshot decodes. A 2K access unit
+// costs roughly 10 MB of decoder working set; on a 60 MB camera that is the
+// allocation that tips the kernel into OOM (y623, 2026-11-18: free 256-368 kB
+// and yi_protect_snap killed on every high grab). H.264 is no lighter than
+// H.265 here. The 640x360 low stream is what Protect uses as a thumbnail and
+// fits comfortably, so use it for any high request that would decode a 2K or
+// H.265 stream.
+func snapshotResolution(requested, video1Codec string, highW, highH int) string {
+	if requested != "high" {
+		return requested
+	}
+	if video1Codec == "h265" || highW*highH > 1920*1080 {
 		return "low"
 	}
 	return requested
@@ -1538,8 +1543,9 @@ func (c *Client) handleGetRequest(m Envelope) {
 	if q, _ := m.Payload["quality"].(string); q == "low" {
 		res = "low"
 	}
-	if eff := snapshotResolution(res, c.streamCodecs()["video1"]); eff != res {
-		log.Printf("GetRequest[%s]: high stream is h265; snapshotting the low stream instead", what)
+	highW, highH := readHighResolution()
+	if eff := snapshotResolution(res, c.streamCodecs()["video1"], highW, highH); eff != res {
+		log.Printf("GetRequest[%s]: %dx%d high snapshot is too heavy; using the low stream", what, highW, highH)
 		res = eff
 	}
 
