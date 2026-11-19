@@ -1756,6 +1756,17 @@ func startVideoStream(dest, streamName, channel string) bool {
 		log.Printf("startVideoStream[%s]: failed to re-assert mic mute: %v", channel, err)
 	}
 	applyMicGain(currentMicLevel)
+	// The encoder GOP is 5 s; ask for an IDR so a new viewer does not wait for
+	// the next scheduled keyframe. `medium` aliases the LOW encoder.
+	idrKey := "idr"
+	if channel == "low" || channel == "medium" {
+		idrKey = "idr_low"
+	}
+	if mediadEnabled() {
+		if err := mediadSet(idrKey, 1); err != nil {
+			log.Printf("startVideoStream[%s]: IDR request failed: %v", channel, err)
+		}
+	}
 	log.Printf("startVideoStream[%s]: told FlvPush to push to %s, streamName=%s", channel, dest, streamName)
 	return true
 }

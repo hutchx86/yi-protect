@@ -38,7 +38,7 @@ func TestDeclaredHighBitrate(t *testing.T) {
 		want                        int
 	}{
 		{"explicit pin wins", 2800000, 6000000, 0, 2800000},
-		{"controller target wins", 0, 6000000, 3000000, 6000000},
+		{"controller target clamped to the advertised max", 0, 6000000, 3000000, mediaBitrateMax},
 		{"daemon actual when video1 is absent", 0, 0, 3000000, 3000000},
 		{"initial advertise is the capability", 0, 0, 0, mediaBitrateMax},
 	}

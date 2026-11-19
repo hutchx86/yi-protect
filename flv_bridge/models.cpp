@@ -22,7 +22,7 @@ const char *kDefaultTablePath = "/tmp/sd/yi-protect/etc/model_table";
 // encoder capability, not a pin: the client follows Protect's current target.
 // Ring offset/header 0 = autodetect (FshareReader falls back to 368/28 if it
 // cannot find the marker); geometry stays the historical y623-class default.
-const unsigned kDefaultHighBitrate = 6000000;
+const unsigned kDefaultHighBitrate = 4000000;
 const ModelParams kFallback = {0, 0, 2304, 1296, false, kDefaultHighBitrate};
 
 }  // namespace

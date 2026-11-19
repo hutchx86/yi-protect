@@ -157,13 +157,13 @@ func mediadCurrentBitrate() int {
 // encoder capability.
 func declaredHighBitrate(pinned, controller, current int) int {
 	if pinned > 0 {
-		return pinned
+		return clampBitrate(pinned)
 	}
 	if controller > 0 {
-		return controller
+		return clampBitrate(controller)
 	}
 	if current > 0 {
-		return current
+		return clampBitrate(current)
 	}
 	return mediaBitrateMax
 }
@@ -836,9 +836,11 @@ func videoStreamBitrate(v map[string]interface{}) int {
 	return 0
 }
 
-// mediaBitrateMax matches MEDIAD_BITRATE_MAX in mediad's main.c, the encoder's
-// own clamp. It is a capability, not a claim about what the link sustains.
-const mediaBitrateMax = 6000000
+// mediaBitrateMax is the ceiling the client advertises to Protect and accepts
+// from it. The encoder itself can do 6 Mbps (MEDIAD_BITRATE_MAX), but the
+// h51ga 1080p ingress cannot sustain that with the low alias, audio and
+// snapshots, so the controller's slider tops out at 4 Mbps.
+const mediaBitrateMax = 4000000
 
 func clampBitrate(b int) int {
 	if b < 48000 {
