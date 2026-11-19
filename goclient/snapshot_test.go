@@ -76,27 +76,10 @@ func TestSnapshotCache(t *testing.T) {
 	}
 }
 
-// TestSnapshotResolution pins the heavy-stream fallback: a 2K grab OOM'd the
-// 60 MB y623 every time, with either codec, so the snapshot uses the low
-// stream whenever the high stream is 2K or H.265.
+// TestSnapshotResolution pins the always-low snapshot policy: the high stream
+// is never decoded for a JPEG, on any codec or geometry.
 func TestSnapshotResolution(t *testing.T) {
-	cases := []struct {
-		requested, codec string
-		w, h             int
-		want             string
-	}{
-		{"high", "h265", 2304, 1296, "low"},
-		{"high", "h264", 2304, 1296, "low"},
-		{"high", "h264", 1920, 1080, "high"},
-		{"high", "h264", 1280, 720, "high"},
-		{"low", "h265", 2304, 1296, "low"},
-		{"low", "h264", 2304, 1296, "low"},
-		{"high", "", 2304, 1296, "low"},
-	}
-	for _, tc := range cases {
-		if got := snapshotResolution(tc.requested, tc.codec, tc.w, tc.h); got != tc.want {
-			t.Fatalf("snapshotResolution(%q, %q, %d, %d) = %q, want %q",
-				tc.requested, tc.codec, tc.w, tc.h, got, tc.want)
-		}
+	if got := snapshotResolution(); got != "low" {
+		t.Fatalf("snapshotResolution() = %q, want low", got)
 	}
 }
