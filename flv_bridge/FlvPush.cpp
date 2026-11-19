@@ -1163,6 +1163,11 @@ static void doConnect(int channel, const std::string &host, int port, const std:
     pthread_mutex_unlock(&c.stateMutex);
     pthread_mutex_unlock(&g_connectMutex);
 
+    /* New connection: drop the previous session's queued frames and resume on
+     * the next keyframe. Without this the controller sees stale P frames before
+     * the forced IDR, which makes the start look slow, especially on HIGH. */
+    flvPushDiscontinuity(channel);
+
     PushThreadArg *pa = new PushThreadArg{channel, myGeneration};
     pthread_t t;
     pthread_attr_t attr;
