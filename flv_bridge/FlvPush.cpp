@@ -643,6 +643,12 @@ static void *pushThreadMain(void *arg) {
     // Set after the initial write, which already carries a sync pair.
     double lastSyncTime = 0;
     double lastStatsTime = nowSeconds();
+    // This connection's own no-video timer (see the empty-queue branch below).
+    // It must start now, not inherit the previous connection's: a channel that
+    // was idle >20 s (the grid tile stopped) would otherwise exit the bridge on
+    // the next CONNECT before the first frame arrived.
+    double lastFrameSec = nowSeconds();
+    int emptyPolls = 0;
 
     // Tag timestamps and trailer elapsed are relative to this connection (each
     // reconnect is a new stream); longer-lived clocks are rejected (docs/flv-bridge.md).
@@ -918,26 +924,26 @@ static void *pushThreadMain(void *arg) {
         // own watchdog stays quiet). Exit so watchdog.sh restarts the bridge -
         // without this the only recovery was a manual restart (hours of
         // audio-only, 2026-09-30).
-        static double lastFrameSec[FLV_CH_COUNT] = {0};
         if (!got) {
-            static int emptyPolls[FLV_CH_COUNT] = {0};
             double nowS = nowSeconds();
-            if (lastFrameSec[channel] == 0) lastFrameSec[channel] = nowS;
-            if (nowS - lastFrameSec[channel] > 20.0) {
+            if (nowS - lastFrameSec > 20.0) {
                 fprintf(stderr, "FlvPush[%d]: no video for 20s while connected, exiting for a restart\n",
                         channel);
                 fflush(stderr);
-                exit(1);
+                // _exit: other push threads can still be allocating, and exit()
+                // running their destructors under them aborts with bad_alloc
+                // (observed 2026-11-21). The watchdog restarts the process.
+                _exit(1);
             }
-            emptyPolls[channel]++;
-            if (emptyPolls[channel] % 400 == 0) {
+            emptyPolls++;
+            if (emptyPolls % 400 == 0) {
                 fprintf(stderr, "FlvPush[%d]: gen %u still waiting on empty queue (%d polls)\n",
-                        channel, myGeneration, emptyPolls[channel]);
+                        channel, myGeneration, emptyPolls);
             }
             usleep(5000);
             continue;
         }
-        lastFrameSec[channel] = nowSeconds();
+        lastFrameSec = nowSeconds();
 
         std::vector<std::pair<size_t, size_t>> spans;
         splitAnnexB(f.frame, spans);
